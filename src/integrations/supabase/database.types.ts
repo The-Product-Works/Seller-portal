@@ -14,206 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      bundles: {
-      seller_edit_requests: {
-        Row: {
-          id: string;
-          seller_id: string;
-          field_name: string;
-          old_value: string;
-          new_value: string;
-          status: 'pending' | 'approved' | 'rejected';
-          admin_id: string | null;
-          admin_comments: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          seller_id: string;
-          field_name: string;
-          old_value: string;
-          new_value: string;
-          status?: 'pending' | 'approved' | 'rejected';
-          admin_id?: string | null;
-          admin_comments?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          seller_id?: string;
-          field_name?: string;
-          old_value?: string;
-          new_value?: string;
-          status?: 'pending' | 'approved' | 'rejected';
-          admin_id?: string | null;
-          admin_comments?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'seller_edit_requests_seller_id_fkey';
-            columns: ['seller_id'];
-            referencedRelation: 'sellers';
-            referencedColumns: ['user_id'];
-          },
-          {
-            foreignKeyName: 'seller_edit_requests_admin_id_fkey';
-            columns: ['admin_id'];
-            referencedRelation: 'user_roles';
-            referencedColumns: ['user_id'];
-          }
-        ];
-      };
-      seller_edit_notifications: {
-        Row: {
-          id: string;
-          seller_id: string;
-          request_id: string;
-          message: string;
-          status: 'unread' | 'read';
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          seller_id: string;
-          request_id: string;
-          message: string;
-          status?: 'unread' | 'read';
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          seller_id?: string;
-          request_id?: string;
-          message?: string;
-          status?: 'unread' | 'read';
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'seller_edit_notifications_seller_id_fkey';
-            columns: ['seller_id'];
-            referencedRelation: 'sellers';
-            referencedColumns: ['user_id'];
-          },
-          {
-            foreignKeyName: 'seller_edit_notifications_request_id_fkey';
-            columns: ['request_id'];
-            referencedRelation: 'seller_edit_requests';
-            referencedColumns: ['id'];
-          }
-        ];
-      };
-      user_roles: {
-        Row: {
-          user_id: string;
-          role_id: 'admin' | 'seller';
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          user_id: string;
-          role_id: 'admin' | 'seller';
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          user_id?: string;
-          role_id?: 'admin' | 'seller';
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: 'user_roles_user_id_fkey';
-            columns: ['user_id'];
-            referencedRelation: 'users';
-            referencedColumns: ['id'];
-          }
-        ];
-      };
-        Row: {
-          id: string;
-          name: string;
-          description: string | null;
-          discount_percentage: number;
-          seller_id: string;
-          total_price: number;
-          discounted_price: number;
-          created_at: string;
-          status: "active" | "inactive" | "archived";
-        };
-        Insert: {
-          id?: string;
-          name: string;
-          description?: string | null;
-          discount_percentage: number;
-          seller_id: string;
-          total_price: number;
-          discounted_price: number;
-          created_at?: string;
-          status?: "active" | "inactive" | "archived";
-        };
-        Update: {
-          id?: string;
-          name?: string;
-          description?: string | null;
-          discount_percentage?: number;
-          seller_id?: string;
-          total_price?: number;
-          discounted_price?: number;
-          created_at?: string;
-          status?: "active" | "inactive" | "archived";
-        };
-        Relationships: [
-          {
-            foreignKeyName: "bundles_seller_id_fkey";
-            columns: ["seller_id"];
-            isOneToOne: false;
-            referencedRelation: "users";
-            referencedColumns: ["id"];
-          }
-        ];
-      };
-      bundle_products: {
-        Row: {
-          bundle_id: string;
-          product_id: string;
-          quantity: number;
-        };
-        Insert: {
-          bundle_id: string;
-          product_id: string;
-          quantity: number;
-        };
-        Update: {
-          bundle_id?: string;
-          product_id?: string;
-          quantity?: number;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "bundle_products_bundle_id_fkey";
-            columns: ["bundle_id"];
-            isOneToOne: false;
-            referencedRelation: "bundles";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "bundle_products_product_id_fkey";
-            columns: ["product_id"];
-            isOneToOne: false;
-            referencedRelation: "products";
-            referencedColumns: ["product_id"];
-          }
-        ];
-      };
       addresses: {
         Row: {
           address_id: string
@@ -303,6 +103,45 @@ export type Database = {
         }
         Relationships: []
       }
+      answer_votes: {
+        Row: {
+          answer_id: string
+          created_at: string | null
+          user_id: string
+          vote_id: string
+          vote_type: string
+        }
+        Insert: {
+          answer_id: string
+          created_at?: string | null
+          user_id: string
+          vote_id?: string
+          vote_type: string
+        }
+        Update: {
+          answer_id?: string
+          created_at?: string | null
+          user_id?: string
+          vote_id?: string
+          vote_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "answer_votes_answer_id_fkey"
+            columns: ["answer_id"]
+            isOneToOne: false
+            referencedRelation: "product_answers"
+            referencedColumns: ["answer_id"]
+          },
+          {
+            foreignKeyName: "answer_votes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       attributes: {
         Row: {
           attribute_id: string
@@ -348,6 +187,45 @@ export type Database = {
           old_data?: Json | null
           performed_by?: string | null
           seller_id?: string | null
+        }
+        Relationships: []
+      }
+      brands: {
+        Row: {
+          brand_id: string
+          created_at: string | null
+          description: string | null
+          is_active: boolean | null
+          is_verified: boolean | null
+          logo_url: string | null
+          name: string
+          slug: string
+          updated_at: string | null
+          website: string | null
+        }
+        Insert: {
+          brand_id?: string
+          created_at?: string | null
+          description?: string | null
+          is_active?: boolean | null
+          is_verified?: boolean | null
+          logo_url?: string | null
+          name: string
+          slug: string
+          updated_at?: string | null
+          website?: string | null
+        }
+        Update: {
+          brand_id?: string
+          created_at?: string | null
+          description?: string | null
+          is_active?: boolean | null
+          is_verified?: boolean | null
+          logo_url?: string | null
+          name?: string
+          slug?: string
+          updated_at?: string | null
+          website?: string | null
         }
         Relationships: []
       }
@@ -538,6 +416,72 @@ export type Database = {
           },
         ]
       }
+      global_products: {
+        Row: {
+          avg_health_score: number | null
+          avg_rating_across_sellers: number | null
+          brand_id: string | null
+          category_id: string | null
+          created_at: string | null
+          global_product_id: string
+          highest_price: number | null
+          is_active: boolean | null
+          lowest_price: number | null
+          product_name: string
+          slug: string
+          total_listings_count: number | null
+          total_reviews_across_sellers: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          avg_health_score?: number | null
+          avg_rating_across_sellers?: number | null
+          brand_id?: string | null
+          category_id?: string | null
+          created_at?: string | null
+          global_product_id?: string
+          highest_price?: number | null
+          is_active?: boolean | null
+          lowest_price?: number | null
+          product_name: string
+          slug: string
+          total_listings_count?: number | null
+          total_reviews_across_sellers?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          avg_health_score?: number | null
+          avg_rating_across_sellers?: number | null
+          brand_id?: string | null
+          category_id?: string | null
+          created_at?: string | null
+          global_product_id?: string
+          highest_price?: number | null
+          is_active?: boolean | null
+          lowest_price?: number | null
+          product_name?: string
+          slug?: string
+          total_listings_count?: number | null
+          total_reviews_across_sellers?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "global_products_brand_id_fkey"
+            columns: ["brand_id"]
+            isOneToOne: false
+            referencedRelation: "brands"
+            referencedColumns: ["brand_id"]
+          },
+          {
+            foreignKeyName: "global_products_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["category_id"]
+          },
+        ]
+      }
       inventory: {
         Row: {
           inventory_id: string
@@ -570,6 +514,189 @@ export type Database = {
           },
         ]
       }
+      listing_images: {
+        Row: {
+          alt_text: string | null
+          created_at: string | null
+          image_id: string
+          image_url: string
+          is_primary: boolean | null
+          listing_id: string
+          sort_order: number | null
+          variant_id: string | null
+        }
+        Insert: {
+          alt_text?: string | null
+          created_at?: string | null
+          image_id?: string
+          image_url: string
+          is_primary?: boolean | null
+          listing_id: string
+          sort_order?: number | null
+          variant_id?: string | null
+        }
+        Update: {
+          alt_text?: string | null
+          created_at?: string | null
+          image_id?: string
+          image_url?: string
+          is_primary?: boolean | null
+          listing_id?: string
+          sort_order?: number | null
+          variant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_images_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "seller_product_listings"
+            referencedColumns: ["listing_id"]
+          },
+          {
+            foreignKeyName: "listing_images_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "listing_variants"
+            referencedColumns: ["variant_id"]
+          },
+        ]
+      }
+      listing_variants: {
+        Row: {
+          batch_number: string | null
+          created_at: string | null
+          expiry_date: string | null
+          flavor: string | null
+          health_score: number | null
+          is_available: boolean | null
+          listing_id: string
+          manufacture_date: string | null
+          nutritional_info: Json | null
+          original_price: number | null
+          price: number
+          reserved_quantity: number | null
+          serving_count: number | null
+          size: string | null
+          sku: string
+          stock_quantity: number | null
+          updated_at: string | null
+          variant_id: string
+          variant_name: string | null
+        }
+        Insert: {
+          batch_number?: string | null
+          created_at?: string | null
+          expiry_date?: string | null
+          flavor?: string | null
+          health_score?: number | null
+          is_available?: boolean | null
+          listing_id: string
+          manufacture_date?: string | null
+          nutritional_info?: Json | null
+          original_price?: number | null
+          price: number
+          reserved_quantity?: number | null
+          serving_count?: number | null
+          size?: string | null
+          sku: string
+          stock_quantity?: number | null
+          updated_at?: string | null
+          variant_id?: string
+          variant_name?: string | null
+        }
+        Update: {
+          batch_number?: string | null
+          created_at?: string | null
+          expiry_date?: string | null
+          flavor?: string | null
+          health_score?: number | null
+          is_available?: boolean | null
+          listing_id?: string
+          manufacture_date?: string | null
+          nutritional_info?: Json | null
+          original_price?: number | null
+          price?: number
+          reserved_quantity?: number | null
+          serving_count?: number | null
+          size?: string | null
+          sku?: string
+          stock_quantity?: number | null
+          updated_at?: string | null
+          variant_id?: string
+          variant_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "listing_variants_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "seller_product_listings"
+            referencedColumns: ["listing_id"]
+          },
+        ]
+      }
+      product_answers: {
+        Row: {
+          answer_id: string
+          answer_text: string
+          answerer_id: string | null
+          created_at: string | null
+          helpful_count: number | null
+          is_active: boolean | null
+          is_verified_seller: boolean | null
+          not_helpful_count: number | null
+          question_id: string
+          seller_id: string | null
+        }
+        Insert: {
+          answer_id?: string
+          answer_text: string
+          answerer_id?: string | null
+          created_at?: string | null
+          helpful_count?: number | null
+          is_active?: boolean | null
+          is_verified_seller?: boolean | null
+          not_helpful_count?: number | null
+          question_id: string
+          seller_id?: string | null
+        }
+        Update: {
+          answer_id?: string
+          answer_text?: string
+          answerer_id?: string | null
+          created_at?: string | null
+          helpful_count?: number | null
+          is_active?: boolean | null
+          is_verified_seller?: boolean | null
+          not_helpful_count?: number | null
+          question_id?: string
+          seller_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_answers_answerer_id_fkey"
+            columns: ["answerer_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_answers_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "product_questions"
+            referencedColumns: ["question_id"]
+          },
+          {
+            foreignKeyName: "product_answers_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "sellers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_images: {
         Row: {
           image_id: string
@@ -596,6 +723,192 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["product_id"]
+          },
+        ]
+      }
+      product_questions: {
+        Row: {
+          buyer_id: string
+          created_at: string | null
+          is_active: boolean | null
+          listing_id: string | null
+          question_id: string
+          question_text: string
+        }
+        Insert: {
+          buyer_id: string
+          created_at?: string | null
+          is_active?: boolean | null
+          listing_id?: string | null
+          question_id?: string
+          question_text: string
+        }
+        Update: {
+          buyer_id?: string
+          created_at?: string | null
+          is_active?: boolean | null
+          listing_id?: string | null
+          question_id?: string
+          question_text?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_questions_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_questions_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "seller_product_listings"
+            referencedColumns: ["listing_id"]
+          },
+        ]
+      }
+      product_reviews: {
+        Row: {
+          buyer_id: string
+          created_at: string | null
+          helpful_count: number | null
+          is_verified_purchase: boolean | null
+          listing_id: string
+          moderation_notes: string | null
+          not_helpful_count: number | null
+          order_id: string | null
+          rating: number
+          review_id: string
+          review_text: string | null
+          review_title: string | null
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          buyer_id: string
+          created_at?: string | null
+          helpful_count?: number | null
+          is_verified_purchase?: boolean | null
+          listing_id: string
+          moderation_notes?: string | null
+          not_helpful_count?: number | null
+          order_id?: string | null
+          rating: number
+          review_id?: string
+          review_text?: string | null
+          review_title?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          buyer_id?: string
+          created_at?: string | null
+          helpful_count?: number | null
+          is_verified_purchase?: boolean | null
+          listing_id?: string
+          moderation_notes?: string | null
+          not_helpful_count?: number | null
+          order_id?: string | null
+          rating?: number
+          review_id?: string
+          review_text?: string | null
+          review_title?: string | null
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_reviews_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "product_reviews_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "seller_product_listings"
+            referencedColumns: ["listing_id"]
+          },
+        ]
+      }
+      product_transparency: {
+        Row: {
+          certifications_summary: string | null
+          clinical_data: string | null
+          created_at: string | null
+          ethical_sourcing: string | null
+          ingredient_source: string | null
+          listing_id: string | null
+          manufacturing_info: string | null
+          quality_assurance: string | null
+          sustainability_info: string | null
+          test_date: string | null
+          test_report_number: string | null
+          test_report_url: string | null
+          testing_info: string | null
+          testing_lab: string | null
+          third_party_tested: boolean | null
+          transparency_id: string
+          updated_at: string | null
+          variant_id: string | null
+        }
+        Insert: {
+          certifications_summary?: string | null
+          clinical_data?: string | null
+          created_at?: string | null
+          ethical_sourcing?: string | null
+          ingredient_source?: string | null
+          listing_id?: string | null
+          manufacturing_info?: string | null
+          quality_assurance?: string | null
+          sustainability_info?: string | null
+          test_date?: string | null
+          test_report_number?: string | null
+          test_report_url?: string | null
+          testing_info?: string | null
+          testing_lab?: string | null
+          third_party_tested?: boolean | null
+          transparency_id?: string
+          updated_at?: string | null
+          variant_id?: string | null
+        }
+        Update: {
+          certifications_summary?: string | null
+          clinical_data?: string | null
+          created_at?: string | null
+          ethical_sourcing?: string | null
+          ingredient_source?: string | null
+          listing_id?: string | null
+          manufacturing_info?: string | null
+          quality_assurance?: string | null
+          sustainability_info?: string | null
+          test_date?: string | null
+          test_report_number?: string | null
+          test_report_url?: string | null
+          testing_info?: string | null
+          testing_lab?: string | null
+          third_party_tested?: boolean | null
+          transparency_id?: string
+          updated_at?: string | null
+          variant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_transparency_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "seller_product_listings"
+            referencedColumns: ["listing_id"]
+          },
+          {
+            foreignKeyName: "product_transparency_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "listing_variants"
+            referencedColumns: ["variant_id"]
           },
         ]
       }
@@ -631,6 +944,64 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "products"
             referencedColumns: ["product_id"]
+          },
+        ]
+      }
+      product_views: {
+        Row: {
+          global_product_id: string | null
+          ip_address: unknown
+          listing_id: string | null
+          referrer: string | null
+          session_id: string | null
+          user_agent: string | null
+          user_id: string | null
+          view_id: string
+          viewed_at: string | null
+        }
+        Insert: {
+          global_product_id?: string | null
+          ip_address?: unknown
+          listing_id?: string | null
+          referrer?: string | null
+          session_id?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+          view_id?: string
+          viewed_at?: string | null
+        }
+        Update: {
+          global_product_id?: string | null
+          ip_address?: unknown
+          listing_id?: string | null
+          referrer?: string | null
+          session_id?: string | null
+          user_agent?: string | null
+          user_id?: string | null
+          view_id?: string
+          viewed_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "product_views_global_product_id_fkey"
+            columns: ["global_product_id"]
+            isOneToOne: false
+            referencedRelation: "global_products"
+            referencedColumns: ["global_product_id"]
+          },
+          {
+            foreignKeyName: "product_views_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "seller_product_listings"
+            referencedColumns: ["listing_id"]
+          },
+          {
+            foreignKeyName: "product_views_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -679,6 +1050,74 @@ export type Database = {
           {
             foreignKeyName: "products_seller_id_fkey"
             columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      review_images: {
+        Row: {
+          created_at: string | null
+          image_url: string
+          review_id: string
+          review_image_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          image_url: string
+          review_id: string
+          review_image_id?: string
+        }
+        Update: {
+          created_at?: string | null
+          image_url?: string
+          review_id?: string
+          review_image_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_images_review_id_fkey"
+            columns: ["review_id"]
+            isOneToOne: false
+            referencedRelation: "product_reviews"
+            referencedColumns: ["review_id"]
+          },
+        ]
+      }
+      review_votes: {
+        Row: {
+          created_at: string | null
+          review_id: string
+          user_id: string
+          vote_id: string
+          vote_type: string
+        }
+        Insert: {
+          created_at?: string | null
+          review_id: string
+          user_id: string
+          vote_id?: string
+          vote_type: string
+        }
+        Update: {
+          created_at?: string | null
+          review_id?: string
+          user_id?: string
+          vote_id?: string
+          vote_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_votes_review_id_fkey"
+            columns: ["review_id"]
+            isOneToOne: false
+            referencedRelation: "product_reviews"
+            referencedColumns: ["review_id"]
+          },
+          {
+            foreignKeyName: "review_votes_user_id_fkey"
+            columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "users"
             referencedColumns: ["id"]
@@ -790,6 +1229,102 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "seller_documents_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "sellers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      seller_product_listings: {
+        Row: {
+          base_price: number
+          created_at: string | null
+          discount_percentage: number | null
+          discounted_price: number | null
+          global_product_id: string
+          health_score: number | null
+          is_verified: boolean | null
+          listing_id: string
+          published_at: string | null
+          rating: number | null
+          return_policy: string | null
+          review_count: number | null
+          seller_certifications: Json | null
+          seller_description: string | null
+          seller_id: string
+          seller_ingredients: string | null
+          seller_title: string | null
+          shelf_life_months: number | null
+          shipping_info: string | null
+          slug: string
+          status: string | null
+          total_stock_quantity: number | null
+          updated_at: string | null
+          verification_notes: string | null
+        }
+        Insert: {
+          base_price: number
+          created_at?: string | null
+          discount_percentage?: number | null
+          discounted_price?: number | null
+          global_product_id: string
+          health_score?: number | null
+          is_verified?: boolean | null
+          listing_id?: string
+          published_at?: string | null
+          rating?: number | null
+          return_policy?: string | null
+          review_count?: number | null
+          seller_certifications?: Json | null
+          seller_description?: string | null
+          seller_id: string
+          seller_ingredients?: string | null
+          seller_title?: string | null
+          shelf_life_months?: number | null
+          shipping_info?: string | null
+          slug: string
+          status?: string | null
+          total_stock_quantity?: number | null
+          updated_at?: string | null
+          verification_notes?: string | null
+        }
+        Update: {
+          base_price?: number
+          created_at?: string | null
+          discount_percentage?: number | null
+          discounted_price?: number | null
+          global_product_id?: string
+          health_score?: number | null
+          is_verified?: boolean | null
+          listing_id?: string
+          published_at?: string | null
+          rating?: number | null
+          return_policy?: string | null
+          review_count?: number | null
+          seller_certifications?: Json | null
+          seller_description?: string | null
+          seller_id?: string
+          seller_ingredients?: string | null
+          seller_title?: string | null
+          shelf_life_months?: number | null
+          shipping_info?: string | null
+          slug?: string
+          status?: string | null
+          total_stock_quantity?: number | null
+          updated_at?: string | null
+          verification_notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seller_product_listings_global_product_id_fkey"
+            columns: ["global_product_id"]
+            isOneToOne: false
+            referencedRelation: "global_products"
+            referencedColumns: ["global_product_id"]
+          },
+          {
+            foreignKeyName: "seller_product_listings_seller_id_fkey"
             columns: ["seller_id"]
             isOneToOne: false
             referencedRelation: "sellers"
@@ -1151,6 +1686,52 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "product_variants"
             referencedColumns: ["variant_id"]
+          },
+        ]
+      }
+      wishlists: {
+        Row: {
+          created_at: string | null
+          global_product_id: string
+          listing_id: string | null
+          user_id: string
+          wishlist_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          global_product_id: string
+          listing_id?: string | null
+          user_id: string
+          wishlist_id?: string
+        }
+        Update: {
+          created_at?: string | null
+          global_product_id?: string
+          listing_id?: string | null
+          user_id?: string
+          wishlist_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wishlists_global_product_id_fkey"
+            columns: ["global_product_id"]
+            isOneToOne: false
+            referencedRelation: "global_products"
+            referencedColumns: ["global_product_id"]
+          },
+          {
+            foreignKeyName: "wishlists_listing_id_fkey"
+            columns: ["listing_id"]
+            isOneToOne: false
+            referencedRelation: "seller_product_listings"
+            referencedColumns: ["listing_id"]
+          },
+          {
+            foreignKeyName: "wishlists_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
           },
         ]
       }
