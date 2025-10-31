@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Camera, CheckCircle } from "lucide-react";
 import { z } from "zod";
-import Dashboard from "./Dashboard";
+
 const kycSchema = z.object({
   aadhaarNumber: z.string().regex(/^[2-9]{1}[0-9]{11}$/, "Invalid Aadhaar number"),
   panNumber: z.string().regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, "Invalid PAN number"),
@@ -32,8 +32,10 @@ export default function KYC() {
     bankAccountNumber: "",
     bankIfscCode: "",
     bankAccountHolderName: "",
+    bankName: "",
+    accountType: "savings",
   });
-  const [profilePhoto, setProfilePhoto] = useState<File | null>(null);
+  const [selfiePhoto, setSelfiePhoto] = useState<File | null>(null);
   const [aadhaarPhoto, setAadhaarPhoto] = useState<File | null>(null);
   const [panPhoto, setPanPhoto] = useState<File | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -69,40 +71,35 @@ export default function KYC() {
           bankAccountNumber: seller.account_number || "",
           bankIfscCode: seller.ifsc_code || "",
           bankAccountHolderName: seller.account_holder_name || "",
+          bankName: seller.bank_name || "",
+          accountType: seller.account_type || "savings",
         }));
       }
     }
   };
 
   const uploadFile = async (file: File, folder: string, sellerId: string): Promise<string | null> => {
-    const fileExt = file.name.split('.').pop();
-    // Path inside bucket: seller_details/{sellerId}/{folder}/{timestamp}.{ext}
+    const fileExt = file.name.split(".").pop();
     const fileName = `seller_details/${sellerId}/${folder}/${Date.now()}.${fileExt}`;
 
-    console.log("📤 Uploading to bucket 'seller_details', path:", fileName);
-
     const { error: uploadError } = await supabase.storage
-      .from('seller_details')
+      .from("seller_details")
       .upload(fileName, file);
 
     if (uploadError) {
-      console.error('❌ Upload error:', uploadError);
+      console.error("❌ Upload error:", uploadError);
       return null;
     }
 
-    console.log("✅ File uploaded successfully");
-
-    // Get signed URL for the uploaded file
     const { data: signedUrlData, error: signedUrlError } = await supabase.storage
-      .from('seller_details')
-      .createSignedUrl(fileName, 60 * 60 * 24 * 365 * 100); // 100 years
+      .from("seller_details")
+      .createSignedUrl(fileName, 60 * 60 * 24 * 365 * 100);
 
     if (signedUrlError) {
-      console.error('❌ Signed URL error:', signedUrlError);
+      console.error("❌ Signed URL error:", signedUrlError);
       return null;
     }
 
-    console.log("✅ Signed URL generated:", signedUrlData.signedUrl);
     return signedUrlData.signedUrl;
   };
 
@@ -110,8 +107,12 @@ export default function KYC() {
     e.preventDefault();
     setErrors({});
 
-    if (!profilePhoto || !aadhaarPhoto || !panPhoto) {
-      toast({ title: "Missing Photos", description: "Upload all required photos", variant: "destructive" });
+    if (!selfiePhoto || !aadhaarPhoto || !panPhoto) {
+      toast({
+        title: "Missing Photos",
+        description: "Upload all required photos (Selfie, Aadhaar, and PAN)",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -125,7 +126,7 @@ export default function KYC() {
 
     if (!result.success) {
       const fieldErrors: Record<string, string> = {};
-      result.error.errors.forEach(err => fieldErrors[err.path[0] as string] = err.message);
+      result.error.errors.forEach(err => (fieldErrors[err.path[0] as string] = err.message));
       setErrors(fieldErrors);
       toast({ title: "Validation Error", description: "Check form errors", variant: "destructive" });
       return;
@@ -141,18 +142,17 @@ export default function KYC() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
-    // First, check if seller record exists
+    // 🔹 Step 1: Insert or Update Seller
     const { data: existingSeller } = await supabase
       .from("sellers")
       .select("id")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
 
     let sellerData;
     let sellerError;
 
     if (existingSeller) {
-      // Update existing seller
       const result = await supabase
         .from("sellers")
         .update({
@@ -171,11 +171,10 @@ export default function KYC() {
         .eq("id", existingSeller.id)
         .select()
         .single();
-      
+
       sellerData = result.data;
       sellerError = result.error;
     } else {
-      // Insert new seller
       const result = await supabase
         .from("sellers")
         .insert({
@@ -194,68 +193,56 @@ export default function KYC() {
         })
         .select()
         .single();
-      
+
       sellerData = result.data;
       sellerError = result.error;
     }
 
     if (sellerError || !sellerData) {
-      console.error("❌ SELLER UPSERT FAILED:");
-      console.error("Error Code:", sellerError?.code);
-      console.error("Error Message:", sellerError?.message);
+      console.error("❌ SELLER UPSERT FAILED:", sellerError);
       toast({ title: "Error", description: sellerError?.message || "Failed to create seller record", variant: "destructive" });
       setLoading(false);
       return;
     }
 
-    const sellerId = sellerData.id; // This is the actual seller ID
-    
-    console.log("🔍 DEBUG INFO:");
-    console.log("User ID (auth.uid):", user.id);
-    console.log("Seller ID (sellers.id):", sellerId);
-    console.log("Seller Data:", sellerData);
+    const sellerId = sellerData.id;
 
-    // Now upload files using the seller ID
-    const [profileUrl, aadhaarUrl, panUrl] = await Promise.all([
-      uploadFile(profilePhoto, 'profile', sellerId),
-      uploadFile(aadhaarPhoto, 'aadhaar', sellerId),
-      uploadFile(panPhoto, 'pan', sellerId),
+    // 🔹 Step 2: Upload documents
+    const [selfieUrl, aadhaarUrl, panUrl] = await Promise.all([
+      uploadFile(selfiePhoto, "selfie", sellerId),
+      uploadFile(aadhaarPhoto, "aadhaar", sellerId),
+      uploadFile(panPhoto, "pan", sellerId),
     ]);
 
-    if (!profileUrl || !aadhaarUrl || !panUrl) {
+    if (!selfieUrl || !aadhaarUrl || !panUrl) {
       toast({ title: "Upload Error", description: "Failed to upload photos", variant: "destructive" });
       setLoading(false);
       return;
     }
 
-    // Create or update bank account entry using seller ID
-    // First, check if bank account already exists for this seller
+    // 🔹 Step 3: Bank Account Insert/Update
     const { data: existingBank } = await supabase
       .from("seller_bank_accounts")
       .select("id")
       .eq("seller_id", sellerId)
       .eq("is_primary", true)
-      .single();
+      .maybeSingle();
 
-    let bankData;
     let bankError;
 
     if (existingBank) {
-      // Update existing bank account
       const result = await supabase
         .from("seller_bank_accounts")
         .update({
           account_number: formData.bankAccountNumber,
           account_holder_name: formData.bankAccountHolderName,
           ifsc_code: formData.bankIfscCode,
+          bank_name: formData.bankName || null,
+          account_type: formData.accountType,
         })
-        .eq("id", existingBank.id)
-        .select();
-      
-      bankData = result.data;
+        .eq("id", existingBank.id);
       bankError = result.error;
     } else {
-      // Insert new bank account
       const result = await supabase
         .from("seller_bank_accounts")
         .insert({
@@ -263,115 +250,102 @@ export default function KYC() {
           account_number: formData.bankAccountNumber,
           account_holder_name: formData.bankAccountHolderName,
           ifsc_code: formData.bankIfscCode,
+          bank_name: formData.bankName || null,
+          account_type: formData.accountType,
           is_primary: true,
-        })
-        .select();
-      
-      bankData = result.data;
+        });
       bankError = result.error;
     }
 
     if (bankError) {
-      console.error("❌ BANK ACCOUNT INSERT FAILED:");
-      console.error("Error Code:", bankError.code);
-      console.error("Error Message:", bankError.message);
-      console.error("Error Details:", bankError.details);
-      console.error("Error Hint:", bankError.hint);
-      toast({ 
-        title: "❌ Bank Account Error", 
-        description: `Table: seller_bank_accounts | Code: ${bankError.code} | ${bankError.message}`,
-        variant: "destructive" 
-      });
+      toast({ title: "❌ Bank Account Error", description: bankError.message, variant: "destructive" });
       setLoading(false);
       return;
     }
-    
-    console.log("✅ Bank account created:", bankData);
 
-    // Store documents in seller_documents using seller ID
-    const docTypes = [
-      { url: aadhaarUrl, type: "aadhaar", name: "aadhaar.jpg" },
-      { url: panUrl, type: "pan", name: "pan.jpg" },
-      { url: profileUrl, type: "profile", name: "selfie.jpg" },
+    // 🔹 Step 4: Insert documents into seller_documents
+    const docFiles = [
+      { file: aadhaarPhoto, url: aadhaarUrl, type: "aadhaar" },
+      { file: panPhoto, url: panUrl, type: "pan" },
+      { file: selfiePhoto, url: selfieUrl, type: "selfie" },
     ];
 
-    for (const doc of docTypes) {
-      const { data: docData, error: docError } = await supabase.from("seller_documents").insert({
-        seller_id: sellerId, // Use the seller ID, not user ID
+    for (const doc of docFiles) {
+      const { error: docError } = await supabase.from("seller_documents").insert({
+        seller_id: sellerId,
         doc_type: doc.type,
-        file_name: doc.name,
+        file_name: doc.file.name,
+        file_size: doc.file.size,
+        mime_type: doc.file.type,
         storage_path: doc.url,
-      })
-      .select();
-      
+        uploaded_at: new Date().toISOString(),
+      });
+
       if (docError) {
-        console.error(`❌ DOCUMENT INSERT FAILED (${doc.type}):`);
-        console.error("Error Code:", docError.code);
-        console.error("Error Message:", docError.message);
-        console.error("Error Details:", docError.details);
-        console.error("Error Hint:", docError.hint);
-        toast({ 
-          title: `❌ Document RLS Error (${doc.type})`, 
-          description: `Table: seller_documents | Code: ${docError.code} | ${docError.message}`,
-          variant: "destructive" 
+        toast({
+          title: `❌ Document Insert Error (${doc.type})`,
+          description: docError.message,
+          variant: "destructive",
         });
         setLoading(false);
         return;
       }
-      
-      console.log(`✅ Document inserted (${doc.type}):`, docData);
     }
 
-    // KYC submission successful
+    // 🔹 Step 5: Optional Verification Entry
+    await supabase.from("seller_verifications").insert({
+      seller_id: sellerId,
+      step: "kyc_submission",
+      status: "submitted",
+      provider: "system",
+      confidence: 1.0,
+      verified_at: new Date().toISOString(),
+    });
+
     setLoading(false);
-    
-    toast({ 
-      title: "✅ KYC Submitted Successfully!", 
+    toast({
+      title: "✅ KYC Submitted Successfully!",
       description: "Your documents are under review. Redirecting to dashboard...",
       duration: 3000,
     });
-    
-    // Navigate to dashboard immediately
     navigate("/dashboard");
   };
 
-  if (kycStatus === "approved") return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md text-center shadow-pink">
-        <CardHeader>
-          <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-          <CardTitle className="text-2xl gradient-text">KYC Verified!</CardTitle>
-          <CardDescription>Your account has been verified successfully</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button onClick={() => navigate("/landing")} className="gradient-primary shadow-glow">Continue</Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  if (kycStatus === "approved")
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md text-center shadow-pink">
+          <CardHeader>
+            <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
+            <CardTitle className="text-2xl gradient-text">KYC Verified!</CardTitle>
+            <CardDescription>Your account has been verified successfully.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate("/landing")} className="gradient-primary shadow-glow">
+              Continue
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
 
-  if (kycStatus === "pending") return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md text-center shadow-pink">
-        <CardHeader>
-          <Loader2 className="w-16 h-16 text-primary mx-auto mb-4 animate-spin" />
-          <CardTitle className="text-2xl gradient-text">KYC Verification Pending</CardTitle>
-          <CardDescription>Your documents are under review. We'll notify you once verified.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            You can continue using the platform while we review your documents.
-          </p>
-          <Button 
-            onClick={() => navigate("/dashboard")} 
-            className="w-full gradient-primary shadow-glow"
-          >
-            Go to Dashboard
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
+  if (kycStatus === "pending")
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md text-center shadow-pink">
+          <CardHeader>
+            <Loader2 className="w-16 h-16 text-primary mx-auto mb-4 animate-spin" />
+            <CardTitle className="text-2xl gradient-text">KYC Verification Pending</CardTitle>
+            <CardDescription>Your documents are under review. We'll notify you once verified.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button onClick={() => navigate("/dashboard")} className="w-full gradient-primary shadow-glow">
+              Go to Dashboard
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
 
   return (
     <div className="min-h-screen bg-background py-12 px-4">
@@ -383,42 +357,54 @@ export default function KYC() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Photo Upload */}
+              {/* 📸 Photo Upload */}
               <div className="space-y-4 p-4 bg-accent/20 rounded-lg">
-                <h3 className="text-lg font-semibold flex items-center gap-2"><Camera className="w-5 h-5" /> Photo Verification Required</h3>
+                <h3 className="text-lg font-semibold flex items-center gap-2">
+                  <Camera className="w-5 h-5" /> Photo Verification Required
+                </h3>
                 <div className="grid md:grid-cols-3 gap-4">
-                  {["Profile", "Aadhaar", "PAN"].map((type) => (
+                  {["Selfie", "Aadhaar", "PAN"].map((type) => (
                     <div className="space-y-2" key={type}>
                       <Label>{type} Photo *</Label>
-                      <Input type="file" accept="image/*"
+                      <Input
+                        type="file"
+                        accept="image/*"
                         onChange={(e) => {
-                          if (type === "Profile") setProfilePhoto(e.target.files?.[0] || null);
+                          if (type === "Selfie") setSelfiePhoto(e.target.files?.[0] || null);
                           if (type === "Aadhaar") setAadhaarPhoto(e.target.files?.[0] || null);
                           if (type === "PAN") setPanPhoto(e.target.files?.[0] || null);
                         }}
-                        required className="cursor-pointer"
+                        required
+                        className="cursor-pointer"
                       />
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Form Fields */}
+              {/* 🧾 Form Fields */}
               <div className="grid md:grid-cols-2 gap-4">
-                <InputField label="Aadhaar Number" id="aadhaarNumber" value={formData.aadhaarNumber} error={errors.aadhaarNumber} onChange={v => setFormData({...formData, aadhaarNumber:v})} />
-                <InputField label="PAN Number" id="panNumber" value={formData.panNumber} error={errors.panNumber} onChange={v => setFormData({...formData, panNumber:v.toUpperCase()})} />
-                <InputField label="GSTIN" id="gstin" value={formData.gstin} error={errors.gstin} onChange={v => setFormData({...formData, gstin:v.toUpperCase()})} colSpan={2} />
-                <InputField label="Business Name" id="businessName" value={formData.businessName} onChange={v => setFormData({...formData, businessName:v})} />
-                <SelectField label="Business Type" value={formData.businessType} onChange={v => setFormData({...formData, businessType:v})} colSpan={1} />
-                <InputField label="Phone" id="phone" value={formData.phone} onChange={v => setFormData({...formData, phone:v})} />
-                <InputField label="Address" id="address" value={formData.address} onChange={v => setFormData({...formData, address:v})} colSpan={2} />
-                <InputField label="Bank Account Number" id="bankAccountNumber" value={formData.bankAccountNumber} error={errors.bankAccountNumber} onChange={v => setFormData({...formData, bankAccountNumber:v})} />
-                <InputField label="IFSC Code" id="bankIfscCode" value={formData.bankIfscCode} error={errors.bankIfscCode} onChange={v => setFormData({...formData, bankIfscCode:v.toUpperCase()})} />
-                <InputField label="Account Holder Name" id="bankAccountHolderName" value={formData.bankAccountHolderName} onChange={v => setFormData({...formData, bankAccountHolderName:v})} colSpan={2} />
+                <InputField label="Aadhaar Number" id="aadhaarNumber" value={formData.aadhaarNumber} error={errors.aadhaarNumber} onChange={(v) => setFormData({ ...formData, aadhaarNumber: v })} />
+                <InputField label="PAN Number" id="panNumber" value={formData.panNumber} error={errors.panNumber} onChange={(v) => setFormData({ ...formData, panNumber: v.toUpperCase() })} />
+                <InputField label="GSTIN" id="gstin" value={formData.gstin} error={errors.gstin} onChange={(v) => setFormData({ ...formData, gstin: v.toUpperCase() })} colSpan={2} />
+                <InputField label="Business Name" id="businessName" value={formData.businessName} onChange={(v) => setFormData({ ...formData, businessName: v })} />
+                <SelectField label="Business Type" value={formData.businessType} onChange={(v) => setFormData({ ...formData, businessType: v })} />
+                <InputField label="Phone" id="phone" value={formData.phone} onChange={(v) => setFormData({ ...formData, phone: v })} />
+                <InputField label="Address" id="address" value={formData.address} onChange={(v) => setFormData({ ...formData, address: v })} colSpan={2} />
+                <InputField label="Bank Name" id="bankName" value={formData.bankName} onChange={(v) => setFormData({ ...formData, bankName: v })} />
+                <InputField label="Bank Account Number" id="bankAccountNumber" value={formData.bankAccountNumber} error={errors.bankAccountNumber} onChange={(v) => setFormData({ ...formData, bankAccountNumber: v })} />
+                <InputField label="IFSC Code" id="bankIfscCode" value={formData.bankIfscCode} error={errors.bankIfscCode} onChange={(v) => setFormData({ ...formData, bankIfscCode: v.toUpperCase() })} />
+                <InputField label="Account Holder Name" id="bankAccountHolderName" value={formData.bankAccountHolderName} onChange={(v) => setFormData({ ...formData, bankAccountHolderName: v })} colSpan={2} />
               </div>
 
               <Button type="submit" className="w-full gradient-primary shadow-glow" disabled={loading}>
-                {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Submitting...</> : "Submit for Verification"}
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Submitting...
+                  </>
+                ) : (
+                  "Submit for Verification"
+                )}
               </Button>
             </form>
           </CardContent>
@@ -430,9 +416,9 @@ export default function KYC() {
 
 function InputField({ label, id, value, onChange, error, colSpan }: { label: string; id: string; value: string; onChange: (value: string) => void; error?: string; colSpan?: number }) {
   return (
-    <div className={`space-y-2 ${colSpan===2?"md:col-span-2":""}`}>
+    <div className={`space-y-2 ${colSpan === 2 ? "md:col-span-2" : ""}`}>
       <Label htmlFor={id}>{label}</Label>
-      <Input id={id} value={value} onChange={e => onChange(e.target.value)} className={error?"border-destructive":""} />
+      <Input id={id} value={value} onChange={(e) => onChange(e.target.value)} className={error ? "border-destructive" : ""} />
       {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
@@ -440,10 +426,12 @@ function InputField({ label, id, value, onChange, error, colSpan }: { label: str
 
 function SelectField({ label, value, onChange, colSpan }: { label: string; value: string; onChange: (value: string) => void; colSpan?: number }) {
   return (
-    <div className={`space-y-2 ${colSpan===2?"md:col-span-2":""}`}>
+    <div className={`space-y-2 ${colSpan === 2 ? "md:col-span-2" : ""}`}>
       <Label>{label}</Label>
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+        <SelectTrigger>
+          <SelectValue placeholder="Select type" />
+        </SelectTrigger>
         <SelectContent>
           <SelectItem value="individual">Individual</SelectItem>
           <SelectItem value="proprietorship">Proprietorship</SelectItem>
