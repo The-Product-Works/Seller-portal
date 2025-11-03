@@ -636,6 +636,64 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_read: boolean | null
+          message: string
+          receiver_id: string | null
+          related_seller_id: string | null
+          sender_id: string | null
+          title: string | null
+          type: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          message: string
+          receiver_id?: string | null
+          related_seller_id?: string | null
+          sender_id?: string | null
+          title?: string | null
+          type: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          message?: string
+          receiver_id?: string | null
+          related_seller_id?: string | null
+          sender_id?: string | null
+          title?: string | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_receiver_id_fkey"
+            columns: ["receiver_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_related_seller_id_fkey"
+            columns: ["related_seller_id"]
+            isOneToOne: false
+            referencedRelation: "sellers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       product_answers: {
         Row: {
           answer_id: string
@@ -731,7 +789,7 @@ export type Database = {
           buyer_id: string
           created_at: string | null
           is_active: boolean | null
-          listing_id: string | null
+          listing_id: string
           question_id: string
           question_text: string
         }
@@ -739,7 +797,7 @@ export type Database = {
           buyer_id: string
           created_at?: string | null
           is_active?: boolean | null
-          listing_id?: string | null
+          listing_id: string
           question_id?: string
           question_text: string
         }
@@ -747,7 +805,7 @@ export type Database = {
           buyer_id?: string
           created_at?: string | null
           is_active?: boolean | null
-          listing_id?: string | null
+          listing_id?: string
           question_id?: string
           question_text?: string
         }
@@ -1239,6 +1297,7 @@ export type Database = {
       seller_product_listings: {
         Row: {
           base_price: number
+          business_name: string | null
           created_at: string | null
           discount_percentage: number | null
           discounted_price: number | null
@@ -1265,6 +1324,7 @@ export type Database = {
         }
         Insert: {
           base_price: number
+          business_name?: string | null
           created_at?: string | null
           discount_percentage?: number | null
           discounted_price?: number | null
@@ -1291,6 +1351,7 @@ export type Database = {
         }
         Update: {
           base_price?: number
+          business_name?: string | null
           created_at?: string | null
           discount_percentage?: number | null
           discounted_price?: number | null
@@ -1744,6 +1805,7 @@ export type Database = {
         Args: { height_cm: number; weight_kg: number }
         Returns: number
       }
+      delete_seller_cascade: { Args: { sellerid: string }; Returns: undefined }
       is_admin: { Args: never; Returns: boolean }
       setup_buyer_account: { Args: { user_id: string }; Returns: Json }
     }
