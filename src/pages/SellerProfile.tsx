@@ -1,427 +1,294 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useEffect, useState } from "react";
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
-import { Lock, Mail, Phone, MapPin, Building2, FileText } from "lucide-react";
-
-interface SellerProfileData {
-  id: string;
-  name: string;
-  business_name: string | null;
-  business_type: string | null;
-  email: string | null;
-  phone: string | null;
-  address_line1: string | null;
-  address_line2: string | null;
-  city: string | null;
-  state: string | null;
-  country: string | null;
-  pincode: string | null;
-  pan: string | null;
-  aadhaar: string | null;
-  gstin: string | null;
-  pan_verified: boolean | null;
-  aadhaar_verified: boolean | null;
-  gstin_verified: boolean | null;
-  verification_status: string | null;
-}
-
-interface EditRequestData {
-  seller_id: string;
-  field_name: string;
-  old_value: string;
-  new_value: string;
-  status: 'pending' | 'approved' | 'rejected';
-  created_at: string;
-}
+import { Loader2, Edit, Camera, Save } from "lucide-react";
 
 export default function SellerProfile() {
-  const [profile, setProfile] = useState<SellerProfileData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [isEditing, setIsEditing] = useState(false);
-  const [editData, setEditData] = useState<Partial<SellerProfileData>>({});
-  const [restrictedFieldRequest, setRestrictedFieldRequest] = useState<{
-    field: string;
-    value: string;
-  } | null>(null);
   const { toast } = useToast();
+  const [seller, setSeller] = useState<any | null>(null);
+  const [allowedFields, setAllowedFields] = useState<string[]>([]);
+  const [adminMessage, setAdminMessage] = useState<string | null>(null);
+  const [docs, setDocs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [editRequestFields, setEditRequestFields] = useState<string[]>([]);
+  const [reason, setReason] = useState("");
+  const [formData, setFormData] = useState<any>({});
+  const [selectedFiles, setSelectedFiles] = useState<{ [key: string]: File | null }>({
+    aadhaar: null,
+    pan: null,
+    selfie: null,
+  });
 
-  // List of fields that require admin permission to change
-  const restrictedFields = ['name', 'pan', 'aadhaar', 'gstin'];
+  const restrictedFields = ["aadhaar", "pan", "gstin", "bank_details", "email", "selfie"];
+
+  const isAllowed = (logicalField: string) => {
+    if (!allowedFields.length) return !restrictedFields.includes(logicalField);
+    return allowedFields.includes(logicalField) || !restrictedFields.includes(logicalField);
+  };
 
   useEffect(() => {
-    loadProfile();
+    loadSellerProfile();
   }, []);
 
-  const loadProfile = async () => {
+  async function loadSellerProfile() {
+    setLoading(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data, error } = await supabase
-        .from('sellers')
-        .select('*')
-        .eq('user_id', user.id)
-        .single();
+      const { data: s } = await supabase.from("sellers").select("*").eq("user_id", user.id).maybeSingle();
+      if (!s) return;
+      setSeller(s);
 
-      if (error) throw error;
-      setProfile(data);
-    } catch (error) {
-      console.error('Error loading profile:', error);
-      toast({
-        title: "Error",
-        description: "Failed to load profile",
-        variant: "destructive",
+      const { data: feedback } = await supabase
+        .from("seller_verifications")
+        .select("*")
+        .eq("seller_id", s.id)
+        .eq("step", "edit_request_feedback")
+        .order("verified_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (feedback?.details) {
+        const det = feedback.details as any;
+        setAllowedFields(det.allowed_fields || []);
+        setAdminMessage(det.admin_message || null);
+      }
+
+      const { data: documents } = await supabase
+        .from("seller_documents")
+        .select("doc_type, storage_path")
+        .eq("seller_id", s.id);
+      setDocs(documents || []);
+
+      setFormData({
+        businessName: s.business_name || "",
+        businessType: s.business_type || "",
+        gstin: s.gstin || "",
+        aadhaar: s.aadhaar || "",
+        pan: s.pan || "",
+        address: s.address_line1 || "",
+        bankName: s.bank_name || "",
+        accountNumber: s.account_number || "",
+        ifsc: s.ifsc_code || "",
+        accountHolderName: s.account_holder_name || "",
+        email: s.email || "",
+        phone: s.phone || "",
       });
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: "Error loading profile", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleEdit = (field: string, value: string) => {
-    if (restrictedFields.includes(field)) {
-      setRestrictedFieldRequest({ field, value });
-    } else {
-      setEditData({ ...editData, [field]: value });
-    }
-  };
-
-  const handleSave = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      // Update non-restricted fields
-      if (Object.keys(editData).length > 0) {
-        const { error } = await supabase
-          .from('sellers')
-          .update(editData)
-          .eq('user_id', user.id);
-
-        if (error) throw error;
-
-        // Create notification for admin
-        await supabase.from('seller_edit_notifications').insert({
-          seller_id: profile?.id,
-          changes: editData,
-          status: 'unread'
-        });
-
-        toast({
-          title: "Success",
-          description: "Profile updated successfully",
-        });
-      }
-
-      // Submit request for restricted field change
-      if (restrictedFieldRequest) {
-        const { error } = await supabase
-          .from('seller_edit_requests')
-          .insert({
-            seller_id: profile?.id,
-            field_name: restrictedFieldRequest.field,
-            old_value: profile?.[restrictedFieldRequest.field as keyof SellerProfileData] as string,
-            new_value: restrictedFieldRequest.value,
-            status: 'pending'
-          });
-
-        if (error) throw error;
-
-        toast({
-          title: "Request Submitted",
-          description: "Your request to change restricted field has been submitted for admin approval",
-        });
-      }
-
-      setIsEditing(false);
-      setEditData({});
-      setRestrictedFieldRequest(null);
-      loadProfile();
-    } catch (error) {
-      console.error('Error saving profile:', error);
-      toast({
-        title: "Error",
-        description: "Failed to save changes",
-        variant: "destructive",
-      });
-    }
-  };
-
-  if (loading) {
-    return <div className="p-8 text-center">Loading profile...</div>;
   }
 
+  async function uploadFile(file: File, folder: string) {
+    if (!seller?.id) throw new Error("Seller not found");
+    const ext = file.name.split(".").pop();
+    const path = `${seller.id}/${folder}/${Date.now()}.${ext}`;
+    const up = await supabase.storage.from("seller_details").upload(path, file, { upsert: true });
+    if (up.error) throw up.error;
+    const { data: urlData } = await supabase.storage
+      .from("seller_details")
+      .createSignedUrl(up.data.path, 60 * 60 * 24 * 365 * 5);
+    return urlData.signedUrl;
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const editableNow: any = {};
+      const restrictedChanges: any = {};
+
+      for (const key of Object.keys(formData)) {
+        const newVal = formData[key];
+        const oldVal =
+          key === "businessName"
+            ? seller.business_name
+            : key === "gstin"
+            ? seller.gstin
+            : seller[key] || "";
+
+        if (newVal === oldVal) continue;
+        let logical = key.toLowerCase();
+        if (!isAllowed(logical)) restrictedChanges[logical] = { old_value: oldVal, new_value: newVal };
+        else editableNow[key] = newVal;
+      }
+
+      const docsToUpload: { type: string; file: File }[] = [];
+      for (const t of ["aadhaar", "pan", "selfie"]) {
+        if (selectedFiles[t]) {
+          if (isAllowed(t)) docsToUpload.push({ type: t, file: selectedFiles[t]! });
+          else restrictedChanges[t] = { old_value: "file", new_value: selectedFiles[t]!.name };
+        }
+      }
+
+      if (Object.keys(editableNow).length) {
+        const upd = await supabase
+          .from("sellers")
+          .update({
+            business_name: editableNow.businessName,
+            business_type: editableNow.businessType,
+            gstin: editableNow.gstin,
+            aadhaar: editableNow.aadhaar,
+            pan: editableNow.pan,
+            address_line1: editableNow.address,
+            bank_name: editableNow.bankName,
+            account_number: editableNow.accountNumber,
+            ifsc_code: editableNow.ifsc,
+            account_holder_name: editableNow.accountHolderName,
+            email: editableNow.email,
+          })
+          .eq("id", seller.id);
+        if (upd.error) throw upd.error;
+      }
+
+      if (docsToUpload.length) {
+        for (const d of docsToUpload) {
+          const url = await uploadFile(d.file, d.type);
+          await supabase.from("seller_documents").insert({
+            seller_id: seller.id,
+            doc_type: d.type,
+            file_name: d.file.name,
+            storage_path: url,
+            uploaded_at: new Date().toISOString(),
+          });
+        }
+      }
+
+      if (Object.keys(restrictedChanges).length) {
+        await supabase.from("seller_verifications").insert({
+          seller_id: seller.id,
+          step: "edit_request",
+          status: "pending",
+          details: { requested_changes: restrictedChanges, reason },
+          verified_at: new Date().toISOString(),
+        });
+
+        const { data: { user } } = await supabase.auth.getUser();
+        await supabase.from("notifications").insert({
+          sender_id: user?.id,
+          receiver_id: null,
+          related_seller_id: seller.id,
+          type: "edit_request",
+          title: "Seller requested change",
+          message: `Seller requested updates: ${Object.keys(restrictedChanges).join(", ")}`,
+        });
+
+        toast({
+          title: "Change Request Sent",
+          description: "Admin will review your change request.",
+        });
+      } else {
+        toast({ title: "Saved", description: "Profile updated successfully" });
+      }
+
+      setReason("");
+      setSelectedFiles({ aadhaar: null, pan: null, selfie: null });
+      loadSellerProfile();
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) return <div className="p-8 text-center">Loading...</div>;
+
   return (
-    <div className="p-4 sm:p-6 md:p-8 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl sm:text-3xl font-bold">Seller Profile</h1>
-        {!isEditing ? (
-          <Button onClick={() => setIsEditing(true)}>Edit Profile</Button>
-        ) : (
-          <div className="space-x-2">
-            <Button variant="outline" onClick={() => {
-              setIsEditing(false);
-              setEditData({});
-              setRestrictedFieldRequest(null);
-            }}>Cancel</Button>
-            <Button onClick={handleSave}>Save Changes</Button>
+    <div className="min-h-screen bg-background py-10 px-6">
+      <Card className="max-w-3xl mx-auto">
+        <CardHeader>
+          <CardTitle>Seller Profile</CardTitle>
+          <CardDescription>View or edit your business and KYC information</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {adminMessage && (
+            <div className="p-3 bg-yellow-50 border rounded">
+              <strong>Admin Message:</strong>
+              <p className="text-sm mt-1">{adminMessage}</p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Allowed fields: {allowedFields.length ? allowedFields.join(", ") : "None"}
+              </p>
+            </div>
+          )}
+
+          <div className="grid md:grid-cols-2 gap-4">
+            {Object.entries({
+              "Business Name": "businessName",
+              "Business Type": "businessType",
+              GSTIN: "gstin",
+              Aadhaar: "aadhaar",
+              PAN: "pan",
+              Address: "address",
+              "Bank Name": "bankName",
+              "Account Number": "accountNumber",
+              IFSC: "ifsc",
+              "Account Holder Name": "accountHolderName",
+              Email: "email",
+              Phone: "phone",
+            }).map(([label, key]) => (
+              <div key={key}>
+                <Label>{label}</Label>
+                <Input
+                  value={formData[key]}
+                  onChange={(e) => setFormData({ ...formData, [key]: e.target.value })}
+                  disabled={!isAllowed(key.toLowerCase())}
+                />
+              </div>
+            ))}
           </div>
-        )}
-      </div>
 
-      <div className="grid gap-6">
-        {/* Personal Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Personal Information
-              <Lock className="h-4 w-4 text-muted-foreground" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div className="grid gap-2">
-              <Label>Full Name</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={editData.name ?? profile?.name ?? ''}
-                  onChange={(e) => handleEdit('name', e.target.value)}
-                  disabled={!isEditing || !profile?.verification_status}
-                />
-                {profile?.verification_status && (
-                  <Badge variant="outline">{profile.verification_status}</Badge>
-                )}
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Email</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={editData.email ?? profile?.email ?? ''}
-                  onChange={(e) => handleEdit('email', e.target.value)}
-                  disabled={!isEditing}
-                  type="email"
-                  icon={<Mail className="h-4 w-4" />}
-                />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Phone</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={editData.phone ?? profile?.phone ?? ''}
-                  onChange={(e) => handleEdit('phone', e.target.value)}
-                  disabled={!isEditing}
-                  type="tel"
-                  icon={<Phone className="h-4 w-4" />}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+          <div className="mt-4">
+            <Label>Reason for Restricted Field Edit (if any)</Label>
+            <Input
+              placeholder="Explain why you need to edit restricted fields"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </div>
 
-        {/* Business Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Business Information
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div className="grid gap-2">
-              <Label>Business Name</Label>
-              <Input
-                value={editData.business_name ?? profile?.business_name ?? ''}
-                onChange={(e) => handleEdit('business_name', e.target.value)}
-                disabled={!isEditing}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Business Type</Label>
-              <Input
-                value={editData.business_type ?? profile?.business_type ?? ''}
-                onChange={(e) => handleEdit('business_type', e.target.value)}
-                disabled={!isEditing}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Address Information */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Address
-              <MapPin className="h-4 w-4 text-muted-foreground" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div className="grid gap-2">
-              <Label>Address Line 1</Label>
-              <Input
-                value={editData.address_line1 ?? profile?.address_line1 ?? ''}
-                onChange={(e) => handleEdit('address_line1', e.target.value)}
-                disabled={!isEditing}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Address Line 2</Label>
-              <Input
-                value={editData.address_line2 ?? profile?.address_line2 ?? ''}
-                onChange={(e) => handleEdit('address_line2', e.target.value)}
-                disabled={!isEditing}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>City</Label>
-                <Input
-                  value={editData.city ?? profile?.city ?? ''}
-                  onChange={(e) => handleEdit('city', e.target.value)}
-                  disabled={!isEditing}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>State</Label>
-                <Input
-                  value={editData.state ?? profile?.state ?? ''}
-                  onChange={(e) => handleEdit('state', e.target.value)}
-                  disabled={!isEditing}
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label>Country</Label>
-                <Input
-                  value={editData.country ?? profile?.country ?? ''}
-                  onChange={(e) => handleEdit('country', e.target.value)}
-                  disabled={!isEditing}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>PIN Code</Label>
-                <Input
-                  value={editData.pincode ?? profile?.pincode ?? ''}
-                  onChange={(e) => handleEdit('pincode', e.target.value)}
-                  disabled={!isEditing}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Documents & Verification */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              Documents & Verification
-              <FileText className="h-4 w-4 text-muted-foreground" />
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4">
-            <div className="grid gap-2">
-              <Label>PAN Number</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={editData.pan ?? profile?.pan ?? ''}
-                  onChange={(e) => handleEdit('pan', e.target.value)}
-                  disabled={!isEditing || !profile?.pan_verified}
-                />
-                <Badge variant={profile?.pan_verified ? "default" : "secondary"}>
-                  {profile?.pan_verified ? "Verified" : "Unverified"}
-                </Badge>
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>Aadhaar Number</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={editData.aadhaar ?? profile?.aadhaar ?? ''}
-                  onChange={(e) => handleEdit('aadhaar', e.target.value)}
-                  disabled={!isEditing || !profile?.aadhaar_verified}
-                />
-                <Badge variant={profile?.aadhaar_verified ? "default" : "secondary"}>
-                  {profile?.aadhaar_verified ? "Verified" : "Unverified"}
-                </Badge>
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>GSTIN</Label>
-              <div className="flex items-center gap-2">
-                <Input
-                  value={editData.gstin ?? profile?.gstin ?? ''}
-                  onChange={(e) => handleEdit('gstin', e.target.value)}
-                  disabled={!isEditing || !profile?.gstin_verified}
-                />
-                <Badge variant={profile?.gstin_verified ? "default" : "secondary"}>
-                  {profile?.gstin_verified ? "Verified" : "Unverified"}
-                </Badge>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Restricted Field Change Request Dialog */}
-      <Dialog open={!!restrictedFieldRequest} onOpenChange={() => setRestrictedFieldRequest(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Request Field Change</DialogTitle>
-            <DialogDescription>
-              This field requires admin approval to change. Your request will be reviewed by an administrator.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label>Field</Label>
-              <Input value={restrictedFieldRequest?.field} disabled />
-            </div>
-            <div className="grid gap-2">
-              <Label>Current Value</Label>
-              <Input
-                value={profile?.[restrictedFieldRequest?.field as keyof SellerProfileData] as string}
-                disabled
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>New Value</Label>
-              <Input
-                value={restrictedFieldRequest?.value || ''}
-                onChange={(e) =>
-                  setRestrictedFieldRequest(prev =>
-                    prev ? { ...prev, value: e.target.value } : null
-                  )
-                }
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Reason for Change</Label>
-              <Textarea placeholder="Please explain why you need to change this field..." />
+          <div className="space-y-3">
+            <h3 className="text-md font-medium mt-4">Upload Photos</h3>
+            <div className="grid grid-cols-3 gap-4">
+              {["aadhaar", "pan", "selfie"].map((type) => (
+                <div key={type}>
+                  <Label>
+                    {type.toUpperCase()} {isAllowed(type) ? "" : "(Locked)"}
+                  </Label>
+                  <Input
+                    type="file"
+                    accept="image/*"
+                    disabled={!isAllowed(type)}
+                    onChange={(e) => setSelectedFiles({ ...selectedFiles, [type]: e.target.files?.[0] || null })}
+                  />
+                  {docs.find((d) => d.doc_type === type) && (
+                    <img
+                      src={docs.find((d) => d.doc_type === type)?.storage_path}
+                      alt={type}
+                      className="rounded border shadow-sm mt-2 w-full h-40 object-cover"
+                    />
+                  )}
+                </div>
+              ))}
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRestrictedFieldRequest(null)}>
-              Cancel
+
+          <div className="flex justify-end gap-2 mt-6">
+            <Button onClick={handleSave} disabled={saving}>
+              {saving ? <Loader2 className="animate-spin h-4 w-4 mr-1" /> : <Save className="h-4 w-4 mr-1" />}
+              Save / Request Change
             </Button>
-            <Button onClick={handleSave}>Submit Request</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
