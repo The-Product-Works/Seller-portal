@@ -1,11 +1,18 @@
+// src/pages/SellerProfile.tsx
 import React, { useEffect, useState } from "react";
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardContent,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, Edit, Camera, Save } from "lucide-react";
+import { Loader2, Save, PlusCircle, Send } from "lucide-react";
 
 export default function SellerProfile() {
   const { toast } = useToast();
@@ -15,7 +22,7 @@ export default function SellerProfile() {
   const [docs, setDocs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [editRequestFields, setEditRequestFields] = useState<string[]>([]);
+  const [submittingRequest, setSubmittingRequest] = useState(false);
   const [reason, setReason] = useState("");
   const [formData, setFormData] = useState<any>({});
   const [selectedFiles, setSelectedFiles] = useState<{ [key: string]: File | null }>({
@@ -23,10 +30,23 @@ export default function SellerProfile() {
     pan: null,
     selfie: null,
   });
+  const [requestedFields, setRequestedFields] = useState<string[]>([]);
 
-  const restrictedFields = ["aadhaar", "pan", "gstin", "bank_details", "email", "selfie"];
+  // 🔒 Restricted fields needing admin approval (GSTIN now included)
+  const restrictedFields = [
+    "aadhaar",
+    "pan",
+    "selfie",
+    "bank_details",
+    "email",
+    "gstin",
+  ];
+
+  // ✅ Instantly editable fields
+  const alwaysAllowed = ["businessname", "businesstype", "address", "phone"];
 
   const isAllowed = (logicalField: string) => {
+    if (alwaysAllowed.includes(logicalField)) return true;
     if (!allowedFields.length) return !restrictedFields.includes(logicalField);
     return allowedFields.includes(logicalField) || !restrictedFields.includes(logicalField);
   };
@@ -81,7 +101,6 @@ export default function SellerProfile() {
         phone: s.phone || "",
       });
     } catch (err: any) {
-      console.error(err);
       toast({ title: "Error loading profile", description: err.message, variant: "destructive" });
     } finally {
       setLoading(false);
@@ -100,11 +119,11 @@ export default function SellerProfile() {
     return urlData.signedUrl;
   }
 
+  // ✅ Save only allowed fields directly
   async function handleSave() {
     setSaving(true);
     try {
       const editableNow: any = {};
-      const restrictedChanges: any = {};
 
       for (const key of Object.keys(formData)) {
         const newVal = formData[key];
@@ -116,89 +135,108 @@ export default function SellerProfile() {
             : seller[key] || "";
 
         if (newVal === oldVal) continue;
-        let logical = key.toLowerCase();
-        if (!isAllowed(logical)) restrictedChanges[logical] = { old_value: oldVal, new_value: newVal };
-        else editableNow[key] = newVal;
-      }
 
-      const docsToUpload: { type: string; file: File }[] = [];
-      for (const t of ["aadhaar", "pan", "selfie"]) {
-        if (selectedFiles[t]) {
-          if (isAllowed(t)) docsToUpload.push({ type: t, file: selectedFiles[t]! });
-          else restrictedChanges[t] = { old_value: "file", new_value: selectedFiles[t]!.name };
-        }
+        const logical = key.toLowerCase();
+        if (isAllowed(logical)) editableNow[key] = newVal;
       }
 
       if (Object.keys(editableNow).length) {
-        const upd = await supabase
+        await supabase
           .from("sellers")
           .update({
             business_name: editableNow.businessName,
             business_type: editableNow.businessType,
-            gstin: editableNow.gstin,
-            aadhaar: editableNow.aadhaar,
-            pan: editableNow.pan,
             address_line1: editableNow.address,
-            bank_name: editableNow.bankName,
-            account_number: editableNow.accountNumber,
-            ifsc_code: editableNow.ifsc,
-            account_holder_name: editableNow.accountHolderName,
-            email: editableNow.email,
+            phone: editableNow.phone,
           })
           .eq("id", seller.id);
-        if (upd.error) throw upd.error;
-      }
 
-      if (docsToUpload.length) {
-        for (const d of docsToUpload) {
-          const url = await uploadFile(d.file, d.type);
-          await supabase.from("seller_documents").insert({
-            seller_id: seller.id,
-            doc_type: d.type,
-            file_name: d.file.name,
-            storage_path: url,
-            uploaded_at: new Date().toISOString(),
-          });
-        }
-      }
-
-      if (Object.keys(restrictedChanges).length) {
-        await supabase.from("seller_verifications").insert({
-          seller_id: seller.id,
-          step: "edit_request",
-          status: "pending",
-          details: { requested_changes: restrictedChanges, reason },
-          verified_at: new Date().toISOString(),
-        });
-
-        const { data: { user } } = await supabase.auth.getUser();
-        await supabase.from("notifications").insert({
-          sender_id: user?.id,
-          receiver_id: null,
-          related_seller_id: seller.id,
-          type: "edit_request",
-          title: "Seller requested change",
-          message: `Seller requested updates: ${Object.keys(restrictedChanges).join(", ")}`,
-        });
-
-        toast({
-          title: "Change Request Sent",
-          description: "Admin will review your change request.",
-        });
+        toast({ title: "Saved", description: "Profile updated successfully." });
       } else {
-        toast({ title: "Saved", description: "Profile updated successfully" });
+        toast({ title: "No editable changes found" });
       }
 
-      setReason("");
-      setSelectedFiles({ aadhaar: null, pan: null, selfie: null });
       loadSellerProfile();
     } catch (err: any) {
-      console.error(err);
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: "Error saving", description: err.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
   }
+
+  // 🔒 Send restricted edit request (e.g. GSTIN, Aadhaar, PAN, Bank, Email)
+  async function handleRequestChange() {
+    if (!requestedFields.length) {
+      toast({ title: "No requested fields", description: "Use + icons to select locked fields." });
+      return;
+    }
+    if (!reason.trim()) {
+      toast({ title: "Reason required", description: "Please explain why you need this change." });
+      return;
+    }
+
+    setSubmittingRequest(true);
+    try {
+      const restrictedChanges: any = {};
+
+      for (const field of requestedFields) {
+        if (field === "bank_details") {
+          restrictedChanges["bank_details"] = {
+            old_value: {
+              bank_name: seller.bank_name,
+              account_number: seller.account_number,
+              ifsc: seller.ifsc_code,
+              account_holder_name: seller.account_holder_name,
+            },
+            new_value: {
+              bank_name: formData.bankName,
+              account_number: formData.accountNumber,
+              ifsc: formData.ifsc,
+              account_holder_name: formData.accountHolderName,
+            },
+          };
+        } else {
+          restrictedChanges[field] = {
+            old_value: seller[field] || "",
+            new_value: formData[field] || "",
+          };
+        }
+      }
+
+      await supabase.from("seller_verifications").insert({
+        seller_id: seller.id,
+        step: "edit_request",
+        status: "pending",
+        details: { requested_changes: restrictedChanges, reason },
+        verified_at: new Date().toISOString(),
+      });
+
+      const { data: { user } } = await supabase.auth.getUser();
+      await supabase.from("notifications").insert({
+        sender_id: user?.id,
+        receiver_id: null,
+        related_seller_id: seller.id,
+        type: "edit_request",
+        title: "Seller requested change",
+        message: `Requested updates: ${requestedFields.join(", ")}`,
+      });
+
+      toast({ title: "Request Sent", description: "Your edit request has been sent to admin." });
+      setRequestedFields([]);
+      setReason("");
+      loadSellerProfile();
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } finally {
+      setSubmittingRequest(false);
+    }
+  }
+
+  const toggleRequestField = (field: string) => {
+    setRequestedFields((prev) =>
+      prev.includes(field) ? prev.filter((f) => f !== field) : [...prev, field]
+    );
+  };
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
 
@@ -209,82 +247,195 @@ export default function SellerProfile() {
           <CardTitle>Seller Profile</CardTitle>
           <CardDescription>View or edit your business and KYC information</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-5">
-          {adminMessage && (
-            <div className="p-3 bg-yellow-50 border rounded">
-              <strong>Admin Message:</strong>
-              <p className="text-sm mt-1">{adminMessage}</p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Allowed fields: {allowedFields.length ? allowedFields.join(", ") : "None"}
-              </p>
-            </div>
-          )}
 
+        <CardContent className="space-y-6">
+          {/* ✅ Instantly Editable Fields */}
           <div className="grid md:grid-cols-2 gap-4">
-            {Object.entries({
-              "Business Name": "businessName",
-              "Business Type": "businessType",
-              GSTIN: "gstin",
-              Aadhaar: "aadhaar",
-              PAN: "pan",
-              Address: "address",
-              "Bank Name": "bankName",
-              "Account Number": "accountNumber",
-              IFSC: "ifsc",
-              "Account Holder Name": "accountHolderName",
-              Email: "email",
-              Phone: "phone",
-            }).map(([label, key]) => (
+            {[
+              ["Business Name", "businessName"],
+              ["Business Type", "businessType"],
+              ["Address", "address"],
+              ["Phone", "phone"],
+            ].map(([label, key]) => (
               <div key={key}>
                 <Label>{label}</Label>
                 <Input
                   value={formData[key]}
                   onChange={(e) => setFormData({ ...formData, [key]: e.target.value })}
-                  disabled={!isAllowed(key.toLowerCase())}
                 />
               </div>
             ))}
           </div>
 
-          <div className="mt-4">
-            <Label>Reason for Restricted Field Edit (if any)</Label>
+          {/* 🔒 GSTIN (locked + requestable) */}
+          <div className="relative">
+            <Label>GSTIN</Label>
             <Input
-              placeholder="Explain why you need to edit restricted fields"
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
+              value={formData.gstin}
+              onChange={(e) => setFormData({ ...formData, gstin: e.target.value })}
+              disabled={!isAllowed("gstin") && !requestedFields.includes("gstin")}
+              className={requestedFields.includes("gstin") ? "border-blue-400 bg-blue-50" : ""}
             />
+            <Button
+              size="icon"
+              variant={requestedFields.includes("gstin") ? "secondary" : "outline"}
+              className="absolute right-2 top-7"
+              onClick={() => toggleRequestField("gstin")}
+            >
+              <PlusCircle className={`h-4 w-4 ${requestedFields.includes("gstin") ? "text-blue-600" : ""}`} />
+            </Button>
           </div>
 
-          <div className="space-y-3">
-            <h3 className="text-md font-medium mt-4">Upload Photos</h3>
-            <div className="grid grid-cols-3 gap-4">
-              {["aadhaar", "pan", "selfie"].map((type) => (
-                <div key={type}>
-                  <Label>
-                    {type.toUpperCase()} {isAllowed(type) ? "" : "(Locked)"}
-                  </Label>
+          {/* 🔒 Aadhaar */}
+          <div className="relative">
+            <Label>Aadhaar Number & Photo</Label>
+            <Input
+              value={formData.aadhaar}
+              onChange={(e) => setFormData({ ...formData, aadhaar: e.target.value })}
+              disabled={!isAllowed("aadhaar") && !requestedFields.includes("aadhaar")}
+              className={requestedFields.includes("aadhaar") ? "border-blue-400 bg-blue-50" : ""}
+            />
+            <Input
+              type="file"
+              accept="image/*"
+              disabled={!isAllowed("aadhaar") && !requestedFields.includes("aadhaar")}
+              className="mt-2"
+              onChange={(e) => setSelectedFiles({ ...selectedFiles, aadhaar: e.target.files?.[0] || null })}
+            />
+            <Button
+              size="icon"
+              variant={requestedFields.includes("aadhaar") ? "secondary" : "outline"}
+              className="absolute right-2 top-7"
+              onClick={() => toggleRequestField("aadhaar")}
+            >
+              <PlusCircle className={`h-4 w-4 ${requestedFields.includes("aadhaar") ? "text-blue-600" : ""}`} />
+            </Button>
+          </div>
+
+          {/* 🔒 PAN */}
+          <div className="relative">
+            <Label>PAN Number & Photo</Label>
+            <Input
+              value={formData.pan}
+              onChange={(e) => setFormData({ ...formData, pan: e.target.value })}
+              disabled={!isAllowed("pan") && !requestedFields.includes("pan")}
+              className={requestedFields.includes("pan") ? "border-blue-400 bg-blue-50" : ""}
+            />
+            <Input
+              type="file"
+              accept="image/*"
+              disabled={!isAllowed("pan") && !requestedFields.includes("pan")}
+              className="mt-2"
+              onChange={(e) => setSelectedFiles({ ...selectedFiles, pan: e.target.files?.[0] || null })}
+            />
+            <Button
+              size="icon"
+              variant={requestedFields.includes("pan") ? "secondary" : "outline"}
+              className="absolute right-2 top-7"
+              onClick={() => toggleRequestField("pan")}
+            >
+              <PlusCircle className={`h-4 w-4 ${requestedFields.includes("pan") ? "text-blue-600" : ""}`} />
+            </Button>
+          </div>
+
+          {/* 🔒 Selfie */}
+          <div className="relative">
+            <Label>Selfie Photo</Label>
+            <Input
+              type="file"
+              accept="image/*"
+              disabled={!isAllowed("selfie") && !requestedFields.includes("selfie")}
+              onChange={(e) => setSelectedFiles({ ...selectedFiles, selfie: e.target.files?.[0] || null })}
+            />
+            <Button
+              size="icon"
+              variant={requestedFields.includes("selfie") ? "secondary" : "outline"}
+              className="absolute right-2 top-7"
+              onClick={() => toggleRequestField("selfie")}
+            >
+              <PlusCircle className={`h-4 w-4 ${requestedFields.includes("selfie") ? "text-blue-600" : ""}`} />
+            </Button>
+          </div>
+
+          {/* 🔒 Bank Details (grouped) */}
+          <div className="relative border rounded-md p-3 mt-4">
+            <Label className="font-medium">Bank Details</Label>
+            <div className="grid grid-cols-2 gap-3 mt-2">
+              {[
+                ["Bank Name", "bankName"],
+                ["Account Number", "accountNumber"],
+                ["IFSC Code", "ifsc"],
+                ["Account Holder Name", "accountHolderName"],
+              ].map(([label, key]) => (
+                <div key={key}>
+                  <Label>{label}</Label>
                   <Input
-                    type="file"
-                    accept="image/*"
-                    disabled={!isAllowed(type)}
-                    onChange={(e) => setSelectedFiles({ ...selectedFiles, [type]: e.target.files?.[0] || null })}
+                    value={formData[key]}
+                    onChange={(e) => setFormData({ ...formData, [key]: e.target.value })}
+                    disabled={!isAllowed("bank_details") && !requestedFields.includes("bank_details")}
+                    className={requestedFields.includes("bank_details") ? "border-blue-400 bg-blue-50" : ""}
                   />
-                  {docs.find((d) => d.doc_type === type) && (
-                    <img
-                      src={docs.find((d) => d.doc_type === type)?.storage_path}
-                      alt={type}
-                      className="rounded border shadow-sm mt-2 w-full h-40 object-cover"
-                    />
-                  )}
                 </div>
               ))}
             </div>
+            <Button
+              size="icon"
+              variant={requestedFields.includes("bank_details") ? "secondary" : "outline"}
+              className="absolute right-2 top-2"
+              onClick={() => toggleRequestField("bank_details")}
+            >
+              <PlusCircle
+                className={`h-4 w-4 ${requestedFields.includes("bank_details") ? "text-blue-600" : ""}`}
+              />
+            </Button>
           </div>
 
-          <div className="flex justify-end gap-2 mt-6">
+          {/* 🔒 Email */}
+          <div className="relative">
+            <Label>Email</Label>
+            <Input
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              disabled={!isAllowed("email") && !requestedFields.includes("email")}
+              className={requestedFields.includes("email") ? "border-blue-400 bg-blue-50" : ""}
+            />
+            <Button
+              size="icon"
+              variant={requestedFields.includes("email") ? "secondary" : "outline"}
+              className="absolute right-2 top-7"
+              onClick={() => toggleRequestField("email")}
+            >
+              <PlusCircle className={`h-4 w-4 ${requestedFields.includes("email") ? "text-blue-600" : ""}`} />
+            </Button>
+          </div>
+
+          {requestedFields.length > 0 && (
+            <div className="mt-4">
+              <Label>Reason for Requested Edits</Label>
+              <Input
+                placeholder="Explain why you need to edit these fields"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+              />
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 mt-6">
             <Button onClick={handleSave} disabled={saving}>
               {saving ? <Loader2 className="animate-spin h-4 w-4 mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-              Save / Request Change
+              Save Changes
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleRequestChange}
+              disabled={requestedFields.length === 0 || submittingRequest}
+            >
+              {submittingRequest ? (
+                <Loader2 className="animate-spin h-4 w-4 mr-1" />
+              ) : (
+                <Send className="h-4 w-4 mr-1" />
+              )}
+              Request Change
             </Button>
           </div>
         </CardContent>
