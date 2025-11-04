@@ -14,7 +14,6 @@ import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import Inventory from "./pages/Inventory";
 import SellerProfile from "./pages/SellerProfile";
-import Verifications from "./pages/admin/Verifications";
 import Notifications from "./pages/Notifications";
 import SellerVerification from "./pages/SellerVerification";
 
@@ -36,7 +35,6 @@ const App = () => (
           <Route path="/dashboard" element={<ProtectedRoute requiresKYC><Dashboard /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute requiresKYC><Inventory /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute requiresKYC><SellerProfile /></ProtectedRoute>} />
-            <Route path="/admin/verifications" element={<ProtectedRoute requiresKYC><Verifications /></ProtectedRoute>} />
             <Route path="/notifications" element={<ProtectedRoute requiresKYC><Notifications /></ProtectedRoute>} />
             <Route path="/seller-verification" element={<ProtectedRoute requiresKYC><SellerVerification /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
