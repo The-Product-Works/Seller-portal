@@ -1,3 +1,4 @@
+// src/components/ProtectedRoute.tsx
 import { useEffect, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,15 +19,13 @@ export function ProtectedRoute({ children, requiresKYC = false }: ProtectedRoute
   const location = useLocation();
 
   useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-      }
-    );
+    // Listen to auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      setUser(session?.user ?? null);
+    });
 
-    // Check for existing session
+    // Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
@@ -38,7 +37,6 @@ export function ProtectedRoute({ children, requiresKYC = false }: ProtectedRoute
 
   useEffect(() => {
     if (user && requiresKYC) {
-      // Check KYC status from sellers table
       supabase
         .from("sellers")
         .select("verification_status")
@@ -58,20 +56,33 @@ export function ProtectedRoute({ children, requiresKYC = false }: ProtectedRoute
     );
   }
 
+  // Redirect unauthenticated users to sign in
   if (!user) {
     return <Navigate to="/auth/signin" state={{ from: location }} replace />;
   }
 
-  if (requiresKYC && kycStatus !== "approved" && kycStatus !== "pending") {
-    return <Navigate to="/kyc" state={{ from: location }} replace />;
+  // If KYC is required, enforce status-based routing
+  if (requiresKYC) {
+    if (!kycStatus) {
+      // No KYC record yet → must start KYC
+      return <Navigate to="/kyc" state={{ from: location }} replace />;
+    } else if (kycStatus === "rejected") {
+      // Rejected → must redo KYC
+      return <Navigate to="/kyc" state={{ from: location }} replace />;
+    } else if (kycStatus === "pending") {
+      // Pending → can only access SellerVerification page
+      const current = location.pathname.toLowerCase();
+      if (!current.includes("seller-verification") && !current.includes("kyc")) {
+        return <Navigate to="/seller-verification" state={{ from: location }} replace />;
+      }
+    }
   }
 
+  // Approved or general access
   return (
     <>
       <Navbar />
-      <main className="pt-16">{/* reserve space for fixed navbar (h-16) */}
-        {children}
-      </main>
+      <main className="pt-16">{children}</main>
     </>
   );
 }
