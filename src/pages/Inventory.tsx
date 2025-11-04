@@ -15,32 +15,28 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
-import {
-  Search,
-  Plus,
-  Edit,
-  Trash2,
-  PlusCircle,
-  Edit3,
-  Filter,
-} from "lucide-react";
-import type { Tables } from "@/integrations/supabase/database.types";
+import { Search, Plus, Edit, Trash2, PlusCircle, Edit3, Filter } from "lucide-react";
+// <-- IMPORTANT: correct path to your generated DB types:
+import { Tables, Database } from "@/integrations/supabase/database.type";
 
-// Types (from database.types.ts)
-type ProductRow = Tables["products"]["Row"];
-type ProductInsert = Tables["products"]["Insert"];
-type ProductImageRow = Tables["product_images"]["Row"];
-type ProductCertificateRow = Tables["product_certificates"]["Row"];
-type ProductAllergenRow = Tables["product_allergens"]["Row"];
-type AllergenRow = Tables["allergens"]["Row"];
-type BrandRow = Tables["brands"]["Row"];
-type GlobalProductRow = Tables["global_products"]["Row"];
-type ListingVariantRow = Tables["listing_variants"]["Row"];
-type TransparencyRow = Tables["product_transparency"]["Row"];
+// --- Types (matching your database.types.ts) ---
+type ProductRow = Tables<"products">;
+type ProductInsert = Database["public"]["Tables"]["products"]["Insert"];
+type ProductImageRow = Tables<"product_images">;
+type ProductCertificateRow = Tables<"product_certificates">;
+type ProductAllergenRow = Tables<"product_allergens">;
+type AllergenRow = Tables<"allergens">;
+type BrandRow = Tables<"brands">;
+type GlobalProductRow = Tables<"global_products">;
+type ListingVariantRow = Tables<"listing_variants">;
+type TransparencyRow = Tables<"product_transparency">;
+type ProductImagesInsert = Database["public"]["Tables"]["product_images"]["Insert"];
+type ProductCertificatesInsert = Database["public"]["Tables"]["product_certificates"]["Insert"];
 
+// --- Constants ---
 const STORAGE_BUCKET = "product-images";
-const IMAGE_FOLDER = "product-images"; // -> product-images/product-images/...
-const CERT_FOLDER = "product-certificates"; // -> product-images/product-certificates/...
+const IMAGE_FOLDER = "product-images";
+const CERT_FOLDER = "product-certificates";
 
 export default function Inventory(): JSX.Element {
   const { toast } = useToast();
@@ -58,11 +54,10 @@ export default function Inventory(): JSX.Element {
   const [transparencyMap, setTransparencyMap] = useState<Record<string, TransparencyRow | null>>({});
   const [variantTransparencyMap, setVariantTransparencyMap] = useState<Record<string, TransparencyRow | null>>({});
 
-  // product dialog states
+  // dialogs & editing state
   const [productDialogOpen, setProductDialogOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductRow | null>(null);
 
-  // variant editor
   const [variantDialogOpen, setVariantDialogOpen] = useState(false);
   const [editingVariant, setEditingVariant] = useState<ListingVariantRow | null>(null);
   const [editingVariant_productId, setEditingVariant_productId] = useState<string | null>(null);
@@ -70,19 +65,20 @@ export default function Inventory(): JSX.Element {
   // form states
   const [formGlobalName, setFormGlobalName] = useState("");
   const [formBrand, setFormBrand] = useState("");
+  const [formBrandId, setFormBrandId] = useState<string | null>(null);
   const [formDescription, setFormDescription] = useState("");
   const [formBasePrice, setFormBasePrice] = useState<number | "">("");
   const [formIsDraft, setFormIsDraft] = useState(false);
   const [formIngredients, setFormIngredients] = useState("");
-  const [formAllergensInput, setFormAllergensInput] = useState<string>(""); // comma-separated allergen names
+  const [formAllergensInput, setFormAllergensInput] = useState<string>(""); // csv of allergen names
+
   const [productImageFiles, setProductImageFiles] = useState<File[]>([]);
   const [productCertificateFiles, setProductCertificateFiles] = useState<File[]>([]);
   const [selectedCertTypes, setSelectedCertTypes] = useState<string>("");
 
-  // variantRows used inside product dialog for batch create/edit
   const [variantRows, setVariantRows] = useState<any[]>([]);
 
-  // search & filters
+  // filters
   const [query, setQuery] = useState("");
   const [filterBrand, setFilterBrand] = useState<string | "">("");
   const [priceMin, setPriceMin] = useState<number | "">("");
@@ -92,7 +88,13 @@ export default function Inventory(): JSX.Element {
   const [tab, setTab] = useState<"published" | "drafts">("published");
   const [showFilters, setShowFilters] = useState(false);
 
-  // Load user + data on mount
+  // seller file manager
+  const [sellerFiles, setSellerFiles] = useState<{ path: string; publicUrl: string; updated_at?: string | null }[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+
+  /* -------------------------
+     Init: load user & data
+     ------------------------- */
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -106,6 +108,7 @@ export default function Inventory(): JSX.Element {
         }
         setSellerId(user.id);
         await reloadAllForSeller(user.id);
+        await loadSellerFiles(user.id);
       } catch (err: any) {
         console.error(err);
         toast({ title: "Error", description: "Failed to load inventory", variant: "destructive" });
@@ -116,10 +119,13 @@ export default function Inventory(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  /* -------------------------
+     reloadAllForSeller
+     ------------------------- */
   async function reloadAllForSeller(seller_id: string) {
     setLoading(true);
     try {
-      // brands, global products, allergens
+      // static lists
       const { data: b } = await supabase.from("brands").select("*");
       setBrands(b || []);
       const { data: g } = await supabase.from("global_products").select("*");
@@ -127,12 +133,12 @@ export default function Inventory(): JSX.Element {
       const { data: a } = await supabase.from("allergens").select("*");
       setAllergensList(a || []);
 
-      // products for this seller
+      // products for seller
       const { data: ps } = await supabase.from("products").select("*").eq("seller_id", seller_id).order("created_at", { ascending: false });
       const prodList = ps || [];
       setProducts(prodList);
 
-      // product images and certificates
+      // images & certs for each product
       const imgsMap: Record<string, ProductImageRow[]> = {};
       const certMap: Record<string, ProductCertificateRow[]> = {};
       for (const p of prodList) {
@@ -156,10 +162,9 @@ export default function Inventory(): JSX.Element {
       });
       setListingVariantsMap(lvMap);
 
-      // transparency (listings & variants)
+      // transparency
       let transQuery = supabase.from("product_transparency").select("*");
       if (productIds.length) {
-        // build OR expression for Supabase .or
         const orExpr = productIds.map(id => `listing_id.eq.${id}`).join(",");
         transQuery = transQuery.or(orExpr);
       }
@@ -181,16 +186,16 @@ export default function Inventory(): JSX.Element {
   }
 
   /* -------------------------
-     Utilities: ensure brand/global/allergens + upload
+     Ensure helpers
      ------------------------- */
-
-  async function ensureBrand(name: string) {
-    name = name?.trim();
+  async function ensureBrandByName(name: string | undefined | null) {
     if (!name) return null;
-    const found = brands.find((b) => (b as any).name?.toLowerCase() === name.toLowerCase() || (b as any).brand_name?.toLowerCase() === name.toLowerCase());
+    const trimmed = name.trim();
+    if (!trimmed) return null;
+    const found = brands.find((b) => b.name?.toLowerCase() === trimmed.toLowerCase());
     if (found) return found;
-    const slug = name.toLowerCase().replace(/\s+/g, "-");
-    const { data, error } = await supabase.from("brands").insert([{ name, slug }]).select().single();
+    const slug = trimmed.toLowerCase().replace(/\s+/g, "-");
+    const { data, error } = await supabase.from("brands").insert([{ name: trimmed, slug }]).select().single();
     if (error) {
       console.warn("brand create error", error);
       return null;
@@ -199,13 +204,13 @@ export default function Inventory(): JSX.Element {
     return data;
   }
 
-  async function ensureGlobalProduct(name: string) {
-    name = name?.trim();
-    if (!name) return null;
-    const found = globalProducts.find((g) => g.product_name.toLowerCase() === name.toLowerCase());
+  async function ensureGlobalProduct(name: string, brand_id?: string | null) {
+    const trimmed = name?.trim();
+    if (!trimmed) return null;
+    const found = globalProducts.find((g) => g.product_name.toLowerCase() === trimmed.toLowerCase());
     if (found) return found;
-    const slug = name.toLowerCase().replace(/\s+/g, "-");
-    const { data, error } = await supabase.from("global_products").insert([{ product_name: name, slug, is_active: true }]).select().single();
+    const slug = trimmed.toLowerCase().replace(/\s+/g, "-");
+    const { data, error } = await supabase.from("global_products").insert([{ product_name: trimmed, slug, is_active: true, brand_id }]).select().single();
     if (error) {
       console.warn("global product create error", error);
       return null;
@@ -214,7 +219,6 @@ export default function Inventory(): JSX.Element {
     return data;
   }
 
-  // ensure allergens: returns ids
   async function ensureAllergens(csv: string) {
     const names = csv.split(",").map(s => s.trim()).filter(Boolean);
     const ids: string[] = [];
@@ -233,9 +237,9 @@ export default function Inventory(): JSX.Element {
     return ids;
   }
 
-  // upload file and return public URL
-  // Uses folder inside the bucket (IMAGE_FOLDER or CERT_FOLDER) so final path becomes:
-  // <folder>/<sellerId>/<productId>/<timestamp>_filename.ext
+  /* -------------------------
+     Upload helper
+     ------------------------- */
   async function uploadFile(file: File, productId: string, variantId?: string, folder = IMAGE_FOLDER) {
     if (!sellerId) throw new Error("Not authenticated");
     const base = `${sellerId}/${productId}`;
@@ -247,7 +251,6 @@ export default function Inventory(): JSX.Element {
     return data.publicUrl;
   }
 
-  // small health score heuristic
   function computeHealthScore(ingredientsCsv: string, allergenCount: number) {
     const ingredientsCount = ingredientsCsv ? ingredientsCsv.split(",").map(s => s.trim()).filter(Boolean).length : 0;
     const penalty = Math.min(ingredientsCount * 4, 60) + Math.min(allergenCount * 10, 60);
@@ -255,9 +258,8 @@ export default function Inventory(): JSX.Element {
   }
 
   /* -------------------------
-     Product create/update flow
+     product dialog open
      ------------------------- */
-
   async function openProductDialog(product?: ProductRow) {
     if (product) {
       setEditingProduct(product);
@@ -266,17 +268,22 @@ export default function Inventory(): JSX.Element {
       setFormBasePrice(product.base_price ?? "");
       setFormIsDraft(product.status === "inactive");
 
-      // product images & certs
+      // images & certs
       const { data: imgs } = await supabase.from("product_images").select("*").eq("product_id", product.product_id).order("sort_order", { ascending: true });
       const { data: certs } = await supabase.from("product_certificates").select("*").eq("product_id", product.product_id);
-      setProductImageFiles([]); // keep file list empty; images shown from productImagesMap
+      setProductImageFiles([]);
       setCertificatesMap(prev => ({ ...prev, [product.product_id]: certs || [] }));
+      setProductImagesMap(prev => ({ ...prev, [product.product_id]: imgs || [] }));
 
-      // allergens for product
+      const brandObj = (brands || []).find(b => (b as any).brand_id === (product as any).brand_id);
+      setFormBrand(brandObj ? brandObj.name || "" : "");
+      setFormBrandId((product as any).brand_id ?? null);
+
+      // product allergens
       const { data: pa } = await supabase.from("product_allergens").select("allergens(*)").eq("product_id", product.product_id);
       setFormAllergensInput((pa || []).map((r: any) => r.allergens.name).join(","));
 
-      // load listing_variants of this product
+      // variants
       const { data: lvars } = await supabase.from("listing_variants").select("*").eq("listing_id", product.product_id);
       setVariantRows((lvars || []).map((lv: any) => ({
         listing_variant_id: lv.variant_id,
@@ -304,50 +311,61 @@ export default function Inventory(): JSX.Element {
       setProductCertificateFiles([]);
       setSelectedCertTypes("");
       setVariantRows([]);
+      setFormBrand("");
+      setFormBrandId(null);
     }
     setProductDialogOpen(true);
   }
 
-  // Save product (create or update) with variants, allergens, certs
+  /* -------------------------
+     save product
+     ------------------------- */
   async function handleSaveProduct(publish = false) {
     try {
       setLoading(true);
       if (!sellerId) throw new Error("Not signed in");
 
-      // ensure global product (optional)
-      const global = await ensureGlobalProduct(formGlobalName);
+      // ensure brand/global
+      let brandObj: BrandRow | null = null;
+      if (formBrand) brandObj = await ensureBrandByName(formBrand);
+      const global = formGlobalName ? await ensureGlobalProduct(formGlobalName, brandObj?.brand_id) : null;
 
       let productId: string;
       if (!editingProduct) {
-        const { data: created, error } = await supabase.from("products").insert([{
+        const insertPayload: ProductInsert = {
           seller_id: sellerId,
           title: global?.product_name ?? formGlobalName,
           description: formDescription || null,
-          base_price: formBasePrice || 0,
+          base_price: (formBasePrice === "" ? 0 : (formBasePrice as number)) || 0,
           status: formIsDraft && !publish ? "inactive" : "active",
-        } as any]).select().single();
+        } as any;
+        if (brandObj?.brand_id) (insertPayload as any).brand_id = brandObj.brand_id;
+        if (global?.global_product_id) (insertPayload as any).global_product_id = global.global_product_id;
+        const { data: created, error } = await supabase.from("products").insert([insertPayload]).select().single();
         if (error) throw error;
         productId = created.product_id;
       } else {
         productId = editingProduct.product_id;
-        const { error } = await supabase.from("products").update({
+        const updatePayload: any = {
           description: formDescription || null,
-          base_price: formBasePrice || 0,
+          base_price: (formBasePrice === "" ? 0 : (formBasePrice as number)) || 0,
           status: formIsDraft && !publish ? "inactive" : "active",
           updated_at: new Date().toISOString(),
-        }).eq("product_id", productId);
+        };
+        if (brandObj?.brand_id) updatePayload.brand_id = brandObj.brand_id;
+        if (global?.global_product_id) updatePayload.global_product_id = global.global_product_id;
+        const { error } = await supabase.from("products").update(updatePayload).eq("product_id", productId);
         if (error) throw error;
       }
 
       // Allergens: ensure and link
       const allergenIds = await ensureAllergens(formAllergensInput || "");
-      // remove existing links and re-insert
       await supabase.from("product_allergens").delete().eq("product_id", productId);
       if (allergenIds.length) {
         await supabase.from("product_allergens").insert(allergenIds.map(id => ({ product_id: productId, allergen_id: id })));
       }
 
-      // Certificates upload/insert (split as label||url)
+      // Certificates upload/insert
       if (productCertificateFiles.length) {
         for (let i = 0; i < productCertificateFiles.length; i++) {
           const f = productCertificateFiles[i];
@@ -358,9 +376,8 @@ export default function Inventory(): JSX.Element {
         }
       }
 
-      // product images
+      // product images: delete DB rows then re-insert new ones
       if (productImageFiles.length) {
-        // delete existing first (simple approach) - only delete DB rows; we won't attempt to delete storage files automatically
         await supabase.from("product_images").delete().eq("product_id", productId);
         const urls: string[] = [];
         for (const f of productImageFiles) {
@@ -372,8 +389,7 @@ export default function Inventory(): JSX.Element {
         }
       }
 
-      // handle variantRows:
-      // Each v can be a new row (no listing_variant_id) or existing (listing_variant_id present)
+      // handle variants
       for (const v of variantRows) {
         if (v.listing_variant_id) {
           const updatePayload: any = {
@@ -401,7 +417,7 @@ export default function Inventory(): JSX.Element {
           }
           await supabase.from("listing_variants").update(updatePayload).eq("variant_id", v.listing_variant_id);
         } else {
-          // create product_variants (if you use that table) and listing_variants
+          // create product_variants then listing_variants
           let pv: any = null;
           try {
             const { data: pvd } = await supabase.from("product_variants").insert({
@@ -412,7 +428,6 @@ export default function Inventory(): JSX.Element {
             }).select().single();
             pv = pvd;
           } catch (err) {
-            // non-fatal
             console.warn("product_variants insert warning", err);
           }
 
@@ -459,6 +474,7 @@ export default function Inventory(): JSX.Element {
       setEditingProduct(null);
       setVariantRows([]);
       await reloadAllForSeller(sellerId);
+      await loadSellerFiles(sellerId);
     } catch (err: any) {
       console.error("save product error", err);
       toast({ title: "Error", description: err?.message || "Save failed", variant: "destructive" });
@@ -468,9 +484,8 @@ export default function Inventory(): JSX.Element {
   }
 
   /* -------------------------
-     Variant actions: edit, delete, restock
+     variant actions
      ------------------------- */
-
   function openVariantEditor(variant: ListingVariantRow, productId: string) {
     setEditingVariant(variant);
     setEditingVariant_productId(productId);
@@ -486,12 +501,10 @@ export default function Inventory(): JSX.Element {
       update.updated_at = new Date().toISOString();
 
       if ((payload as any).imageFile) {
-        // use productId if available (fallback to editingVariant.listing_id)
         const listingId = editingVariant.listing_id ?? editingVariant.listing_id;
         const url = await uploadFile((payload as any).imageFile as File, String(listingId), editingVariant.variant_id, IMAGE_FOLDER);
         update.image_url = url;
       }
-      // health score update if needed (we use formIngredients/allergens if available)
       update.health_score = computeHealthScore(formIngredients || "", (formAllergensInput || "").split(",").filter(Boolean).length);
 
       await supabase.from("listing_variants").update(update).eq("variant_id", editingVariant.variant_id);
@@ -499,6 +512,7 @@ export default function Inventory(): JSX.Element {
       setVariantDialogOpen(false);
       setEditingVariant(null);
       await reloadAllForSeller(sellerId!);
+      await loadSellerFiles(sellerId!);
     } catch (err: any) {
       console.error("save variant error", err);
       toast({ title: "Error", description: err?.message || "Variant save failed", variant: "destructive" });
@@ -514,6 +528,7 @@ export default function Inventory(): JSX.Element {
       await supabase.from("listing_variants").delete().eq("variant_id", variantId);
       toast({ title: "Deleted", description: "Variant removed" });
       await reloadAllForSeller(sellerId!);
+      await loadSellerFiles(sellerId!);
     } catch (err: any) {
       console.error(err);
       toast({ title: "Error", description: "Delete failed", variant: "destructive" });
@@ -527,8 +542,13 @@ export default function Inventory(): JSX.Element {
     try {
       setLoading(true);
       await supabase.from("products").delete().eq("product_id", productId);
+      // cleanup DB rows
+      await supabase.from("product_images").delete().eq("product_id", productId);
+      await supabase.from("product_certificates").delete().eq("product_id", productId);
+      await supabase.from("product_allergens").delete().eq("product_id", productId);
       toast({ title: "Deleted", description: "Product removed" });
       await reloadAllForSeller(sellerId!);
+      await loadSellerFiles(sellerId!);
     } catch (err: any) {
       console.error(err);
       toast({ title: "Error", description: "Delete failed", variant: "destructive" });
@@ -537,7 +557,6 @@ export default function Inventory(): JSX.Element {
     }
   }
 
-  // Restock variant using your RPC; fallback to simple update
   async function restockVariant(variantId: string) {
     const input = window.prompt("Enter quantity to add:", "10");
     if (!input) return;
@@ -551,7 +570,6 @@ export default function Inventory(): JSX.Element {
       try {
         await supabase.rpc("increment_listing_variant_stock", { vid: variantId, amount: amt });
       } catch (rpcErr) {
-        // fallback
         const { data: lv } = await supabase.from("listing_variants").select("stock_quantity").eq("variant_id", variantId).single();
         const newQty = (lv?.stock_quantity || 0) + amt;
         await supabase.from("listing_variants").update({ stock_quantity: newQty }).eq("variant_id", variantId);
@@ -567,9 +585,8 @@ export default function Inventory(): JSX.Element {
   }
 
   /* -------------------------
-     Filtering logic
+     filtering
      ------------------------- */
-
   const filteredProducts = useMemo(() => {
     const qLower = query.trim().toLowerCase();
     const minP = priceMin === "" ? undefined : Number(priceMin);
@@ -616,18 +633,13 @@ export default function Inventory(): JSX.Element {
   }, [products, listingVariantsMap, productImagesMap, query, priceMin, priceMax, minStock, onlyInStock, filterBrand, tab]);
 
   /* -------------------------
-     UI
+     allergens helpers
      ------------------------- */
-
-  // helper: add allergen name to formAllergensInput
   function addAllergenToForm(name: string) {
     const list = (formAllergensInput || "").split(",").map(s => s.trim()).filter(Boolean);
-    if (!list.includes(name)) {
-      setFormAllergensInput([...list, name].join(","));
-    }
+    if (!list.includes(name)) setFormAllergensInput([...list, name].join(","));
   }
 
-  // create new allergen inline (seller may create)
   async function createAllergenInline(name: string) {
     if (!name.trim()) return;
     try {
@@ -644,12 +656,92 @@ export default function Inventory(): JSX.Element {
     }
   }
 
+  /* -------------------------
+     seller file manager
+     ------------------------- */
+  async function loadSellerFiles(seller_id: string) {
+    setFilesLoading(true);
+    try {
+      const prefixes = [
+        `${IMAGE_FOLDER}/${seller_id}`,
+        `${CERT_FOLDER}/${seller_id}`,
+      ];
+      const files: { path: string; publicUrl: string; updated_at?: string | null }[] = [];
+
+      // helper that lists a prefix and tries to descend a couple of levels
+      async function listRecursive(prefix: string) {
+        const { data, error } = await supabase.storage.from(STORAGE_BUCKET).list(prefix, { limit: 1000 });
+        if (error) return;
+        if (!data) return;
+        for (const item of data) {
+          const candidate = `${prefix}/${item.name}`;
+          // if item is file-like (has a dot) attempt to treat as file
+          if (item.name.includes(".")) {
+            const { data: pu } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(candidate);
+            files.push({ path: candidate, publicUrl: pu.publicUrl, updated_at: (item as any).updated_at ?? null });
+            continue;
+          }
+          // else try to list deeper
+          const { data: deeper } = await supabase.storage.from(STORAGE_BUCKET).list(candidate, { limit: 1000 }).catch(() => ({ data: null }));
+          if (deeper && deeper.length) {
+            for (const dd of deeper) {
+              const finalPath = `${candidate}/${dd.name}`;
+              const { data: pu2 } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(finalPath);
+              files.push({ path: finalPath, publicUrl: pu2.publicUrl, updated_at: (dd as any).updated_at ?? null });
+            }
+          }
+        }
+      }
+
+      for (const pfx of prefixes) {
+        await listRecursive(pfx);
+      }
+
+      const dedup = Array.from(new Map(files.map(f => [f.path, f])).values());
+      setSellerFiles(dedup);
+    } catch (err) {
+      console.error("loadSellerFiles error", err);
+      toast({ title: "Error", description: "Failed to load seller files", variant: "destructive" });
+    } finally {
+      setFilesLoading(false);
+    }
+  }
+
+  async function deleteStorageFile(path: string) {
+    if (!window.confirm("Delete this file? This will remove it from storage. DB image rows referencing it will also be removed if matched.")) return;
+    try {
+      setFilesLoading(true);
+      const { error: rmErr } = await supabase.storage.from(STORAGE_BUCKET).remove([path]);
+      if (rmErr) throw rmErr;
+
+      const { data: pu } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+      const publicUrl = pu.publicUrl;
+
+      await supabase.from("product_images").delete().eq("url", publicUrl);
+      await supabase.from("product_certificates").delete().like("certificate", `%${publicUrl}%`);
+
+      toast({ title: "Deleted", description: "File removed" });
+      if (sellerId) {
+        await loadSellerFiles(sellerId);
+        await reloadAllForSeller(sellerId);
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast({ title: "Error", description: err?.message || "Delete failed", variant: "destructive" });
+    } finally {
+      setFilesLoading(false);
+    }
+  }
+
+  /* -------------------------
+     UI rendering
+     ------------------------- */
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Inventory Management</h1>
-          <p className="text-sm text-muted-foreground">Manage products, variants, certificates & transparency</p>
+          <p className="text-sm text-muted-foreground">Manage products, variants, certificates & images</p>
         </div>
 
         <div className="flex gap-2 items-center">
@@ -676,7 +768,7 @@ export default function Inventory(): JSX.Element {
                     <Label>Brand</Label>
                     <Input list="brand-list" value={formBrand} onChange={(e) => setFormBrand(e.target.value)} placeholder="Select or type to create brand" />
                     <datalist id="brand-list">
-                      {brands.map((b) => <option key={(b as any).brand_id} value={(b as any).name || (b as any).brand_name} />)}
+                      {brands.map((b) => <option key={b.brand_id} value={b.name} />)}
                     </datalist>
                   </div>
                 </div>
@@ -689,7 +781,7 @@ export default function Inventory(): JSX.Element {
                 <div className="grid md:grid-cols-3 gap-3">
                   <div>
                     <Label>Base Price (₹)</Label>
-                    <Input type="number" value={formBasePrice as any} onChange={(e) => setFormBasePrice(e.target.value === "" ? "" : Number(e.target.value))} />
+                    <Input type="number" value={formBasePrice as any} onChange={(e) => setFormBasePrice(e.target.value === "" ? "" : Number(e.target.value))} placeholder="0.00" />
                   </div>
                   <div>
                     <Label>Ingredients</Label>
@@ -789,7 +881,7 @@ export default function Inventory(): JSX.Element {
         <button className={`px-4 py-2 rounded ${tab === "drafts" ? "bg-primary text-white" : "bg-muted"}`} onClick={() => setTab("drafts")}>Drafts</button>
       </div>
 
-      {/* Filters area (collapsible) */}
+      {/* Filters */}
       {showFilters && (
         <Card>
           <CardHeader className="flex items-center justify-between">
@@ -807,7 +899,7 @@ export default function Inventory(): JSX.Element {
                 <Label>Only in stock</Label>
               </div>
               <Input className="w-40" list="brand-list" placeholder="Filter by brand" value={filterBrand as any} onChange={(e) => setFilterBrand(e.target.value)} />
-              <datalist id="brand-list">{brands.map((b) => <option key={(b as any).brand_id} value={(b as any).name || (b as any).brand_name} />)}</datalist>
+              <datalist id="brand-list">{brands.map((b) => <option key={b.brand_id} value={b.name} />)}</datalist>
             </div>
           </CardHeader>
         </Card>
@@ -829,7 +921,7 @@ export default function Inventory(): JSX.Element {
                         <div>
                           <h3 className="font-semibold">{product.title}</h3>
                           <div className="text-xs text-muted-foreground">{product.description}</div>
-                          <div className="text-xs text-muted-foreground">Brand: {(product as any).brand_name || (product as any).brand || formBrand || "—"}</div>
+                          <div className="text-xs text-muted-foreground">Brand: {(product as any).brand_name || (product as any).brand || "—"}</div>
                         </div>
 
                         <div className="flex gap-1">
@@ -866,15 +958,12 @@ export default function Inventory(): JSX.Element {
                           ))}
                         </div>
 
-                        {/* Certificate & transparency quick view */}
                         <div className="mt-3 text-xs">
                           <div>Certificates: {(certificatesMap[product.product_id] || []).map(c => c.certificate).join(", ") || "—"}</div>
                           <div>Transparency: {transparencyMap[product.product_id] ? "Available" : "—"}</div>
                         </div>
 
-                        {/* Allergens shown as tags on card */}
                         <div className="mt-2 flex gap-2 flex-wrap text-xs">
-                          {/* We intentionally avoid extra query cost here; the UI can show allergens by loading product_allergens on openProductDialog */}
                           <button
                             type="button"
                             className="inline-flex items-center gap-1 px-2 py-1 rounded border text-xs"
@@ -886,12 +975,53 @@ export default function Inventory(): JSX.Element {
                             <Plus className="h-3 w-3" /> Add allergen
                           </button>
                         </div>
-
                       </div>
                     </CardContent>
                   </Card>
                 ))
               )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Seller File Manager */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between w-full">
+            <div>
+              <h3 className="font-semibold">Seller File Manager</h3>
+              <div className="text-xs text-muted-foreground">All files under your product-images and product-certificates folders. Click to view or delete.</div>
+            </div>
+            <div className="flex gap-2 items-center">
+              <Button onClick={() => { if (sellerId) loadSellerFiles(sellerId); }}>Refresh</Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {filesLoading ? (
+            <div className="text-center py-6">Loading files...</div>
+          ) : sellerFiles.length === 0 ? (
+            <div className="text-sm text-muted-foreground p-4">No files found.</div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {sellerFiles.map((f) => (
+                <div key={f.path} className="border rounded overflow-hidden p-2 flex flex-col">
+                  <div className="aspect-video bg-black/5 overflow-hidden flex items-center justify-center">
+                    {/\.(jpe?g|png|gif|webp|svg)$/i.test(f.path) ? (
+                      // eslint-disable-next-line jsx-a11y/img-redundant-alt
+                      <img src={f.publicUrl} alt={`file ${f.path}`} className="object-cover w-full h-full" />
+                    ) : (
+                      <div className="text-xs text-muted-foreground p-4">File: {f.path.split("/").pop()}</div>
+                    )}
+                  </div>
+                  <div className="flex-1 mt-2 text-xs break-words">{f.path}</div>
+                  <div className="flex gap-2 mt-2">
+                    <Button size="sm" onClick={() => window.open(f.publicUrl, "_blank")}>View</Button>
+                    <Button size="sm" variant="destructive" onClick={() => deleteStorageFile(f.path)}>Delete</Button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </CardContent>
@@ -952,15 +1082,15 @@ function VariantEditor({ variant, productId, onCancel, onSave }: {
 
   return (
     <div className="space-y-3">
-      <div><Label>SKU</Label><Input value={sku} onChange={(e) => setSku(e.target.value)} /></div>
-      <div><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} /></div>
+      <div><Label>SKU</Label><Input value={sku} onChange={(e) => setSku(e.target.value)} placeholder="SKU" /></div>
+      <div><Label>Name</Label><Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Variant name" /></div>
       <div className="grid grid-cols-2 gap-2">
-        <div><Label>Price</Label><Input type="number" value={price as any} onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))} /></div>
-        <div><Label>Stock</Label><Input type="number" value={stock as any} onChange={(e) => setStock(e.target.value === "" ? "" : Number(e.target.value))} /></div>
+        <div><Label>Price</Label><Input type="number" value={price as any} onChange={(e) => setPrice(e.target.value === "" ? "" : Number(e.target.value))} placeholder="0.00" /></div>
+        <div><Label>Stock</Label><Input type="number" value={stock as any} onChange={(e) => setStock(e.target.value === "" ? "" : Number(e.target.value))} placeholder="0" /></div>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <div><Label>Size</Label><Input value={size} onChange={(e) => setSize(e.target.value)} /></div>
-        <div><Label>Flavor</Label><Input value={flavor} onChange={(e) => setFlavor(e.target.value)} /></div>
+        <div><Label>Size</Label><Input value={size} onChange={(e) => setSize(e.target.value)} placeholder="Size" /></div>
+        <div><Label>Flavor</Label><Input value={flavor} onChange={(e) => setFlavor(e.target.value)} placeholder="Flavor" /></div>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <div><Label>MFG Date</Label><Input type="date" value={mfg} onChange={(e) => setMfg(e.target.value)} /></div>
