@@ -1,5 +1,5 @@
 // Comprehensive Inventory Management System
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -25,7 +25,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Edit, Trash2, Plus, Filter, Search, Package, X } from "lucide-react";
-import { FilterOptions, ListingWithDetails } from "@/types/inventory.types";
+import { FilterOptions, ListingWithDetails, VariantForm } from "@/types/inventory.types";
 import AddProductDialog from "@/components/AddProductDialog";
 import {
   Sheet,
@@ -44,7 +44,7 @@ export default function Inventory() {
 
   // Dialog state
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [editingListing, setEditingListing] = useState<any>(null);
+  const [editingListing, setEditingListing] = useState<ListingWithDetails | null>(null);
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -72,11 +72,24 @@ export default function Inventory() {
   const [tempStockMin, setTempStockMin] = useState(0);
   const [tempStockMax, setTempStockMax] = useState(1000);
 
+  const loadUserAndListings = useCallback(async () => {
+    setLoading(true);
+    const { data: auth } = await supabase.auth.getUser();
+    const user = auth?.user;
+    if (!user) {
+      toast({ title: "Not signed in", variant: "destructive" });
+      setLoading(false);
+      return;
+    }
+    setSellerId(user.id);
+    await loadListings(user.id);
+  }, [toast]);
+
   useEffect(() => {
     loadUserAndListings();
-  }, []);
+  }, [loadUserAndListings]);
 
-  async function loadUserAndListings() {
+  async function loadUserAndListingsOld() {
     setLoading(true);
     const { data: auth } = await supabase.auth.getUser();
     const user = auth?.user;
@@ -114,7 +127,7 @@ export default function Inventory() {
       return;
     }
 
-    setListings((data as any) || []);
+    setListings((data as ListingWithDetails[]) || []);
   }
 
   async function handleDeleteListing(listingId: string) {
@@ -131,10 +144,11 @@ export default function Inventory() {
 
       toast({ title: "Product deleted successfully" });
       await loadListings(sellerId);
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       toast({
         title: "Error deleting product",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -157,10 +171,11 @@ export default function Inventory() {
 
       toast({ title: "Variant deleted successfully" });
       await loadListings(sellerId);
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       toast({
         title: "Error deleting variant",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -234,7 +249,7 @@ export default function Inventory() {
             ?.toLowerCase()
             .includes(search);
         } else if (filters.searchType === "variant") {
-          return listing.listing_variants?.some((v: any) =>
+          return listing.listing_variants?.some((v: VariantForm) =>
             v.variant_name?.toLowerCase().includes(search)
           );
         }
@@ -310,7 +325,7 @@ export default function Inventory() {
             <div className="flex-1 min-w-[200px] flex gap-2">
               <Select
                 value={filters.searchType}
-                onValueChange={(value: any) =>
+                onValueChange={(value: "name" | "brand" | "variant") =>
                   setFilters({ ...filters, searchType: value })
                 }
               >
@@ -330,7 +345,7 @@ export default function Inventory() {
                   className="pl-10"
                   placeholder={`Search by ${filters.searchType}...`}
                   value={filters.searchTerm}
-                  onChange={(e) =>
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
                     setFilters({ ...filters, searchTerm: e.target.value })
                   }
                 />
@@ -360,10 +375,10 @@ export default function Inventory() {
                     <Label>Status</Label>
                     <Select
                       value={filters.status || "all"}
-                      onValueChange={(value) =>
+                      onValueChange={(value: string) =>
                         setFilters({
                           ...filters,
-                          status: value === "all" ? undefined : (value as any),
+                          status: value === "all" ? undefined : (value as "draft" | "active" | "inactive"),
                         })
                       }
                     >
@@ -388,7 +403,7 @@ export default function Inventory() {
                         max={10000}
                         step={100}
                         value={[tempPriceMin, tempPriceMax]}
-                        onValueChange={([min, max]) => {
+                        onValueChange={([min, max]: [number, number]) => {
                           setTempPriceMin(min);
                           setTempPriceMax(max);
                         }}
@@ -409,7 +424,7 @@ export default function Inventory() {
                         max={100}
                         step={5}
                         value={[tempDiscountMin, tempDiscountMax]}
-                        onValueChange={([min, max]) => {
+                        onValueChange={([min, max]: [number, number]) => {
                           setTempDiscountMin(min);
                           setTempDiscountMax(max);
                         }}
@@ -430,7 +445,7 @@ export default function Inventory() {
                         max={1000}
                         step={10}
                         value={[tempStockMin, tempStockMax]}
-                        onValueChange={([min, max]) => {
+                        onValueChange={([min, max]: [number, number]) => {
                           setTempStockMin(min);
                           setTempStockMax(max);
                         }}
@@ -584,7 +599,7 @@ export default function Inventory() {
                     {variantCount > 0 && (
                       <div className="mt-3 pt-3 border-t space-y-2">
                         <p className="text-sm font-medium">Variants:</p>
-                        {listing.listing_variants?.map((variant: any) => (
+                        {listing.listing_variants?.map((variant: VariantForm) => (
                           <div
                             key={variant.variant_id}
                             className="flex justify-between items-center text-sm p-2 bg-muted rounded"
