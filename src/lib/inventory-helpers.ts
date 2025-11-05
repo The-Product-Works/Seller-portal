@@ -177,15 +177,24 @@ export async function createAllergen(name: string, description?: string) {
 
 /**
  * Upload file to storage
+ * NOTE: Uses auth.uid() for path to comply with storage RLS policies
  */
 export async function uploadFile(
   file: File,
-  sellerId: string,
+  sellerId: string, // Not used for path, kept for backward compatibility
   folder: "product-images" | "certificates" | "trust-certificates"
 ) {
+  // Get authenticated user's ID for storage path (required by RLS policies)
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  
+  if (authError || !user) {
+    throw new Error("User must be authenticated to upload files");
+  }
+
   const fileExt = file.name.split(".").pop();
   const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-  const filePath = `${sellerId}/${folder}/${fileName}`;
+  // Use auth.uid() instead of sellerId to match storage RLS policies
+  const filePath = `${user.id}/${folder}/${fileName}`;
 
   const { error: uploadError } = await supabase.storage
     .from("product")

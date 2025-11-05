@@ -30,6 +30,7 @@ import {
   getAllGlobalProducts,
   getAllBrands,
 } from "@/lib/inventory-helpers";
+import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import { ProductForm, VariantForm, TransparencyForm } from "@/types/inventory.types";
 import { supabase } from "@/integrations/supabase/client";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
@@ -115,8 +116,18 @@ export default function AddProductDialog({
   }, []);
 
   async function loadInitialData() {
-    const { data: auth } = await supabase.auth.getUser();
-    if (auth?.user) setSellerId(auth.user.id);
+    const sellerId = await getAuthenticatedSellerId();
+    
+    if (!sellerId) {
+      toast({ 
+        title: "Seller profile not found", 
+        description: "Please complete your seller onboarding first.",
+        variant: "destructive" 
+      });
+      return;
+    }
+    
+    setSellerId(sellerId);
     
     const [allergensData, categoriesData, allBrands, allProducts] = await Promise.all([
       getAllergens(),
@@ -320,6 +331,8 @@ export default function AddProductDialog({
       // Create seller listing
       const listingSlug = generateSlug(`${selectedGlobalProduct.product_name}-${sellerId}`);
       
+      console.log("Attempting to insert listing with seller_id:", sellerId);
+      
       const { data: listing, error: listingError } = await supabase
         .from("seller_product_listings")
         .insert({
@@ -343,7 +356,10 @@ export default function AddProductDialog({
         .select()
         .single();
 
-      if (listingError) throw listingError;
+      if (listingError) {
+        console.error("❌ RLS ERROR on seller_product_listings:", listingError);
+        throw new Error(`Failed to create listing: ${listingError.message} (Code: ${listingError.code})`);
+      }
 
       // Insert variants
       for (const variant of variants) {
@@ -366,25 +382,38 @@ export default function AddProductDialog({
             is_available: variant.is_available,
           });
 
-        if (variantError) throw variantError;
+        if (variantError) {
+          console.error("❌ RLS ERROR on listing_variants:", variantError);
+          throw new Error(`Failed to create variant: ${variantError.message} (Code: ${variantError.code})`);
+        }
       }
 
       // Insert images
       for (let i = 0; i < uploadedImages.length; i++) {
-        await supabase.from("listing_images").insert({
+        const { error: imageError } = await supabase.from("listing_images").insert({
           listing_id: listing.listing_id,
           image_url: uploadedImages[i],
           is_primary: i === 0,
           sort_order: i,
         });
+        
+        if (imageError) {
+          console.error("❌ RLS ERROR on listing_images:", imageError);
+          throw new Error(`Failed to upload image: ${imageError.message} (Code: ${imageError.code})`);
+        }
       }
 
       // Insert transparency data
       if (transparency.manufacturing_info || transparency.testing_info) {
-        await supabase.from("product_transparency").insert({
+        const { error: transparencyError } = await supabase.from("product_transparency").insert({
           listing_id: listing.listing_id,
           ...transparency,
         });
+        
+        if (transparencyError) {
+          console.error("❌ RLS ERROR on product_transparency:", transparencyError);
+          throw new Error(`Failed to save transparency data: ${transparencyError.message} (Code: ${transparencyError.code})`);
+        }
       }
 
       // Link allergens

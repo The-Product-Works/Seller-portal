@@ -1,6 +1,7 @@
 // Comprehensive Inventory Management System
 import React, { useEffect, useState, useMemo, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -108,15 +109,22 @@ export default function Inventory() {
 
   const loadUserAndListings = useCallback(async () => {
     setLoading(true);
-    const { data: auth } = await supabase.auth.getUser();
-    const user = auth?.user;
-    if (!user) {
-      toast({ title: "Not signed in", variant: "destructive" });
+    
+    const sellerId = await getAuthenticatedSellerId();
+    
+    if (!sellerId) {
+      toast({ 
+        title: "Seller profile not found", 
+        description: "Please complete your seller onboarding first.",
+        variant: "destructive" 
+      });
       setLoading(false);
       return;
     }
-    setSellerId(user.id);
-    await loadListings(user.id);
+    
+    setSellerId(sellerId);
+    await loadListings(sellerId);
+    setLoading(false);
   }, [toast, loadListings]);
 
   useEffect(() => {

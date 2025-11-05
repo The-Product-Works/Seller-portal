@@ -48,10 +48,10 @@ const kycSchema = z.object({
 // ✅ Business types (match EXACTLY Supabase enum)
 const BUSINESS_TYPES = [
   { label: "Individual", value: "individual" },
-  { label: "Sole Proprietorship", value: "sole_proprietorship" },
+  { label: "Sole Proprietorship", value: "proprietorship" },
   { label: "Partnership", value: "partnership" },
-  { label: "Private Limited", value: "private_limited" },
-  { label: "Public Limited", value: "public_limited" },
+  { label: "Private Limited", value: "private_ltd" },
+  { label: "Public Limited", value: "public_ltd" },
   { label: "LLP", value: "llp" },
   { label: "Other", value: "other" },
 ];
