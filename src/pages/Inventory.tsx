@@ -27,6 +27,7 @@ import {
 import { Edit, Trash2, Plus, Filter, Search, Package, X } from "lucide-react";
 import { FilterOptions, ListingWithDetails, VariantForm } from "@/types/inventory.types";
 import AddProductDialog from "@/components/AddProductDialog";
+import RestockDialog from "@/components/RestockDialog";
 import {
   Sheet,
   SheetContent,
@@ -53,6 +54,12 @@ export default function Inventory() {
     name: string;
   } | null>(null);
 
+  // Restock dialog
+  const [restockTarget, setRestockTarget] = useState<{
+    variant: VariantForm;
+    listingId: string;
+  } | null>(null);
+
   // Filters
   const [filters, setFilters] = useState<FilterOptions>({
     searchTerm: "",
@@ -72,38 +79,7 @@ export default function Inventory() {
   const [tempStockMin, setTempStockMin] = useState(0);
   const [tempStockMax, setTempStockMax] = useState(1000);
 
-  const loadUserAndListings = useCallback(async () => {
-    setLoading(true);
-    const { data: auth } = await supabase.auth.getUser();
-    const user = auth?.user;
-    if (!user) {
-      toast({ title: "Not signed in", variant: "destructive" });
-      setLoading(false);
-      return;
-    }
-    setSellerId(user.id);
-    await loadListings(user.id);
-  }, [toast]);
-
-  useEffect(() => {
-    loadUserAndListings();
-  }, [loadUserAndListings]);
-
-  async function loadUserAndListingsOld() {
-    setLoading(true);
-    const { data: auth } = await supabase.auth.getUser();
-    const user = auth?.user;
-    if (!user) {
-      toast({ title: "Not signed in", variant: "destructive" });
-      setLoading(false);
-      return;
-    }
-    setSellerId(user.id);
-    await loadListings(user.id);
-    setLoading(false);
-  }
-
-  async function loadListings(seller_id: string) {
+  const loadListings = useCallback(async (seller_id: string) => {
     const { data, error } = await supabase
       .from("seller_product_listings")
       .select(
@@ -128,7 +104,24 @@ export default function Inventory() {
     }
 
     setListings((data as ListingWithDetails[]) || []);
-  }
+  }, [toast]);
+
+  const loadUserAndListings = useCallback(async () => {
+    setLoading(true);
+    const { data: auth } = await supabase.auth.getUser();
+    const user = auth?.user;
+    if (!user) {
+      toast({ title: "Not signed in", variant: "destructive" });
+      setLoading(false);
+      return;
+    }
+    setSellerId(user.id);
+    await loadListings(user.id);
+  }, [toast, loadListings]);
+
+  useEffect(() => {
+    loadUserAndListings();
+  }, [loadUserAndListings]);
 
   async function handleDeleteListing(listingId: string) {
     if (!sellerId) return;
@@ -610,19 +603,33 @@ export default function Inventory() {
                                 ₹{variant.price} • Stock: {variant.stock_quantity}
                               </p>
                             </div>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() =>
-                                setDeleteTarget({
-                                  type: "variant",
-                                  id: variant.variant_id,
-                                  name: variant.variant_name,
-                                })
-                              }
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  setRestockTarget({
+                                    variant: variant,
+                                    listingId: listing.listing_id,
+                                  })
+                                }
+                              >
+                                Restock
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  setDeleteTarget({
+                                    type: "variant",
+                                    id: variant.variant_id || "",
+                                    name: variant.variant_name,
+                                  })
+                                }
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -644,6 +651,19 @@ export default function Inventory() {
         }}
         editingProduct={editingListing}
       />
+
+      {/* Restock Dialog */}
+      {restockTarget && (
+        <RestockDialog
+          open={!!restockTarget}
+          onOpenChange={(open) => !open && setRestockTarget(null)}
+          onSuccess={() => {
+            if (sellerId) loadListings(sellerId);
+          }}
+          variant={restockTarget.variant}
+          listingId={restockTarget.listingId}
+        />
+      )}
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog

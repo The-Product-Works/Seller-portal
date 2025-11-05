@@ -27,6 +27,8 @@ import {
   getCategories,
   calculateHealthScore,
   generateSlug,
+  getAllGlobalProducts,
+  getAllBrands,
 } from "@/lib/inventory-helpers";
 import { ProductForm, VariantForm, TransparencyForm } from "@/types/inventory.types";
 import { supabase } from "@/integrations/supabase/client";
@@ -34,11 +36,34 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 
+interface Brand {
+  brand_id: string;
+  name: string;
+  logo_url?: string;
+}
+
+interface GlobalProduct {
+  global_product_id: string;
+  product_name: string;
+  brand_id: string;
+  brands?: { name: string };
+}
+
+interface Category {
+  category_id: string;
+  name: string;
+}
+
+interface Allergen {
+  allergen_id: string;
+  name: string;
+}
+
 interface AddProductDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
-  editingProduct?: any;
+  editingProduct?: unknown;
 }
 
 export default function AddProductDialog({
@@ -53,21 +78,21 @@ export default function AddProductDialog({
   
   // Form state
   const [globalProductSearch, setGlobalProductSearch] = useState("");
-  const [globalProducts, setGlobalProducts] = useState<any[]>([]);
-  const [selectedGlobalProduct, setSelectedGlobalProduct] = useState<any>(null);
+  const [globalProducts, setGlobalProducts] = useState<GlobalProduct[]>([]);
+  const [selectedGlobalProduct, setSelectedGlobalProduct] = useState<GlobalProduct | null>(null);
   
   const [brandSearch, setBrandSearch] = useState("");
-  const [brands, setBrands] = useState<any[]>([]);
-  const [selectedBrand, setSelectedBrand] = useState<any>(null);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   
-  const [categories, setCategories] = useState<any[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   
   const [sellerTitle, setSellerTitle] = useState("");
   const [sellerDescription, setSellerDescription] = useState("");
   const [sellerIngredients, setSellerIngredients] = useState("");
   
-  const [allergens, setAllergens] = useState<any[]>([]);
+  const [allergens, setAllergens] = useState<Allergen[]>([]);
   const [selectedAllergens, setSelectedAllergens] = useState<string[]>([]);
   const [newAllergenName, setNewAllergenName] = useState("");
   
@@ -93,13 +118,17 @@ export default function AddProductDialog({
     const { data: auth } = await supabase.auth.getUser();
     if (auth?.user) setSellerId(auth.user.id);
     
-    const [allergensData, categoriesData] = await Promise.all([
+    const [allergensData, categoriesData, allBrands, allProducts] = await Promise.all([
       getAllergens(),
       getCategories(),
+      getAllBrands(),
+      getAllGlobalProducts(),
     ]);
     
     setAllergens(allergensData || []);
     setCategories(categoriesData || []);
+    setBrands(allBrands || []);
+    setGlobalProducts(allProducts || []);
   }
 
   async function handleGlobalProductSearch(value: string) {
@@ -151,10 +180,11 @@ export default function AddProductDialog({
       );
       setSelectedGlobalProduct(newProduct);
       toast({ title: "Global product created successfully" });
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       toast({
         title: "Error creating product",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     }
@@ -170,10 +200,11 @@ export default function AddProductDialog({
       const newBrand = await createBrand(brandSearch);
       setSelectedBrand(newBrand);
       toast({ title: "Brand created successfully" });
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       toast({
         title: "Error creating brand",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     }
@@ -188,8 +219,9 @@ export default function AddProductDialog({
       setSelectedAllergens([...selectedAllergens, newAllergen.allergen_id]);
       setNewAllergenName("");
       toast({ title: "Allergen added" });
-    } catch (error: any) {
-      toast({ title: "Error adding allergen", description: error.message, variant: "destructive" });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      toast({ title: "Error adding allergen", description: errorMessage, variant: "destructive" });
     }
   }
 
@@ -212,7 +244,7 @@ export default function AddProductDialog({
     setVariants(variants.filter((_, i) => i !== index));
   }
 
-  function updateVariant(index: number, field: keyof VariantForm, value: any) {
+  function updateVariant(index: number, field: keyof VariantForm, value: string | number | boolean | Record<string, unknown> | null | undefined) {
     const updated = [...variants];
     updated[index] = { ...updated[index], [field]: value };
     setVariants(updated);
@@ -228,9 +260,29 @@ export default function AddProductDialog({
       toast({ title: "Please select or create a global product", variant: "destructive" });
       return;
     }
+    
+    if (!selectedBrand) {
+      toast({ title: "Please select or create a brand", variant: "destructive" });
+      return;
+    }
 
     if (variants.length === 0) {
       toast({ title: "Please add at least one variant", variant: "destructive" });
+      return;
+    }
+
+    if (!sellerDescription.trim()) {
+      toast({ title: "Description is required", variant: "destructive" });
+      return;
+    }
+
+    // Ensure global product exists with correct brand
+    if (selectedGlobalProduct.brand_id !== selectedBrand.brand_id) {
+      toast({ 
+        title: "Brand mismatch", 
+        description: "Please create a new product or select matching brand",
+        variant: "destructive" 
+      });
       return;
     }
 
@@ -336,21 +388,25 @@ export default function AddProductDialog({
       }
 
       // Link allergens
+      // Note: listing_allergens table needs to be added to database schema
+      /*
       for (const allergenId of selectedAllergens) {
         await supabase.from("listing_allergens").insert({
           listing_id: listing.listing_id,
           allergen_id: allergenId,
         });
       }
+      */
 
       toast({ title: `Product ${status === "draft" ? "saved as draft" : "published"} successfully` });
       onSuccess();
       onOpenChange(false);
       resetForm();
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       toast({
         title: "Error saving product",
-        description: error.message,
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -394,89 +450,91 @@ export default function AddProductDialog({
             <div className="space-y-2">
               <Label>Brand *</Label>
               <div className="flex gap-2">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start">
-                      {selectedBrand ? selectedBrand.name : "Search brand..."}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-full p-0">
-                    <Command>
-                      <CommandInput
-                        placeholder="Search brand..."
-                        value={brandSearch}
-                        onValueChange={handleBrandSearch}
-                      />
-                      <CommandEmpty>
-                        <div className="p-4 space-y-2">
-                          <p className="text-sm text-muted-foreground">Brand not found</p>
-                          <Button size="sm" onClick={handleCreateBrand} className="w-full">
-                            Create "{brandSearch}"
-                          </Button>
-                        </div>
-                      </CommandEmpty>
-                      <CommandGroup>
-                        {brands.map((brand) => (
-                          <CommandItem
-                            key={brand.brand_id}
-                            onSelect={() => setSelectedBrand(brand)}
-                          >
-                            {brand.name}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <Select 
+                  value={selectedBrand?.brand_id || ""} 
+                  onValueChange={(value) => {
+                    const brand = brands.find(b => b.brand_id === value);
+                    setSelectedBrand(brand || null);
+                  }}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select a brand" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {brands.map((brand) => (
+                      <SelectItem key={brand.brand_id} value={brand.brand_id}>
+                        {brand.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={() => {
+                    const newBrandName = prompt("Enter new brand name:");
+                    if (newBrandName) {
+                      setBrandSearch(newBrandName);
+                      handleCreateBrand();
+                    }
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
+              {selectedBrand && (
+                <p className="text-xs text-muted-foreground">
+                  Selected: {selectedBrand.name}
+                </p>
+              )}
             </div>
 
             {/* Global Product Selection */}
             <div className="space-y-2">
               <Label>Global Product Name *</Label>
               <div className="flex gap-2">
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" className="w-full justify-start">
-                      {selectedGlobalProduct
-                        ? selectedGlobalProduct.product_name
-                        : "Search product..."}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-full p-0">
-                    <Command>
-                      <CommandInput
-                        placeholder="Search product..."
-                        value={globalProductSearch}
-                        onValueChange={handleGlobalProductSearch}
-                      />
-                      <CommandEmpty>
-                        <div className="p-4 space-y-2">
-                          <p className="text-sm text-muted-foreground">Product not found</p>
-                          <Button
-                            size="sm"
-                            onClick={handleCreateGlobalProduct}
-                            className="w-full"
-                            disabled={!selectedBrand}
-                          >
-                            Create "{globalProductSearch}"
-                          </Button>
-                        </div>
-                      </CommandEmpty>
-                      <CommandGroup>
-                        {globalProducts.map((product) => (
-                          <CommandItem
-                            key={product.global_product_id}
-                            onSelect={() => setSelectedGlobalProduct(product)}
-                          >
-                            {product.product_name}
-                          </CommandItem>
-                        ))}
-                      </CommandGroup>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
+                <Select 
+                  value={selectedGlobalProduct?.global_product_id || ""} 
+                  onValueChange={(value) => {
+                    const product = globalProducts.find(p => p.global_product_id === value);
+                    setSelectedGlobalProduct(product || null);
+                  }}
+                  disabled={!selectedBrand}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder={selectedBrand ? "Select a product" : "Select brand first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {globalProducts
+                      .filter(p => !selectedBrand || p.brand_id === selectedBrand.brand_id)
+                      .map((product) => (
+                        <SelectItem key={product.global_product_id} value={product.global_product_id}>
+                          {product.product_name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  disabled={!selectedBrand}
+                  onClick={() => {
+                    if (!selectedBrand) return;
+                    const newProductName = prompt("Enter new product name:");
+                    if (newProductName) {
+                      setGlobalProductSearch(newProductName);
+                      handleCreateGlobalProduct();
+                    }
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
+              {selectedGlobalProduct && (
+                <p className="text-xs text-muted-foreground">
+                  Selected: {selectedGlobalProduct.product_name}
+                </p>
+              )}
             </div>
 
             {/* Category */}

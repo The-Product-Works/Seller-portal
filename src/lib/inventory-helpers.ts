@@ -50,6 +50,20 @@ export async function searchGlobalProducts(searchTerm: string) {
 }
 
 /**
+ * Get all global products
+ */
+export async function getAllGlobalProducts() {
+  const { data, error } = await supabase
+    .from("global_products")
+    .select("global_product_id, product_name, brand_id, brands(name)")
+    .eq("is_active", true)
+    .order("product_name", { ascending: true });
+
+  if (error) throw error;
+  return data;
+}
+
+/**
  * Search brands by name
  */
 export async function searchBrands(searchTerm: string) {
@@ -59,6 +73,20 @@ export async function searchBrands(searchTerm: string) {
     .ilike("name", `%${searchTerm}%`)
     .eq("is_active", true)
     .limit(10);
+
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Get all brands
+ */
+export async function getAllBrands() {
+  const { data, error } = await supabase
+    .from("brands")
+    .select("brand_id, name, logo_url")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
 
   if (error) throw error;
   return data;
