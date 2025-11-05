@@ -150,10 +150,10 @@ Add the new inventory page to your router:
 
 ```tsx
 // In your router file (e.g., App.tsx or routes)
-import NewInventory from "@/pages/NewInventory";
+import Inventory from "@/pages/Inventory";
 
 // Add route
-<Route path="/inventory" element={<NewInventory />} />
+<Route path="/inventory" element={<Inventory />} />
 ```
 
 ### 5. Update Navigation
@@ -175,7 +175,7 @@ src/
 ├── types/
 │   └── inventory.types.ts            # TypeScript types
 └── pages/
-    └── NewInventory.tsx              # Main inventory page
+    └── Inventory.tsx                 # Main inventory page
 
 supabase/
 └── migrations/
