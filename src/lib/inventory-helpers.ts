@@ -223,7 +223,67 @@ export async function getCategories() {
 }
 
 /**
- * Generate unique slug
+ * Generate unique slug for seller product listing
+ */
+export async function generateUniqueSlug(text: string, sellerId: string): Promise<string> {
+  // Create base slug with seller ID to ensure uniqueness across sellers
+  const cleanText = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .substring(0, 80); // Leave room for seller ID and counter
+  
+  // Include seller ID in the base slug for better uniqueness
+  const baseSlug = `${cleanText}-${sellerId.substring(0, 8)}`;
+  
+  // Check if product name exists for this seller
+  const { data: existingProduct, error: checkError } = await supabase
+    .from("seller_product_listings")
+    .select("listing_id")
+    .eq("seller_id", sellerId)
+    .ilike("seller_title", text)
+    .maybeSingle();
+
+  if (checkError) {
+    console.error("Error checking existing product:", checkError);
+  } else if (existingProduct) {
+    throw new Error("A product with this name already exists in your inventory");
+  }
+
+  // Check if slug already exists (globally)
+  let slug = baseSlug;
+  let counter = 1;
+  
+  while (counter <= 100) {
+    const { data, error } = await supabase
+      .from("seller_product_listings")
+      .select("listing_id")
+      .eq("seller_id", sellerId)  // Only check for current seller's products
+      .eq("slug", slug)
+      .maybeSingle(); // Use maybeSingle to avoid errors when no rows found
+    
+    if (error) {
+      console.error("Error checking slug uniqueness:", error);
+      // If there's an error, add timestamp to ensure uniqueness
+      return `${baseSlug}-${Date.now()}`;
+    }
+    
+    // If no existing record found, slug is unique
+    if (!data) {
+      return slug;
+    }
+    
+    // If slug exists, try with counter
+    slug = `${baseSlug}-${counter}`;
+    counter++;
+  }
+  
+  // Fallback: use timestamp if we've tried too many times
+  return `${baseSlug}-${Date.now()}`;
+}
+
+/**
+ * Generate simple slug (non-unique)
  */
 export function generateSlug(text: string): string {
   return text

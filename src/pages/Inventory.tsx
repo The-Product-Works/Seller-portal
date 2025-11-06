@@ -25,9 +25,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Edit, Trash2, Plus, Filter, Search, Package, X } from "lucide-react";
+import { Edit, Trash2, Plus, Filter, Search, Package, X, Images } from "lucide-react";
 import { FilterOptions, ListingWithDetails, VariantForm } from "@/types/inventory.types";
 import AddProductDialog from "@/components/AddProductDialog";
+import { ImageManager } from "@/components/ImageManager";
+import { LowStockNotifications } from "@/components/LowStockNotifications";
 import RestockDialog from "@/components/RestockDialog";
 import {
   Sheet,
@@ -47,6 +49,7 @@ export default function Inventory() {
   // Dialog state
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editingListing, setEditingListing] = useState<ListingWithDetails | null>(null);
+  const [imageManagerOpen, setImageManagerOpen] = useState(false);
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -81,6 +84,8 @@ export default function Inventory() {
   const [tempStockMax, setTempStockMax] = useState(1000);
 
   const loadListings = useCallback(async (seller_id: string) => {
+    console.log("Loading inventory for seller:", seller_id);
+    
     const { data, error } = await supabase
       .from("seller_product_listings")
       .select(
@@ -97,6 +102,10 @@ export default function Inventory() {
       )
       .eq("seller_id", seller_id)
       .order("created_at", { ascending: false });
+
+    if (data) {
+      console.log("Found", data.length, "products for seller", seller_id);
+    }
 
     if (error) {
       console.error(error);
@@ -131,6 +140,32 @@ export default function Inventory() {
     loadUserAndListings();
   }, [loadUserAndListings]);
 
+  // Real-time subscription for product updates
+  useEffect(() => {
+    if (!sellerId) return;
+
+    const channel = supabase
+      .channel('inventory-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'seller_product_listings',
+          filter: `seller_id=eq.${sellerId}`
+        },
+        () => {
+          // Reload listings when any change occurs
+          loadListings(sellerId);
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [sellerId, loadListings]);
+
   async function handleDeleteListing(listingId: string) {
     if (!sellerId) return;
 
@@ -139,7 +174,8 @@ export default function Inventory() {
       const { error } = await supabase
         .from("seller_product_listings")
         .delete()
-        .eq("listing_id", listingId);
+        .eq("listing_id", listingId)
+        .eq("seller_id", sellerId); // Ensure seller can only delete their own listings
 
       if (error) throw error;
 
@@ -163,6 +199,20 @@ export default function Inventory() {
 
     try {
       setLoading(true);
+      
+      // First verify the variant belongs to a listing owned by this seller
+      const { data: variant } = await supabase
+        .from("listing_variants")
+        .select("listing_id, seller_product_listings!inner(seller_id)")
+        .eq("variant_id", variantId)
+        .eq("seller_product_listings.seller_id", sellerId)
+        .single();
+      
+      if (!variant) {
+        throw new Error("Variant not found or access denied");
+      }
+      
+      // Now delete the variant
       const { error } = await supabase
         .from("listing_variants")
         .delete()
@@ -313,10 +363,16 @@ export default function Inventory() {
             Manage your product listings and variants
           </p>
         </div>
-        <Button onClick={() => setAddDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Product
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setImageManagerOpen(true)}>
+            <Images className="h-4 w-4 mr-2" />
+            Manage Images
+          </Button>
+          <Button onClick={() => setAddDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Product
+          </Button>
+        </div>
       </div>
 
       {/* Search and Filter Bar */}
@@ -713,6 +769,15 @@ export default function Inventory() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Low Stock Notifications */}
+      <LowStockNotifications />
+
+      {/* Image Manager Dialog */}
+      <ImageManager 
+        open={imageManagerOpen} 
+        onOpenChange={setImageManagerOpen} 
+      />
     </div>
   );
 }

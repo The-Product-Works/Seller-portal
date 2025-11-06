@@ -27,6 +27,7 @@ import {
   getCategories,
   calculateHealthScore,
   generateSlug,
+  generateUniqueSlug,
   getAllGlobalProducts,
   getAllBrands,
 } from "@/lib/inventory-helpers";
@@ -144,6 +145,15 @@ export default function AddProductDialog({
 
   async function handleGlobalProductSearch(value: string) {
     setGlobalProductSearch(value);
+    if (!sellerId) {
+      toast({
+        title: "Not authenticated",
+        description: "Please ensure you are logged in as a seller",
+        variant: "destructive"
+      });
+      return;
+    }
+
     if (value.length < 2) {
       setGlobalProducts([]);
       return;
@@ -277,11 +287,6 @@ export default function AddProductDialog({
       return;
     }
 
-    if (variants.length === 0) {
-      toast({ title: "Please add at least one variant", variant: "destructive" });
-      return;
-    }
-
     if (!sellerDescription.trim()) {
       toast({ title: "Description is required", variant: "destructive" });
       return;
@@ -322,16 +327,45 @@ export default function AddProductDialog({
         ingredientCount: sellerIngredients.split(",").length,
       });
 
-      // Calculate price range from variants
-      const prices = variants.map(v => v.price);
-      const basePrice = Math.min(...prices);
-      const highestPrice = Math.max(...prices);
-      const totalStock = variants.reduce((sum, v) => sum + v.stock_quantity, 0);
-
-      // Create seller listing
-      const listingSlug = generateSlug(`${selectedGlobalProduct.product_name}-${sellerId}`);
+      // Calculate price range from variants or use a default base price
+      let basePrice = 0;
+      let highestPrice = 0;
+      let totalStock = 0;
       
-      console.log("Attempting to insert listing with seller_id:", sellerId);
+      if (variants.length > 0) {
+        const prices = variants.map(v => v.price);
+        basePrice = Math.min(...prices);
+        highestPrice = Math.max(...prices);
+        totalStock = variants.reduce((sum, v) => sum + v.stock_quantity, 0);
+      } else {
+        // Default values when no variants are provided
+        basePrice = 0;
+        totalStock = 0;
+      }
+
+      // Create seller listing with unique slug
+      const productTitle = selectedGlobalProduct.product_name;
+      const listingSlug = await generateUniqueSlug(productTitle, sellerId);
+      
+      // First check if this seller already has a product with this name
+      const { data: existingProduct, error: checkError } = await supabase
+        .from("seller_product_listings")
+        .select("listing_id, seller_title")
+        .eq("seller_id", sellerId)
+        .ilike("seller_title", sellerTitle || productTitle)
+        .maybeSingle();
+
+      if (checkError) {
+        console.error("Error checking existing products:", checkError);
+      } else if (existingProduct) {
+        throw new Error("You already have a product with this name in your inventory");
+      }
+
+      console.log("=== Creating Product Listing ===");
+      console.log("Seller ID:", sellerId);
+      console.log("Product Title:", productTitle);
+      console.log("Generated Slug:", listingSlug);
+      console.log("Global Product ID:", selectedGlobalProduct.global_product_id);
       
       const { data: listing, error: listingError } = await supabase
         .from("seller_product_listings")
@@ -357,34 +391,47 @@ export default function AddProductDialog({
         .single();
 
       if (listingError) {
-        console.error("❌ RLS ERROR on seller_product_listings:", listingError);
-        throw new Error(`Failed to create listing: ${listingError.message} (Code: ${listingError.code})`);
+        console.error("❌ Error creating product listing:", listingError);
+        console.error("Error Code:", listingError.code);
+        console.error("Error Details:", listingError.details);
+        console.error("Error Hint:", listingError.hint);
+        
+        // Provide user-friendly error messages
+        if (listingError.code === '23505') {
+          throw new Error("This product already exists with this name. Please use a different title or modify the existing product.");
+        } else if (listingError.code === '23503') {
+          throw new Error("Invalid seller or product reference. Please refresh and try again.");
+        } else {
+          throw new Error(`Failed to create listing: ${listingError.message}`);
+        }
       }
 
-      // Insert variants
-      for (const variant of variants) {
-        const { error: variantError } = await supabase
-          .from("listing_variants")
-          .insert({
-            listing_id: listing.listing_id,
-            sku: variant.sku,
-            variant_name: variant.variant_name,
-            size: variant.size,
-            flavor: variant.flavor,
-            serving_count: variant.serving_count,
-            price: variant.price,
-            original_price: variant.original_price,
-            stock_quantity: variant.stock_quantity,
-            manufacture_date: variant.manufacture_date,
-            batch_number: variant.batch_number,
-            expiry_date: variant.expiry_date,
-            nutritional_info: variant.nutritional_info || {},
-            is_available: variant.is_available,
-          });
+      // Insert variants if any exist
+      if (variants.length > 0) {
+        for (const variant of variants) {
+          const { error: variantError } = await supabase
+            .from("listing_variants")
+            .insert({
+              listing_id: listing.listing_id,
+              sku: variant.sku,
+              variant_name: variant.variant_name,
+              size: variant.size,
+              flavor: variant.flavor,
+              serving_count: variant.serving_count,
+              price: variant.price,
+              original_price: variant.original_price,
+              stock_quantity: variant.stock_quantity,
+              manufacture_date: variant.manufacture_date,
+              batch_number: variant.batch_number,
+              expiry_date: variant.expiry_date,
+              nutritional_info: variant.nutritional_info || {},
+              is_available: variant.is_available,
+            });
 
-        if (variantError) {
-          console.error("❌ RLS ERROR on listing_variants:", variantError);
-          throw new Error(`Failed to create variant: ${variantError.message} (Code: ${variantError.code})`);
+          if (variantError) {
+            console.error("❌ RLS ERROR on listing_variants:", variantError);
+            throw new Error(`Failed to create variant: ${variantError.message} (Code: ${variantError.code})`);
+          }
         }
       }
 
