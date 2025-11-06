@@ -1,8 +1,9 @@
-// Add Product Dialog Component
+// Product Management Dialog Component
 import React, { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import type { ListingWithDetails } from "@/types/inventory.types";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
@@ -65,7 +66,7 @@ interface AddProductDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
-  editingProduct?: unknown;
+  editingProduct?: ListingWithDetails;
 }
 
 export default function AddProductDialog({
@@ -77,6 +78,7 @@ export default function AddProductDialog({
   const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [sellerId, setSellerId] = useState<string | null>(null);
+  const isEditing = Boolean(editingProduct);
   
   // Form state
   const [globalProductSearch, setGlobalProductSearch] = useState("");
@@ -116,6 +118,27 @@ export default function AddProductDialog({
     loadInitialData();
   }, []);
 
+  useEffect(() => {
+    if (editingProduct && open) {
+      loadEditingProduct(editingProduct as ListingWithDetails);
+    } else {
+      // Reset form when not editing
+      setSellerTitle("");
+      setSellerDescription("");
+      setSellerIngredients("");
+      setSelectedAllergens([]);
+      setVariants([]);
+      setReturnPolicy("");
+      setShippingInfo("");
+      setShelfLifeMonths(12);
+      setStatus("draft");
+      setProductImages([]);
+      setCertificateFiles([]);
+      setTrustCertificateFiles([]);
+      setTransparency({ third_party_tested: false });
+    }
+  }, [editingProduct, open]);
+
   async function loadInitialData() {
     const sellerId = await getAuthenticatedSellerId();
     
@@ -141,6 +164,54 @@ export default function AddProductDialog({
     setCategories(categoriesData || []);
     setBrands(allBrands || []);
     setGlobalProducts(allProducts || []);
+  }
+
+  async function loadEditingProduct(product: ListingWithDetails) {
+    if (!product?.global_products) return;
+    
+    // Set global product and brand with proper type handling
+    setSelectedGlobalProduct({
+      global_product_id: product.global_product_id,
+      product_name: product.global_products.product_name,
+      brand_id: product.global_products.brand_id
+    });
+    
+    if (product.global_products.brands) {
+      setSelectedBrand({
+        brand_id: product.global_products.brand_id,
+        name: product.global_products.brands.name,
+        logo_url: product.global_products.brands.logo_url
+      });
+    }
+    
+    // Set basic details
+    setSellerTitle(product.seller_title || "");
+    setSellerDescription(product.seller_description || "");
+    setSellerIngredients(product.seller_ingredients || "");
+    setShelfLifeMonths(product.shelf_life_months || 12);
+    setStatus(product.status as "draft" | "active" || "draft");
+    setReturnPolicy(product.return_policy || "");
+    setShippingInfo(product.shipping_info || "");
+    
+    // Set variants if they exist
+    if (product.listing_variants) {
+      setVariants(product.listing_variants.map(v => ({
+        variant_id: v.variant_id,
+        variant_name: v.variant_name,
+        sku: v.sku,
+        size: v.size,
+        flavor: v.flavor,
+        serving_count: v.serving_count,
+        price: v.price,
+        original_price: v.original_price,
+        stock_quantity: v.stock_quantity,
+        manufacture_date: v.manufacture_date,
+        batch_number: v.batch_number,
+        expiry_date: v.expiry_date,
+        nutritional_info: v.nutritional_info || {},
+        is_available: v.is_available
+      })));
+    }
   }
 
   async function handleGlobalProductSearch(value: string) {
@@ -277,14 +348,17 @@ export default function AddProductDialog({
       return;
     }
 
-    if (!selectedGlobalProduct) {
-      toast({ title: "Please select or create a global product", variant: "destructive" });
-      return;
-    }
-    
-    if (!selectedBrand) {
-      toast({ title: "Please select or create a brand", variant: "destructive" });
-      return;
+    // When creating new product, require global product and brand selection
+    if (!editingProduct) {
+      if (!selectedGlobalProduct) {
+        toast({ title: "Please select or create a global product", variant: "destructive" });
+        return;
+      }
+      
+      if (!selectedBrand) {
+        toast({ title: "Please select or create a brand", variant: "destructive" });
+        return;
+      }
     }
 
     if (!sellerDescription.trim()) {
@@ -343,71 +417,133 @@ export default function AddProductDialog({
         totalStock = 0;
       }
 
-      // Create seller listing with unique slug
+      // Handle slug for new products only
       const productTitle = selectedGlobalProduct.product_name;
-      const listingSlug = await generateUniqueSlug(productTitle, sellerId);
+      const listingSlug = !isEditing ? await generateUniqueSlug(productTitle, sellerId) : undefined;
       
-      // First check if this seller already has a product with this name
-      const { data: existingProduct, error: checkError } = await supabase
-        .from("seller_product_listings")
-        .select("listing_id, seller_title")
-        .eq("seller_id", sellerId)
-        .ilike("seller_title", sellerTitle || productTitle)
-        .maybeSingle();
+      console.log(`=== ${isEditing ? "Updating" : "Creating"} Product Listing ===`);
+      console.log("Operation:", isEditing ? "Update" : "Create");
+      
+      // Check for duplicate names only when creating a new product
+      if (!isEditing) {
+        const { data: existingProduct, error: checkError } = await supabase
+          .from("seller_product_listings")
+          .select("listing_id, seller_title")
+          .eq("seller_id", sellerId)
+          .ilike("seller_title", sellerTitle || productTitle)
+          .neq("listing_id", editingProduct?.listing_id || "") // Exclude current product when editing
+          .maybeSingle();
 
-      if (checkError) {
-        console.error("Error checking existing products:", checkError);
-      } else if (existingProduct) {
-        throw new Error("You already have a product with this name in your inventory");
+        if (checkError) {
+          console.error("Error checking existing products:", checkError);
+        } else if (existingProduct) {
+          throw new Error("Another product with this name already exists in your inventory");
+        }
       }
 
-      console.log("=== Creating Product Listing ===");
       console.log("Seller ID:", sellerId);
       console.log("Product Title:", productTitle);
-      console.log("Generated Slug:", listingSlug);
       console.log("Global Product ID:", selectedGlobalProduct.global_product_id);
       
-      const { data: listing, error: listingError } = await supabase
-        .from("seller_product_listings")
-        .insert({
-          global_product_id: selectedGlobalProduct.global_product_id,
-          seller_id: sellerId,
-          seller_title: sellerTitle || selectedGlobalProduct.product_name,
-          seller_description: sellerDescription,
-          seller_ingredients: sellerIngredients,
-          health_score: healthScore,
-          base_price: basePrice,
-          total_stock_quantity: totalStock,
-          shelf_life_months: shelfLifeMonths,
-          return_policy: returnPolicy,
-          shipping_info: shippingInfo,
-          status: status,
-          slug: listingSlug,
-          review_count: 0,
-          is_verified: false,
-          published_at: status === "active" ? new Date().toISOString() : null,
-        })
-        .select()
-        .single();
+      let listing;
+      let listingError;
+
+      if (isEditing && editingProduct) {
+        console.log("Updating existing product:", editingProduct.listing_id);
+        
+        // First verify the product belongs to the seller
+        const { data: verifyProduct } = await supabase
+          .from("seller_product_listings")
+          .select("listing_id")
+          .eq("listing_id", editingProduct.listing_id)
+          .eq("seller_id", sellerId)
+          .single();
+          
+        if (!verifyProduct) {
+          throw new Error("You don't have permission to edit this product");
+        }
+        
+        const { data, error } = await supabase
+          .from("seller_product_listings")
+          .update({
+            seller_title: sellerTitle || selectedGlobalProduct.product_name,
+            seller_description: sellerDescription,
+            seller_ingredients: sellerIngredients,
+            health_score: healthScore,
+            base_price: basePrice,
+            total_stock_quantity: totalStock,
+            shelf_life_months: shelfLifeMonths,
+            return_policy: returnPolicy,
+            shipping_info: shippingInfo,
+            status: status,
+            published_at: status === "active" ? new Date().toISOString() : null,
+            updated_at: new Date().toISOString()
+          })
+          .eq("listing_id", editingProduct.listing_id)
+          .eq("seller_id", sellerId) // Extra safety check
+          .select()
+          .single();
+          
+        listing = data;
+        listingError = error;
+      } else {
+        const { data, error } = await supabase
+          .from("seller_product_listings")
+          .insert({
+            global_product_id: selectedGlobalProduct.global_product_id,
+            seller_id: sellerId,
+            seller_title: sellerTitle || selectedGlobalProduct.product_name,
+            seller_description: sellerDescription,
+            seller_ingredients: sellerIngredients,
+            health_score: healthScore,
+            base_price: basePrice,
+            total_stock_quantity: totalStock,
+            shelf_life_months: shelfLifeMonths,
+            return_policy: returnPolicy,
+            shipping_info: shippingInfo,
+            status: status,
+            slug: listingSlug,
+            review_count: 0,
+            is_verified: false,
+            published_at: status === "active" ? new Date().toISOString() : null,
+          })
+          .select()
+          .single();
+          
+        listing = data;
+        listingError = error;
+      }
 
       if (listingError) {
-        console.error("❌ Error creating product listing:", listingError);
+        console.error("❌ Error with product listing:", listingError);
         console.error("Error Code:", listingError.code);
         console.error("Error Details:", listingError.details);
         console.error("Error Hint:", listingError.hint);
         
         // Provide user-friendly error messages
-        if (listingError.code === '23505') {
-          throw new Error("This product already exists with this name. Please use a different title or modify the existing product.");
-        } else if (listingError.code === '23503') {
+        if (listingError.code === '23503') {
           throw new Error("Invalid seller or product reference. Please refresh and try again.");
         } else {
-          throw new Error(`Failed to create listing: ${listingError.message}`);
+          throw new Error(`Failed to ${isEditing ? 'update' : 'create'} listing: ${listingError.message}`);
         }
       }
 
-      // Insert variants if any exist
+      // Handle variants
       if (variants.length > 0) {
+        if (isEditing) {
+          // Delete existing variants first
+          const { error: deleteError } = await supabase
+            .from("listing_variants")
+            .delete()
+            .eq("listing_id", listing.listing_id);
+
+          if (deleteError) {
+            console.error("❌ Error deleting existing variants:", deleteError);
+            throw new Error(`Failed to update variants: ${deleteError.message}`);
+          }
+        }
+
+        // Insert all variants (both for new products and updates)
         for (const variant of variants) {
           const { error: variantError } = await supabase
             .from("listing_variants")
@@ -430,12 +566,26 @@ export default function AddProductDialog({
 
           if (variantError) {
             console.error("❌ RLS ERROR on listing_variants:", variantError);
-            throw new Error(`Failed to create variant: ${variantError.message} (Code: ${variantError.code})`);
+            throw new Error(`Failed to ${isEditing ? 'update' : 'create'} variant: ${variantError.message}`);
           }
         }
       }
 
-      // Insert images
+      // Handle images
+      if (isEditing) {
+        // Delete existing images first
+        const { error: deleteImageError } = await supabase
+          .from("listing_images")
+          .delete()
+          .eq("listing_id", listing.listing_id);
+
+        if (deleteImageError) {
+          console.error("❌ Error deleting existing images:", deleteImageError);
+          throw new Error(`Failed to update images: ${deleteImageError.message}`);
+        }
+      }
+
+      // Insert new images
       for (let i = 0; i < uploadedImages.length; i++) {
         const { error: imageError } = await supabase.from("listing_images").insert({
           listing_id: listing.listing_id,
@@ -446,7 +596,7 @@ export default function AddProductDialog({
         
         if (imageError) {
           console.error("❌ RLS ERROR on listing_images:", imageError);
-          throw new Error(`Failed to upload image: ${imageError.message} (Code: ${imageError.code})`);
+          throw new Error(`Failed to ${isEditing ? 'update' : 'upload'} image: ${imageError.message}`);
         }
       }
 
@@ -474,7 +624,11 @@ export default function AddProductDialog({
       }
       */
 
-      toast({ title: `Product ${status === "draft" ? "saved as draft" : "published"} successfully` });
+      const action = isEditing ? 'updated' : status === "draft" ? "saved as draft" : "published";
+      toast({ 
+        title: `Product ${action} successfully`,
+        description: status === "active" ? "Your product is now live in the marketplace" : "You can publish this product later"
+      });
       onSuccess();
       onOpenChange(false);
       resetForm();
@@ -508,7 +662,9 @@ export default function AddProductDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Add New Product</DialogTitle>
+          <DialogTitle>
+            {editingProduct ? 'Edit Product' : 'Add New Product'}
+          </DialogTitle>
         </DialogHeader>
 
         <Tabs defaultValue="basic" className="w-full">
@@ -569,42 +725,52 @@ export default function AddProductDialog({
             <div className="space-y-2">
               <Label>Global Product Name *</Label>
               <div className="flex gap-2">
-                <Select 
-                  value={selectedGlobalProduct?.global_product_id || ""} 
-                  onValueChange={(value) => {
-                    const product = globalProducts.find(p => p.global_product_id === value);
-                    setSelectedGlobalProduct(product || null);
-                  }}
-                  disabled={!selectedBrand}
-                >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder={selectedBrand ? "Select a product" : "Select brand first"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {globalProducts
-                      .filter(p => !selectedBrand || p.brand_id === selectedBrand.brand_id)
-                      .map((product) => (
-                        <SelectItem key={product.global_product_id} value={product.global_product_id}>
-                          {product.product_name}
-                        </SelectItem>
-                      ))}
-                  </SelectContent>
-                </Select>
-                <Button 
-                  variant="outline" 
-                  size="icon"
-                  disabled={!selectedBrand}
-                  onClick={() => {
-                    if (!selectedBrand) return;
-                    const newProductName = prompt("Enter new product name:");
-                    if (newProductName) {
-                      setGlobalProductSearch(newProductName);
-                      handleCreateGlobalProduct();
-                    }
-                  }}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+                {isEditing ? (
+                  <div className="flex-1 p-2 border rounded-md bg-muted">
+                    <p className="text-sm text-muted-foreground">
+                      {selectedGlobalProduct?.product_name || 'Loading...'}
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <Select 
+                      value={selectedGlobalProduct?.global_product_id || ""} 
+                      onValueChange={(value) => {
+                        const product = globalProducts.find(p => p.global_product_id === value);
+                        setSelectedGlobalProduct(product || null);
+                      }}
+                      disabled={!selectedBrand}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder={selectedBrand ? "Select a product" : "Select brand first"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {globalProducts
+                          .filter(p => !selectedBrand || p.brand_id === selectedBrand.brand_id)
+                          .map((product) => (
+                            <SelectItem key={product.global_product_id} value={product.global_product_id}>
+                              {product.product_name}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <Button 
+                      variant="outline" 
+                      size="icon"
+                      disabled={!selectedBrand}
+                      onClick={() => {
+                        if (!selectedBrand) return;
+                        const newProductName = prompt("Enter new product name:");
+                        if (newProductName) {
+                          setGlobalProductSearch(newProductName);
+                          handleCreateGlobalProduct();
+                        }
+                      }}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </>
+                )}
               </div>
               {selectedGlobalProduct && (
                 <p className="text-xs text-muted-foreground">
@@ -978,25 +1144,50 @@ export default function AddProductDialog({
             Cancel
           </Button>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => {
-                setStatus("draft");
-                handleSave();
-              }}
-              disabled={loading}
-            >
-              Save as Draft
-            </Button>
-            <Button
-              onClick={() => {
-                setStatus("active");
-                handleSave();
-              }}
-              disabled={loading}
-            >
-              Publish Now
-            </Button>
+            {!editingProduct ? (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setStatus("draft");
+                    handleSave();
+                  }}
+                  disabled={loading}
+                >
+                  Save as Draft
+                </Button>
+                <Button
+                  onClick={() => {
+                    setStatus("active");
+                    handleSave();
+                  }}
+                  disabled={loading}
+                >
+                  Publish Now
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  onClick={handleSave}
+                  disabled={loading}
+                >
+                  Save Changes
+                </Button>
+                {status === "draft" && (
+                  <Button
+                    onClick={() => {
+                      setStatus("active");
+                      handleSave();
+                    }}
+                    disabled={loading}
+                  >
+                    Publish Now
+                  </Button>
+                )}
+              </>
+            )}
           </div>
         </div>
       </DialogContent>
