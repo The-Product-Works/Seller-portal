@@ -26,11 +26,14 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Edit, Trash2, Plus, Filter, Search, Package, X, Images } from "lucide-react";
+import { BundleCreation } from "@/components/BundleCreation";
 import { FilterOptions, ListingWithDetails, VariantForm } from "@/types/inventory.types";
 import AddProductDialog from "@/components/AddProductDialog";
 import { ImageManager } from "@/components/ImageManager";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
 import RestockDialog from "@/components/RestockDialog";
+import BundleRestockDialog from "@/components/BundleRestockDialog";
+import { ProductDetailModal } from "@/components/ProductDetailModal";
 import {
   Sheet,
   SheetContent,
@@ -43,6 +46,7 @@ import { Slider } from "@/components/ui/slider";
 export default function Inventory() {
   const { toast } = useToast();
   const [listings, setListings] = useState<ListingWithDetails[]>([]);
+  const [bundles, setBundles] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(true);
   const [sellerId, setSellerId] = useState<string | null>(null);
 
@@ -50,10 +54,12 @@ export default function Inventory() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editingListing, setEditingListing] = useState<ListingWithDetails | null>(null);
   const [imageManagerOpen, setImageManagerOpen] = useState(false);
+  const [bundleDialogOpen, setBundleDialogOpen] = useState(false);
+  const [editingBundle, setEditingBundle] = useState<Record<string, unknown> | null>(null);
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<{
-    type: "listing" | "variant";
+    type: "listing" | "variant" | "bundle";
     id: string;
     name: string;
   } | null>(null);
@@ -63,6 +69,14 @@ export default function Inventory() {
     variant: VariantForm;
     listingId: string;
   } | null>(null);
+
+  // Bundle restock dialog
+  const [bundleRestockTarget, setBundleRestockTarget] = useState<Record<string, unknown> | null>(null);
+
+  // Product/Bundle detail modal
+  const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [detailModalProductId, setDetailModalProductId] = useState<string | undefined>();
+  const [detailModalBundleId, setDetailModalBundleId] = useState<string | undefined>();
 
   // Filters
   const [filters, setFilters] = useState<FilterOptions>({
@@ -114,6 +128,23 @@ export default function Inventory() {
     }
 
     setListings((data as ListingWithDetails[]) || []);
+    
+    // Load bundles
+    const { data: bundlesData, error: bundlesError } = await supabase
+      .from("bundles")
+      .select("*")
+      .eq("seller_id", seller_id)
+      .order("created_at", { ascending: false });
+
+    if (bundlesData) {
+      console.log("Found", bundlesData.length, "bundles for seller", seller_id);
+    }
+
+    if (bundlesError) {
+      console.error("Error loading bundles:", bundlesError);
+    }
+
+    setBundles((bundlesData as Array<Record<string, unknown>>) || []);
   }, [toast]);
 
   const loadUserAndListings = useCallback(async () => {
@@ -235,6 +266,34 @@ export default function Inventory() {
     }
   }
 
+  async function handleDeleteBundle(bundleId: string) {
+    if (!sellerId) return;
+
+    try {
+      setLoading(true);
+      const { error } = await supabase
+        .from("bundles")
+        .delete()
+        .eq("bundle_id", bundleId)
+        .eq("seller_id", sellerId);
+
+      if (error) throw error;
+
+      toast({ title: "Bundle deleted successfully" });
+      await loadListings(sellerId);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      toast({
+        title: "Error deleting bundle",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+      setDeleteTarget(null);
+    }
+  }
+
   function applyFilters() {
     if (tempPriceMin > 0 || tempPriceMax < 10000) {
       setFilters({
@@ -284,25 +343,37 @@ export default function Inventory() {
   }
 
   const filteredListings = useMemo(() => {
-    let result = [...listings];
+    // Combine products and bundles
+    const combinedItems = [
+      ...listings.map(l => ({ ...l, itemType: 'product' })),
+      ...bundles.map(b => ({ ...b, itemType: 'bundle' }))
+    ];
+
+    let result = [...combinedItems];
 
     // Search filter
     if (filters.searchTerm.trim()) {
       const search = filters.searchTerm.toLowerCase();
-      result = result.filter((listing) => {
-        if (filters.searchType === "name") {
-          return (
-            listing.seller_title?.toLowerCase().includes(search) ||
-            listing.global_products?.product_name?.toLowerCase().includes(search)
-          );
-        } else if (filters.searchType === "brand") {
-          return listing.global_products?.brands?.name
-            ?.toLowerCase()
-            .includes(search);
-        } else if (filters.searchType === "variant") {
-          return listing.listing_variants?.some((v: VariantForm) =>
-            v.variant_name?.toLowerCase().includes(search)
-          );
+      result = result.filter((item: Record<string, unknown>) => {
+        if (item.itemType === 'product') {
+          if (filters.searchType === "name") {
+            return (
+              (item.seller_title as string)?.toLowerCase().includes(search) ||
+              ((item.global_products as Record<string, unknown>)?.product_name as string)?.toLowerCase().includes(search)
+            );
+          } else if (filters.searchType === "brand") {
+            return ((item.global_products as Record<string, unknown>)?.brands as Record<string, unknown>)?.name
+              ?.toString()
+              .toLowerCase()
+              .includes(search);
+          } else if (filters.searchType === "variant") {
+            return (item.listing_variants as VariantForm[])?.some((v: VariantForm) =>
+              v.variant_name?.toLowerCase().includes(search)
+            );
+          }
+        } else if (item.itemType === 'bundle') {
+          // Bundle search by name
+          return (item.bundle_name as string)?.toLowerCase().includes(search);
         }
         return true;
       });
@@ -310,17 +381,19 @@ export default function Inventory() {
 
     // Price filter
     if (filters.priceRange) {
-      result = result.filter(
-        (listing) =>
-          listing.base_price >= filters.priceRange!.min &&
-          listing.base_price <= filters.priceRange!.max
-      );
+      result = result.filter((item: Record<string, unknown>) => {
+        const price = item.itemType === 'product' ? (item.base_price as number) : (item.base_price as number);
+        return (
+          price >= filters.priceRange!.min &&
+          price <= filters.priceRange!.max
+        );
+      });
     }
 
     // Discount filter
     if (filters.discountRange) {
-      result = result.filter((listing) => {
-        const discount = listing.discount_percentage || 0;
+      result = result.filter((item: Record<string, unknown>) => {
+        const discount = (item.discount_percentage as number) || 0;
         return (
           discount >= filters.discountRange!.min &&
           discount <= filters.discountRange!.max
@@ -328,22 +401,26 @@ export default function Inventory() {
       });
     }
 
-    // Stock filter
+    // Stock filter - only for products
     if (filters.stockRange) {
-      result = result.filter(
-        (listing) =>
-          listing.total_stock_quantity >= filters.stockRange!.min &&
-          listing.total_stock_quantity <= filters.stockRange!.max
-      );
+      result = result.filter((item: Record<string, unknown>) => {
+        if (item.itemType === 'product') {
+          return (
+            (item.total_stock_quantity as number) >= filters.stockRange!.min &&
+            (item.total_stock_quantity as number) <= filters.stockRange!.max
+          );
+        }
+        return true; // Bundles don't have stock
+      });
     }
 
     // Status filter
     if (filters.status) {
-      result = result.filter((listing) => listing.status === filters.status);
+      result = result.filter((item: Record<string, unknown>) => item.status === filters.status);
     }
 
     return result;
-  }, [listings, filters]);
+  }, [listings, bundles, filters]);
 
   const activeFilterCount = [
     filters.searchTerm,
@@ -355,6 +432,20 @@ export default function Inventory() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Low Stock Notifications at Top */}
+      <LowStockNotifications
+        onProductClick={(productId) => {
+          setDetailModalProductId(productId);
+          setDetailModalBundleId(undefined);
+          setDetailModalOpen(true);
+        }}
+        onBundleClick={(bundleId) => {
+          setDetailModalBundleId(bundleId);
+          setDetailModalProductId(undefined);
+          setDetailModalOpen(true);
+        }}
+      />
+
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -367,6 +458,10 @@ export default function Inventory() {
           <Button variant="outline" onClick={() => setImageManagerOpen(true)}>
             <Images className="h-4 w-4 mr-2" />
             Manage Images
+          </Button>
+          <Button variant="outline" onClick={() => setBundleDialogOpen(true)}>
+            <Package className="h-4 w-4 mr-2" />
+            Create Bundle
           </Button>
           <Button onClick={() => setAddDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
@@ -390,7 +485,7 @@ export default function Inventory() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="name">Product Name</SelectItem>
+                  <SelectItem value="name">Product/Bundle Name</SelectItem>
                   <SelectItem value="brand">Brand Name</SelectItem>
                   <SelectItem value="variant">Variant</SelectItem>
                 </SelectContent>
@@ -553,7 +648,122 @@ export default function Inventory() {
             </Button>
           </div>
         ) : (
-          filteredListings.map((listing) => {
+          filteredListings.map((item: Record<string, unknown>) => {
+            // Handle both products and bundles
+            if (item.itemType === 'bundle') {
+              console.log("Rendering bundle:", item.bundle_id, item.bundle_name);
+              const bundleName = item.bundle_name as string;
+              const discount = (item.discount_percentage as number) || 0;
+
+              return (
+                <Card key={item.bundle_id} className="overflow-hidden border-primary/20">
+                  <div className="aspect-square bg-muted relative">
+                    {item.thumbnail_url ? (
+                      <img
+                        src={item.thumbnail_url}
+                        alt={bundleName}
+                        className="object-cover w-full h-full"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full">
+                        <Package className="h-16 w-16 text-primary" />
+                      </div>
+                    )}
+                    <div className="absolute top-2 right-2 flex gap-2">
+                      <Badge
+                        variant={
+                          item.status === "active"
+                            ? "default"
+                            : item.status === "draft"
+                            ? "secondary"
+                            : "outline"
+                        }
+                      >
+                        {item.status}
+                      </Badge>
+                      {discount > 0 && (
+                        <Badge variant="destructive">{discount}% OFF</Badge>
+                      )}
+                      <Badge className="bg-primary/80">Bundle</Badge>
+                    </div>
+                  </div>
+
+                  <CardContent className="p-4">
+                    <div className="space-y-2">
+                      <h3 className="font-semibold text-lg line-clamp-2">
+                        {bundleName}
+                      </h3>
+
+                      {item.description && (
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                          {item.description}
+                        </p>
+                      )}
+
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-bold">
+                          ₹{item.discounted_price?.toFixed(2) || item.base_price?.toFixed(2)}
+                        </span>
+                        {item.base_price && item.discounted_price && item.base_price !== item.discounted_price && (
+                          <span className="text-sm text-muted-foreground line-through">
+                            ₹{item.base_price.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        <div>Items: {item.total_items}</div>
+                        <div>•</div>
+                        <div>Stock: {item.total_stock_quantity || 0}</div>
+                      </div>
+
+                      <div className="flex gap-2 pt-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            setEditingBundle(item);
+                            setBundleDialogOpen(true);
+                          }}
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            console.log("Restock clicked for bundle:", item.bundle_id);
+                            setBundleRestockTarget(item);
+                          }}
+                          title="Restock Bundle"
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Restock
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() =>
+                            setDeleteTarget({
+                              type: "bundle",
+                              id: item.bundle_id,
+                              name: bundleName,
+                            })
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            }
+
+            // Original product rendering
+            const listing = item as ListingWithDetails;
             const primaryImage = listing.listing_images?.find((img) => img.is_primary);
             const brandName = listing.global_products?.brands?.name || "Unknown Brand";
             const productName =
@@ -629,6 +839,19 @@ export default function Inventory() {
                         size="sm"
                         variant="outline"
                         className="flex-1"
+                        onClick={() => {
+                          console.log("View Details clicked for product:", listing.listing_id);
+                          setDetailModalProductId(listing.listing_id);
+                          setDetailModalBundleId(undefined);
+                          setDetailModalOpen(true);
+                        }}
+                        title="View product details, description, and allergens"
+                      >
+                        ℹ Details
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
                         onClick={() => {
                           setEditingListing(listing);
                           setAddDialogOpen(true);
@@ -717,14 +940,19 @@ export default function Inventory() {
       />
 
       {/* Restock Dialog */}
-      {restockTarget && (
+      {restockTarget && restockTarget.variant.variant_id && (
         <RestockDialog
           open={!!restockTarget}
           onOpenChange={(open) => !open && setRestockTarget(null)}
           onSuccess={() => {
             if (sellerId) loadListings(sellerId);
           }}
-          variant={restockTarget.variant}
+          variant={{
+            variant_id: restockTarget.variant.variant_id,
+            variant_name: restockTarget.variant.variant_name,
+            sku: restockTarget.variant.sku,
+            stock_quantity: restockTarget.variant.stock_quantity,
+          }}
           listingId={restockTarget.listingId}
         />
       )}
@@ -744,6 +972,11 @@ export default function Inventory() {
                   all its variants, images, and related data. This action cannot be
                   undone.
                 </>
+              ) : deleteTarget?.type === "bundle" ? (
+                <>
+                  This will permanently delete the bundle "{deleteTarget.name}" and
+                  all its related data. This action cannot be undone.
+                </>
               ) : (
                 <>
                   This will permanently delete the variant "{deleteTarget?.name}".
@@ -758,6 +991,8 @@ export default function Inventory() {
               onClick={() => {
                 if (deleteTarget?.type === "listing") {
                   handleDeleteListing(deleteTarget.id);
+                } else if (deleteTarget?.type === "bundle") {
+                  handleDeleteBundle(deleteTarget.id);
                 } else if (deleteTarget?.type === "variant") {
                   handleDeleteVariant(deleteTarget.id);
                 }
@@ -770,13 +1005,66 @@ export default function Inventory() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Low Stock Notifications */}
-      <LowStockNotifications />
+      {/* Low Stock Notifications - Moved to top */}
 
       {/* Image Manager Dialog */}
       <ImageManager 
         open={imageManagerOpen} 
         onOpenChange={setImageManagerOpen} 
+      />
+      {/* Bundle Creation Dialog */}
+      <BundleCreation
+        open={bundleDialogOpen}
+        onClose={() => {
+          setBundleDialogOpen(false);
+          setEditingBundle(null);
+          if (sellerId) loadListings(sellerId);
+        }}
+        editingBundle={editingBundle}
+      />
+
+      {/* Restock Dialog for Products */}
+      {restockTarget && (
+        <RestockDialog
+          open={!!restockTarget}
+          onOpenChange={(open) => {
+            if (!open) setRestockTarget(null);
+          }}
+          variant={{
+            variant_id: restockTarget.variant.variant_id || "",
+            variant_name: restockTarget.variant.variant_name,
+            sku: restockTarget.variant.sku,
+            stock_quantity: restockTarget.variant.stock_quantity,
+          }}
+          listingId={restockTarget.listingId}
+          onSuccess={() => {
+            if (sellerId) loadListings(sellerId);
+            setRestockTarget(null);
+          }}
+        />
+      )}
+
+      {/* Restock Dialog for Bundles */}
+      {bundleRestockTarget && (
+        <BundleRestockDialog
+          open={!!bundleRestockTarget}
+          onOpenChange={(open) => {
+            if (!open) setBundleRestockTarget(null);
+          }}
+          bundle={bundleRestockTarget}
+          onSuccess={() => {
+            if (sellerId) loadListings(sellerId);
+            setBundleRestockTarget(null);
+          }}
+        />
+      )}
+
+      {/* Product/Bundle Detail Modal */}
+      <ProductDetailModal
+        open={detailModalOpen}
+        onOpenChange={setDetailModalOpen}
+        productId={detailModalProductId}
+        bundleId={detailModalBundleId}
       />
     </div>
   );

@@ -1,6 +1,30 @@
 import { supabase } from "@/integrations/supabase/client";
 
 /**
+ * Gets the auth.users.id from the currently authenticated user
+ * 
+ * NOTE: This returns auth.users.id, NOT sellers.id
+ * Use this for RLS policies and auth-related queries
+ * 
+ * @returns The auth.users.id if authenticated, null otherwise
+ */
+export async function getAuthenticatedUserId(): Promise<string | null> {
+  try {
+    const { data: auth, error } = await supabase.auth.getUser();
+    
+    if (error || !auth?.user) {
+      console.error("Error getting authenticated user:", error);
+      return null;
+    }
+
+    return auth.user.id;
+  } catch (error) {
+    console.error("Unexpected error in getAuthenticatedUserId:", error);
+    return null;
+  }
+}
+
+/**
  * Gets the seller ID from the authenticated user
  * 
  * IMPORTANT: This fetches sellers.id (NOT auth.users.id)
@@ -41,7 +65,7 @@ export async function getAuthenticatedSellerId(): Promise<string | null> {
 /**
  * Gets the full seller profile from the authenticated user
  */
-export async function getAuthenticatedSellerProfile() {
+export async function getAuthenticatedSellerProfile(): Promise<Record<string, unknown> | null> {
   try {
     const { data: auth, error: authError } = await supabase.auth.getUser();
     

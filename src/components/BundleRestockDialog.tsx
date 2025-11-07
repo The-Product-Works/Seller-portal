@@ -1,4 +1,3 @@
-// Restock Dialog Component
 import React, { useState } from "react";
 import {
   Dialog,
@@ -15,31 +14,28 @@ import { supabase } from "@/integrations/supabase/client";
 import { getAuthenticatedSellerId, getAuthenticatedUserId } from "@/lib/seller-helpers";
 import { Plus, Minus } from "lucide-react";
 
-interface RestockDialogProps {
+interface BundleRestockDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
-  variant: {
-    variant_id: string;
-    variant_name: string;
-    sku: string;
-    stock_quantity: number;
+  bundle: {
+    bundle_id: string;
+    bundle_name: string;
+    total_stock_quantity: number;
   };
-  listingId: string;
 }
 
-export default function RestockDialog({
+export default function BundleRestockDialog({
   open,
   onOpenChange,
   onSuccess,
-  variant,
-  listingId,
-}: RestockDialogProps) {
+  bundle,
+}: BundleRestockDialogProps) {
   const { toast } = useToast();
   const [restockAmount, setRestockAmount] = useState<number>(0);
   const [loading, setLoading] = useState(false);
 
-  const newStock = variant.stock_quantity + restockAmount;
+  const newStock = bundle.total_stock_quantity + restockAmount;
 
   async function handleRestock() {
     if (restockAmount === 0) {
@@ -47,46 +43,36 @@ export default function RestockDialog({
       return;
     }
 
+    if (newStock < 0) {
+      toast({
+        title: "Invalid stock amount",
+        description: "Stock cannot be negative",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       setLoading(true);
 
-      // Update variant stock
-      const { error: variantError } = await supabase
-        .from("listing_variants")
-        .update({ stock_quantity: newStock })
-        .eq("variant_id", variant.variant_id);
+      // Update bundle total stock
+      const { error: bundleError } = await supabase
+        .from("bundles")
+        .update({ total_stock_quantity: newStock })
+        .eq("bundle_id", bundle.bundle_id);
 
-      if (variantError) throw variantError;
-
-      // Recalculate total stock for listing
-      const { data: allVariants, error: fetchError } = await supabase
-        .from("listing_variants")
-        .select("stock_quantity")
-        .eq("listing_id", listingId);
-
-      if (fetchError) throw fetchError;
-
-      const totalStock = allVariants.reduce((sum, v) => sum + v.stock_quantity, 0);
-
-      // Update listing total stock
-      const { error: listingError } = await supabase
-        .from("seller_product_listings")
-        .update({ total_stock_quantity: totalStock })
-        .eq("listing_id", listingId);
-
-      if (listingError) throw listingError;
+      if (bundleError) throw bundleError;
 
       // Create low stock notification if stock is 10 or less
       if (newStock <= 10) {
         const authUserId = await getAuthenticatedUserId();
         if (authUserId) {
-          // Create notification - note: related_seller_id should store auth.users.id for RLS policy to work
           try {
             const { error: notifError } = await supabase.from("notifications").insert({
               related_seller_id: authUserId,
               type: "low_stock",
-              title: "Low Stock Alert",
-              message: `Variant "${variant.variant_name}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
+              title: "Low Stock Alert - Bundle",
+              message: `Bundle "${bundle.bundle_name}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
             });
             if (notifError) throw notifError;
           } catch (notifError) {
@@ -98,7 +84,7 @@ export default function RestockDialog({
 
       toast({
         title: "Stock updated successfully",
-        description: `${variant.variant_name} stock updated to ${newStock} units`,
+        description: `${bundle.bundle_name} stock updated to ${newStock} units`,
       });
 
       onSuccess();
@@ -120,17 +106,16 @@ export default function RestockDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Restock Variant</DialogTitle>
+          <DialogTitle>Restock Bundle</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Variant</Label>
+            <Label>Bundle</Label>
             <div className="p-3 bg-muted rounded">
-              <p className="font-medium">{variant.variant_name}</p>
-              <p className="text-sm text-muted-foreground">SKU: {variant.sku}</p>
+              <p className="font-medium">{bundle.bundle_name}</p>
               <p className="text-sm text-muted-foreground">
-                Current Stock: {variant.stock_quantity} units
+                Current Stock: {bundle.total_stock_quantity} units
               </p>
             </div>
           </div>
@@ -142,7 +127,9 @@ export default function RestockDialog({
                 type="button"
                 variant="outline"
                 size="icon"
-                onClick={() => setRestockAmount(Math.max(restockAmount - 10, -variant.stock_quantity))}
+                onClick={() =>
+                  setRestockAmount(Math.max(restockAmount - 10, -bundle.total_stock_quantity))
+                }
               >
                 <Minus className="h-4 w-4" />
               </Button>
@@ -151,7 +138,7 @@ export default function RestockDialog({
                 value={restockAmount}
                 onChange={(e) => {
                   const value = parseInt(e.target.value) || 0;
-                  setRestockAmount(Math.max(value, -variant.stock_quantity));
+                  setRestockAmount(Math.max(value, -bundle.total_stock_quantity));
                 }}
                 className="text-center"
                 placeholder="0"
@@ -173,7 +160,11 @@ export default function RestockDialog({
           <div className="p-3 bg-primary/10 rounded">
             <div className="flex justify-between items-center">
               <span className="font-medium">New Stock:</span>
-              <span className={`text-lg font-bold ${newStock < 10 ? 'text-destructive' : 'text-primary'}`}>
+              <span
+                className={`text-lg font-bold ${
+                  newStock < 10 ? "text-destructive" : "text-primary"
+                }`}
+              >
                 {newStock} units
               </span>
             </div>

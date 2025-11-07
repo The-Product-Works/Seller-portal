@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Package, AlertTriangle, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
+import { getAuthenticatedSellerId, getAuthenticatedUserId } from "@/lib/seller-helpers";
 
 interface Notification {
   id: string;
@@ -13,13 +13,80 @@ interface Notification {
   is_read: boolean;
   created_at: string;
   type: string;
-  related_seller_id: string;
+  related_seller_id?: string;
+  seller_id?: string;
+  related_product_id?: string | null;
+  related_bundle_id?: string | null;
+  metadata?: Record<string, unknown>;
 }
 
-export function LowStockNotifications() {
+interface LowStockNotificationsProps {
+  onProductClick?: (productId: string) => void;
+  onBundleClick?: (bundleId: string) => void;
+}
+
+export function LowStockNotifications({ onProductClick, onBundleClick }: LowStockNotificationsProps) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+
+  const loadNotifications = async () => {
+    setLoading(true);
+    try {
+      // Get auth user ID for RLS policy to work correctly
+      // Note: related_seller_id in notifications table stores auth.users.id (not sellers.id)
+      const authUserId = await getAuthenticatedUserId();
+      console.log("=== LowStockNotifications DEBUG ===");
+      console.log("loadNotifications called with authUserId:", authUserId);
+      if (!authUserId) {
+        console.log("No auth user ID found");
+        setLoading(false);
+        return;
+      }
+
+      // Query notifications by related_seller_id (which contains auth.users.id)
+      console.log("Querying notifications table with authUserId:", authUserId);
+      
+      // Build the query step by step to see where it fails
+      let query = supabase
+        .from("notifications")
+        .select("*");
+      
+      query = query.eq("type", "low_stock");
+      query = query.eq("is_read", false);
+      query = query.eq("related_seller_id", authUserId);
+      query = query.order("created_at", { ascending: false });
+      query = query.limit(10);
+
+      const { data, error } = await query;
+
+      console.log("Query response - Data:", data);
+      console.log("Query response - Error:", error);
+      console.log("=== END DEBUG ===");
+
+      if (error) {
+        console.error("Error loading notifications:", error);
+        console.error("Error details:", error);
+        toast({
+          title: "Error",
+          description: "Failed to load low stock notifications: " + error.message,
+          variant: "destructive",
+        });
+      } else {
+        console.log("Loaded notifications:", data);
+        setNotifications(data || []);
+      }
+    } catch (error) {
+      console.error("Error in loadNotifications:", error);
+      toast({
+        title: "Error",
+        description: "Exception in loadNotifications: " + (error instanceof Error ? error.message : String(error)),
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadNotifications();
@@ -50,42 +117,8 @@ export function LowStockNotifications() {
     return () => {
       supabase.removeChannel(channel);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [toast]);
-
-  const loadNotifications = async () => {
-    setLoading(true);
-    try {
-      const sellerId = await getAuthenticatedSellerId();
-      if (!sellerId) {
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("related_seller_id", sellerId)
-        .eq("type", "low_stock")
-        .eq("is_read", false)
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      if (error) {
-        console.error("Error loading notifications:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load low stock notifications",
-          variant: "destructive",
-        });
-      } else {
-        setNotifications(data || []);
-      }
-    } catch (error) {
-      console.error("Error in loadNotifications:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
@@ -115,15 +148,16 @@ export function LowStockNotifications() {
 
   const handleDismissAll = async () => {
     try {
-      const sellerId = await getAuthenticatedSellerId();
-      if (!sellerId) return;
+      // Use auth user ID for RLS policy to work
+      const authUserId = await getAuthenticatedUserId();
+      if (!authUserId) return;
 
       const { error } = await supabase
         .from("notifications")
         .update({ is_read: true })
-        .eq("related_seller_id", sellerId)
         .eq("type", "low_stock")
-        .eq("is_read", false);
+        .eq("is_read", false)
+        .eq("related_seller_id", authUserId);
 
       if (error) {
         console.error("Error dismissing all notifications:", error);
@@ -148,8 +182,21 @@ export function LowStockNotifications() {
     return null;
   }
 
+  // Show empty state message if no notifications (but don't return null - show info message)
   if (notifications.length === 0) {
-    return null;
+    return (
+      <Card className="border-green-200 bg-green-50/50">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-5 w-5 text-green-600" />
+            <CardTitle className="text-green-800">All Stock Levels Good</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-green-700">No low stock alerts at the moment. All your products have healthy inventory levels.</p>
+        </CardContent>
+      </Card>
+    );
   }
 
   return (
@@ -197,7 +244,10 @@ export function LowStockNotifications() {
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => handleMarkAsRead(notification.id)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleMarkAsRead(notification.id);
+                  }}
                   className="text-orange-600 hover:text-orange-800 hover:bg-orange-100 flex-shrink-0"
                   aria-label="Dismiss notification"
                 >
