@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { AlertCircle, TrendingDown, Package } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -59,6 +60,7 @@ export function DashboardProductStock({ sellerId, limit = 8 }: DashboardProductS
   const [products, setProducts] = useState<ProductStockInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [lowStockCount, setLowStockCount] = useState(0);
+  const [showOnlyLowStock, setShowOnlyLowStock] = useState(true);
 
   useEffect(() => {
     if (sellerId) {
@@ -215,12 +217,24 @@ export function DashboardProductStock({ sellerId, limit = 8 }: DashboardProductS
               {products.length} product(s) • {lowStockCount} low stock
             </p>
           </div>
-          {lowStockCount > 0 && (
-            <Badge variant="destructive" className="flex items-center gap-1">
-              <AlertCircle className="h-3 w-3" />
-              {lowStockCount} Low
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {lowStockCount > 0 && (
+              <Badge variant="destructive" className="flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                {lowStockCount} Low
+              </Badge>
+            )}
+            {lowStockCount > 0 && (
+              <Button
+                size="sm"
+                variant={showOnlyLowStock ? "default" : "outline"}
+                onClick={() => setShowOnlyLowStock(!showOnlyLowStock)}
+                className="text-xs"
+              >
+                {showOnlyLowStock ? "All Products" : "Low Stock Only"}
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent>
@@ -234,7 +248,9 @@ export function DashboardProductStock({ sellerId, limit = 8 }: DashboardProductS
         )}
 
         <div className="space-y-3">
-          {products.map((product) => {
+          {products
+            .filter(p => !showOnlyLowStock || p.low_stock)
+            .map((product) => {
             const displayPrice = product.discount_percentage
               ? (product.price * (1 - product.discount_percentage / 100)).toFixed(2)
               : product.price.toFixed(2);

@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Package, AlertTriangle, X } from "lucide-react";
@@ -23,9 +24,11 @@ interface Notification {
 interface LowStockNotificationsProps {
   onProductClick?: (productId: string) => void;
   onBundleClick?: (bundleId: string) => void;
+  showRestockButton?: boolean;
 }
 
-export function LowStockNotifications({ onProductClick, onBundleClick }: LowStockNotificationsProps) {
+export function LowStockNotifications({ onProductClick, onBundleClick, showRestockButton = true }: LowStockNotificationsProps) {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
@@ -228,6 +231,18 @@ export function LowStockNotifications({ onProductClick, onBundleClick }: LowStoc
                   <p className="text-orange-600 text-xs mt-2">
                     {new Date(notification.created_at).toLocaleString()}
                   </p>
+                  {showRestockButton && notification.related_product_id && (
+                    <Button
+                      size="sm"
+                      className="mt-2 bg-orange-600 hover:bg-orange-700 text-white"
+                      onClick={() => {
+                        navigate(`/inventory?restockProductId=${notification.related_product_id}`);
+                        handleMarkAsRead(notification.id);
+                      }}
+                    >
+                      Restock Now
+                    </Button>
+                  )}
                 </div>
                 <Button
                   size="sm"

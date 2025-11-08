@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { SellerGraph } from "@/components/SellerGraph";
 import { OrderHistory } from "@/components/OrderHistory";
 import { DashboardProductStock } from "@/components/DashboardProductStock";
+import { SellerOrders } from "@/components/SellerOrders";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, Package, ShoppingCart, TrendingUp, AlertCircle, Clock } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -226,7 +227,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <DashboardProductStock sellerId={sellerId} limit={8} />
-          <OrderHistory sellerId={sellerId} />
+          <SellerOrders sellerId={sellerId} limit={10} />
         </div>
       </div>
     </div>
