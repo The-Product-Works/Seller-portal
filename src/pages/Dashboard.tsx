@@ -5,6 +5,7 @@ import { DashboardProductStock } from "@/components/DashboardProductStock";
 import { SellerOrders } from "@/components/SellerOrders";
 import { BestWorstSelling } from "@/components/BestWorstSelling";
 import { HealthScoreDashboard } from "@/components/HealthScoreDashboard";
+import { ProductGalleryGrid } from "@/components/ProductGalleryGrid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
@@ -308,7 +309,7 @@ export default function Dashboard() {
         {/* Products Tab */}
         <TabsContent value="products" className="space-y-6">
           <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold">Product Management</h2>
+            <h2 className="text-xl font-semibold">All Products & Bundles</h2>
             <Button onClick={() => setShowRestockDialog(true)} className="gap-2">
               <Plus className="h-4 w-4" />
               Restock Product
@@ -327,7 +328,7 @@ export default function Dashboard() {
               <p className="text-muted-foreground">Loading products...</p>
             </div>
           ) : (
-            <DashboardProductStock sellerId={sellerId} limit={50} />
+            <ProductGalleryGrid sellerId={sellerId} limit={50} />
           )}
         </TabsContent>
 
