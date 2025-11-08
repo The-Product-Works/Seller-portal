@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { X, Upload, GripVertical, Check } from 'lucide-react';
 
-interface ImageFile {
+export interface ImageFile {
   id: string;
   file?: File;
   url?: string;

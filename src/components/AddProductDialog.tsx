@@ -38,7 +38,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ImageGalleryManager } from "@/components/ImageGalleryManager";
+import { ImageGalleryManager, type ImageFile } from "@/components/ImageGalleryManager";
 
 interface Brand {
   brand_id: string;
@@ -110,6 +110,7 @@ export default function AddProductDialog({
   const [status, setStatus] = useState<"draft" | "active">("draft");
   
   const [productImages, setProductImages] = useState<File[]>([]);
+  const [galleryImages, setGalleryImages] = useState<ImageFile[]>([]);
   const [certificateFiles, setCertificateFiles] = useState<File[]>([]);
   const [trustCertificateFiles, setTrustCertificateFiles] = useState<File[]>([]);
   
@@ -138,6 +139,7 @@ export default function AddProductDialog({
       setDiscountPercentage(0);
       setStatus("draft");
       setProductImages([]);
+      setGalleryImages([]);
       setCertificateFiles([]);
       setTrustCertificateFiles([]);
       setTransparency({ third_party_tested: false });
@@ -199,6 +201,19 @@ export default function AddProductDialog({
     setStatus(product.status as "draft" | "active" || "draft");
     setReturnPolicy(product.return_policy || "");
     setShippingInfo(product.shipping_info || "");
+    
+    // Load existing images
+    if (product.listing_images && product.listing_images.length > 0) {
+      setGalleryImages(
+        product.listing_images.map((img) => ({
+          id: img.image_id,
+          url: img.image_url,
+          isPrimary: img.is_primary,
+          altText: '',
+          isExisting: true,
+        }))
+      );
+    }
     
     // Set variants if they exist
     if (product.listing_variants) {
@@ -669,6 +684,7 @@ export default function AddProductDialog({
     setShelfLifeMonths(12);
     setDiscountPercentage(0);
     setProductImages([]);
+    setGalleryImages([]);
     setCertificateFiles([]);
     setTrustCertificateFiles([]);
     setStatus("draft");
@@ -1135,15 +1151,12 @@ export default function AddProductDialog({
           {/* Media Tab */}
           <TabsContent value="media" className="space-y-4">
             <ImageGalleryManager
-              images={productImages.map((file, idx) => ({
-                id: `file-${idx}`,
-                file,
-                isPrimary: idx === 0,
-                altText: '',
-              }))}
+              images={galleryImages}
               onImagesChange={(images) => {
-                const files = images.map(img => img.file).filter((f): f is File => f !== undefined);
-                setProductImages(files);
+                setGalleryImages(images);
+                // Update productImages with only new files for upload
+                const newFiles = images.map(img => img.file).filter((f): f is File => f !== undefined);
+                setProductImages(newFiles);
               }}
               maxImages={10}
             />
