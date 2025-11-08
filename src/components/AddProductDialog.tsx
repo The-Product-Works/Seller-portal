@@ -116,6 +116,21 @@ export default function AddProductDialog({
   const [certificateFiles, setCertificateFiles] = useState<File[]>([]);
   const [trustCertificateFiles, setTrustCertificateFiles] = useState<File[]>([]);
   
+  interface CertificateData {
+    name: string;
+    certificate_type: "organic" | "fssai" | "iso" | "other";
+    issued_date?: string;
+    expiry_date?: string;
+    issuing_body?: string;
+    url?: string;
+  }
+  
+  const [sellerCertifications, setSellerCertifications] = useState<CertificateData[]>([]);
+  const [newCertificate, setNewCertificate] = useState<CertificateData>({
+    name: "",
+    certificate_type: "organic",
+  });
+  
   const [transparency, setTransparency] = useState<TransparencyForm>({
     third_party_tested: false,
   });
@@ -144,6 +159,7 @@ export default function AddProductDialog({
       setGalleryImages([]);
       setCertificateFiles([]);
       setTrustCertificateFiles([]);
+      setSellerCertifications([]);
       setTransparency({ third_party_tested: false });
     }
   }, [editingProduct, open]);
@@ -501,6 +517,7 @@ export default function AddProductDialog({
             return_policy: returnPolicy,
             discount_percentage: discountPercentage,
             shipping_info: shippingInfo,
+            seller_certifications: sellerCertifications.length > 0 ? sellerCertifications : null,
             status: status,
             published_at: status === "active" ? new Date().toISOString() : null,
             updated_at: new Date().toISOString()
@@ -529,6 +546,7 @@ export default function AddProductDialog({
             return_policy: returnPolicy,
             discount_percentage: discountPercentage,
             shipping_info: shippingInfo,
+            seller_certifications: sellerCertifications.length > 0 ? sellerCertifications : null,
             status: status,
             slug: listingSlug,
             review_count: 0,
@@ -702,11 +720,12 @@ export default function AddProductDialog({
         </DialogHeader>
 
         <Tabs defaultValue="basic" className="w-full">
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-6">
             <TabsTrigger value="basic">Basic Info</TabsTrigger>
             <TabsTrigger value="variants">Variants</TabsTrigger>
             <TabsTrigger value="allergens">Allergens</TabsTrigger>
             <TabsTrigger value="media">Media</TabsTrigger>
+            <TabsTrigger value="certificates">Certificates</TabsTrigger>
             <TabsTrigger value="transparency">Transparency</TabsTrigger>
           </TabsList>
 
@@ -1187,6 +1206,135 @@ export default function AddProductDialog({
               <p className="text-xs text-muted-foreground">
                 {trustCertificateFiles.length} trust certificate(s) selected
               </p>
+            </div>
+          </TabsContent>
+
+          {/* Certificates Tab */}
+          <TabsContent value="certificates" className="space-y-4">
+            <div className="space-y-4">
+              <h3 className="font-semibold">Seller Certificates & Certifications</h3>
+              
+              {/* Existing Certificates List */}
+              {sellerCertifications.length > 0 && (
+                <div className="space-y-2">
+                  <Label>Added Certificates ({sellerCertifications.length})</Label>
+                  <div className="space-y-2">
+                    {sellerCertifications.map((cert, index) => (
+                      <div key={index} className="p-3 border rounded-lg bg-muted/30 flex justify-between items-start">
+                        <div className="flex-1">
+                          <p className="font-medium">{cert.name}</p>
+                          <p className="text-sm text-muted-foreground capitalize">{cert.certificate_type}</p>
+                          {cert.issuing_body && <p className="text-sm text-muted-foreground">Issued by: {cert.issuing_body}</p>}
+                          {cert.issued_date && <p className="text-sm text-muted-foreground">Date: {cert.issued_date}</p>}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setSellerCertifications(sellerCertifications.filter((_, i) => i !== index));
+                          }}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Add Certificate Form */}
+              <div className="border-t pt-4">
+                <h4 className="font-medium mb-3">Add New Certificate</h4>
+                
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label>Certificate Name *</Label>
+                    <Input
+                      placeholder="e.g., FSSAI License, Organic Certification"
+                      value={newCertificate.name}
+                      onChange={(e) => setNewCertificate({ ...newCertificate, name: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Certificate Type *</Label>
+                    <Select
+                      value={newCertificate.certificate_type}
+                      onValueChange={(value: "organic" | "fssai" | "iso" | "other") => {
+                        setNewCertificate({ ...newCertificate, certificate_type: value });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="organic">Organic Certification</SelectItem>
+                        <SelectItem value="fssai">FSSAI License</SelectItem>
+                        <SelectItem value="iso">ISO Certification</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Issuing Body</Label>
+                    <Input
+                      placeholder="e.g., APEDA, SGS, Indian Organic"
+                      value={newCertificate.issuing_body || ""}
+                      onChange={(e) => setNewCertificate({ ...newCertificate, issuing_body: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label>Issued Date</Label>
+                      <Input
+                        type="date"
+                        value={newCertificate.issued_date || ""}
+                        onChange={(e) => setNewCertificate({ ...newCertificate, issued_date: e.target.value })}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Expiry Date</Label>
+                      <Input
+                        type="date"
+                        value={newCertificate.expiry_date || ""}
+                        onChange={(e) => setNewCertificate({ ...newCertificate, expiry_date: e.target.value })}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Certificate URL (Optional)</Label>
+                    <Input
+                      placeholder="Link to certificate or verification page"
+                      type="url"
+                      value={newCertificate.url || ""}
+                      onChange={(e) => setNewCertificate({ ...newCertificate, url: e.target.value })}
+                    />
+                  </div>
+
+                  <Button
+                    onClick={() => {
+                      if (!newCertificate.name || !newCertificate.certificate_type) {
+                        toast({
+                          title: "Please fill in required fields",
+                          description: "Certificate name and type are required",
+                          variant: "destructive",
+                        });
+                        return;
+                      }
+                      setSellerCertifications([...sellerCertifications, newCertificate]);
+                      setNewCertificate({ name: "", certificate_type: "organic" });
+                      toast({ title: "Certificate added" });
+                    }}
+                    className="w-full"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Certificate
+                  </Button>
+                </div>
+              </div>
             </div>
           </TabsContent>
 
