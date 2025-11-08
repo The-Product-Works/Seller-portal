@@ -72,17 +72,11 @@ export function AdvancedHealthScoreDashboard({ sellerId }: AdvancedHealthScoreDa
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  useEffect(() => {
-    if (sellerId) {
-      calculateAdvancedHealthScore();
-    }
-  }, [sellerId, calculateAdvancedHealthScore]);
-
   const calculateAdvancedHealthScore = useCallback(async () => {
     if (!sellerId) return;
     setLoading(true);
     try {
-      // Get product data with additional quality metrics
+      // Get product data with available quality metrics
       const { data: products, error: productsError } = await supabase
         .from("seller_product_listings")
         .select(`
@@ -91,12 +85,12 @@ export function AdvancedHealthScoreDashboard({ sellerId }: AdvancedHealthScoreDa
           status,
           base_price,
           total_stock_quantity,
-          category,
-          ingredients,
-          allergen_info,
-          certifications,
-          is_organic,
-          created_at
+          seller_ingredients,
+          seller_certifications,
+          seller_description,
+          created_at,
+          health_score,
+          is_verified
         `)
         .eq("seller_id", sellerId);
 
@@ -109,7 +103,7 @@ export function AdvancedHealthScoreDashboard({ sellerId }: AdvancedHealthScoreDa
       // Get order statistics (excluding cancelled and refunded)
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
-        .select("id, status, created_at")
+        .select("order_id, status, created_at")
         .eq("seller_id", sellerId);
 
       if (ordersError) {
@@ -119,45 +113,68 @@ export function AdvancedHealthScoreDashboard({ sellerId }: AdvancedHealthScoreDa
       // Get return statistics
       const { data: returns } = await supabase
         .from("order_returns")
-        .select("id, status")
+        .select("return_id, status")
         .eq("seller_id", sellerId);
 
       // Calculate product quality metrics
       const totalProducts = products?.length || 0;
       const activeProducts = products?.filter(p => p.status === "active").length || 0;
       
-      // Organic products
-      const organicProducts = products?.filter(p => p.is_organic === true).length || 0;
+      // Analyze seller ingredients for organic indicators
+      let organicProducts = 0;
+      products?.forEach(product => {
+        const ingredients = product.seller_ingredients || "";
+        const organicKeywords = ['organic', 'natural', 'bio', 'free-range', 'grass-fed'];
+        const hasOrganicKeywords = organicKeywords.some(keyword => 
+          ingredients.toLowerCase().includes(keyword)
+        );
+        if (hasOrganicKeywords) {
+          organicProducts++;
+        }
+      });
       const organicPercentage = totalProducts > 0 ? (organicProducts / totalProducts) * 100 : 0;
 
-      // Certification analysis
+      // Certification analysis from seller_certifications
       let totalCertifications = 0;
       let certifiedProducts = 0;
       products?.forEach(product => {
-        if (product.certifications && product.certifications.length > 0) {
-          certifiedProducts++;
-          totalCertifications += product.certifications.length;
+        if (product.seller_certifications) {
+          try {
+            const certs = typeof product.seller_certifications === 'string' 
+              ? JSON.parse(product.seller_certifications) 
+              : product.seller_certifications;
+            if (Array.isArray(certs) && certs.length > 0) {
+              certifiedProducts++;
+              totalCertifications += certs.length;
+            }
+          } catch (error) {
+            // Handle non-JSON certification data
+            if (product.seller_certifications) {
+              certifiedProducts++;
+              totalCertifications += 1;
+            }
+          }
         }
       });
 
-      // Allergen safety analysis
+      // Allergen safety analysis from ingredients
       let lowAllergenProducts = 0;
       let ingredientQualityScore = 0;
       products?.forEach(product => {
+        const ingredients = product.seller_ingredients || "";
+        
         // Check for common allergens
-        const allergenInfo = product.allergen_info || [];
-        const commonAllergens = ['nuts', 'dairy', 'gluten', 'soy', 'eggs'];
+        const commonAllergens = ['nuts', 'dairy', 'gluten', 'soy', 'eggs', 'shellfish'];
         const hasCommonAllergens = commonAllergens.some(allergen => 
-          allergenInfo.some((info: string) => info.toLowerCase().includes(allergen))
+          ingredients.toLowerCase().includes(allergen)
         );
         
         if (!hasCommonAllergens) {
           lowAllergenProducts++;
         }
 
-        // Ingredient quality (more ingredients = potentially better quality)
-        const ingredients = product.ingredients || [];
-        if (ingredients.length >= 5) {
+        // Ingredient quality (longer ingredient list = potentially better transparency)
+        if (ingredients.length > 50) { // Decent ingredient description
           ingredientQualityScore += 1;
         }
       });
@@ -229,13 +246,19 @@ export function AdvancedHealthScoreDashboard({ sellerId }: AdvancedHealthScoreDa
       console.error("Error calculating health score:", error);
       toast({
         title: "Error",
-        description: "Failed to calculate health metrics",
+        description: "Failed to calculate health score",
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
   }, [sellerId, toast]);
+
+  useEffect(() => {
+    if (sellerId) {
+      calculateAdvancedHealthScore();
+    }
+  }, [sellerId, calculateAdvancedHealthScore]);
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return "text-green-600";

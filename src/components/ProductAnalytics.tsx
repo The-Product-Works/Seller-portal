@@ -50,6 +50,13 @@ export function ProductAnalytics({ sellerId: propSellerId }: ProductAnalyticsPro
   });
   const [loading, setLoading] = useState(true);
 
+  const loadSellerAndAnalytics = useCallback(async () => {
+    const sellerId = await getAuthenticatedSellerId();
+    if (sellerId) {
+      await loadProductAnalytics(sellerId);
+    }
+  }, []);
+
   useEffect(() => {
     if (propSellerId) {
       loadProductAnalytics(propSellerId);
@@ -57,13 +64,6 @@ export function ProductAnalytics({ sellerId: propSellerId }: ProductAnalyticsPro
       loadSellerAndAnalytics();
     }
   }, [propSellerId, loadSellerAndAnalytics]);
-
-  const loadSellerAndAnalytics = useCallback(async () => {
-    const sellerId = await getAuthenticatedSellerId();
-    if (sellerId) {
-      await loadProductAnalytics(sellerId);
-    }
-  }, []);
 
   const loadProductAnalytics = async (sellerId: string) => {
     setLoading(true);
@@ -74,9 +74,8 @@ export function ProductAnalytics({ sellerId: propSellerId }: ProductAnalyticsPro
         .select(`
           listing_id,
           seller_title,
-          price,
+          base_price,
           status,
-          category,
           created_at,
           listing_variants(
             variant_id,
@@ -124,18 +123,38 @@ export function ProductAnalytics({ sellerId: propSellerId }: ProductAnalyticsPro
       }, 0) || 0;
 
       // Calculate average price
-      const allPrices = products?.map(p => p.price).filter(price => price > 0) || [];
+      const allPrices = products?.map(p => p.base_price).filter(price => price > 0) || [];
       const averagePrice = allPrices.length > 0 
         ? allPrices.reduce((sum, price) => sum + price, 0) / allPrices.length 
         : 0;
 
-      // Top categories
+      // Analyze product titles for categories (basic keyword analysis)
       const categoryCount: Record<string, number> = {};
+      const categoryKeywords = {
+        'Food': ['food', 'snack', 'organic', 'nutrition', 'dietary'],
+        'Health': ['health', 'vitamin', 'supplement', 'wellness'],
+        'Beauty': ['beauty', 'skincare', 'cosmetic', 'lotion'],
+        'Home': ['home', 'kitchen', 'cleaning', 'household'],
+        'Other': []
+      };
+      
       products?.forEach(product => {
-        if (product.category) {
-          categoryCount[product.category] = (categoryCount[product.category] || 0) + 1;
+        const title = (product.seller_title || '').toLowerCase();
+        let assigned = false;
+        
+        for (const [category, keywords] of Object.entries(categoryKeywords)) {
+          if (category !== 'Other' && keywords.some(keyword => title.includes(keyword))) {
+            categoryCount[category] = (categoryCount[category] || 0) + 1;
+            assigned = true;
+            break;
+          }
+        }
+        
+        if (!assigned) {
+          categoryCount['Other'] = (categoryCount['Other'] || 0) + 1;
         }
       });
+      
       const topCategories = Object.entries(categoryCount)
         .map(([category, count]) => ({ category, count }))
         .sort((a, b) => b.count - a.count)
@@ -153,9 +172,9 @@ export function ProductAnalytics({ sellerId: propSellerId }: ProductAnalyticsPro
       const draftRevenue = totalRevenue - activeRevenue;
 
       // Products by price range
-      const budget = products?.filter(p => p.price < 100).length || 0;
-      const mid = products?.filter(p => p.price >= 100 && p.price <= 500).length || 0;
-      const premium = products?.filter(p => p.price > 500).length || 0;
+      const budget = products?.filter(p => p.base_price < 100).length || 0;
+      const mid = products?.filter(p => p.base_price >= 100 && p.base_price <= 500).length || 0;
+      const premium = products?.filter(p => p.base_price > 500).length || 0;
 
       setAnalytics({
         totalProducts,
