@@ -143,7 +143,8 @@ export default function AddProductDialog({
 
   useEffect(() => {
     loadInitialData();
-  }, [loadInitialData]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (editingProduct && open) {
