@@ -35,11 +35,15 @@ import {
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import { ProductForm, VariantForm, TransparencyForm } from "@/types/inventory.types";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/database.types";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImageGalleryManager, type ImageFile } from "@/components/ImageGalleryManager";
 import { ProductPreviewModal } from "@/components/ProductPreviewModal";
+
+// Type alias for Json type
+type Json = Database["public"]["Tables"]["seller_product_listings"]["Row"]["seller_certifications"];
 
 interface Brand {
   brand_id: string;
@@ -310,7 +314,22 @@ export default function AddProductDialog({
         selectedBrand.brand_id,
         selectedCategory
       );
-      setSelectedGlobalProduct(newProduct);
+      
+      // Format the response to match GlobalProduct interface with brand data
+      const formattedProduct: GlobalProduct = {
+        global_product_id: newProduct.global_product_id,
+        product_name: newProduct.product_name,
+        brand_id: newProduct.brand_id,
+        brands: {
+          name: selectedBrand.name,
+        },
+      };
+      
+      // Set as selected and add to the list for display
+      setSelectedGlobalProduct(formattedProduct);
+      setGlobalProducts([formattedProduct, ...globalProducts]);
+      setGlobalProductSearch(""); // Clear search field
+      
       toast({ title: "Global product created successfully" });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -331,6 +350,9 @@ export default function AddProductDialog({
     try {
       const newBrand = await createBrand(brandSearch);
       setSelectedBrand(newBrand);
+      // Add to brands list so it appears in dropdown
+      setBrands([newBrand, ...brands]);
+      setBrandSearch(""); // Clear search field
       toast({ title: "Brand created successfully" });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
