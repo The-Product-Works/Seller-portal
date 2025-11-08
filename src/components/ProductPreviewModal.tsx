@@ -24,6 +24,12 @@ interface ProductPreviewData {
   health_score?: number;
   status: 'draft' | 'active';
   published_at?: string;
+  manufacturing_info?: string;
+  certificates?: {
+    regular: number;
+    trust: number;
+    total: number;
+  };
   images?: Array<{ image_url: string; is_primary: boolean }>;
   variants?: Array<{
     variant_name?: string;
@@ -32,6 +38,7 @@ interface ProductPreviewData {
     price: number;
     stock_quantity: number;
     nutritional_info?: Record<string, unknown>;
+    manufacture_date?: string;
   }>;
 }
 
@@ -232,6 +239,7 @@ export function ProductPreviewModal({
                         </p>
                         <p className="text-sm text-muted-foreground">
                           Stock: {variant.stock_quantity} | Price: ₹{variant.price}
+                          {variant.manufacture_date && ` | Mfg: ${new Date(variant.manufacture_date).toLocaleDateString()}`}
                         </p>
                         {variant.nutritional_info &&
                           Object.keys(variant.nutritional_info).length > 0 && (
@@ -242,6 +250,36 @@ export function ProductPreviewModal({
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Manufacturing Information */}
+            {product.manufacturing_info && (
+              <div>
+                <h3 className="font-semibold mb-2">Manufacturing Information</h3>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  {product.manufacturing_info}
+                </p>
+              </div>
+            )}
+
+            {/* Certificates */}
+            {product.certificates && product.certificates.total > 0 && (
+              <div>
+                <h3 className="font-semibold mb-2">Certificates & Documentation</h3>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                  <div className="flex items-center gap-2 text-green-700">
+                    <span className="text-lg">✓</span>
+                    <div>
+                      <p className="font-medium">Certified Product</p>
+                      <p className="text-sm">
+                        {product.certificates.regular > 0 && `${product.certificates.regular} quality certificate(s)`}
+                        {product.certificates.regular > 0 && product.certificates.trust > 0 && ' • '}
+                        {product.certificates.trust > 0 && `${product.certificates.trust} trust certificate(s)`}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

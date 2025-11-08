@@ -6,6 +6,7 @@ import { AlertCircle, Package } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ProductImageGalleryCard } from "@/components/ProductImageGalleryCard";
+import type { ListingWithDetails } from "@/types/inventory.types";
 
 interface ProductImage {
   image_id: string;
@@ -101,7 +102,7 @@ export function ProductGalleryGrid({ sellerId, limit = 12, showOnlyOutOfStock = 
       let lowCount = 0;
 
       if (listings && listings.length > 0) {
-        listings.forEach((listing: SellerProductListing) => {
+        listings.forEach((listing: ListingWithDetails) => {
           const stock = listing.total_stock_quantity || 0;
           const isLowStock = stock < lowStockThreshold;
           if (isLowStock) lowCount++;

@@ -1,5 +1,5 @@
 // Product Management Dialog Component
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { X, Plus, Upload, Search } from "lucide-react";
+import { X, Plus, Upload, Search, Image as ImageIcon } from "lucide-react";
 import {
   searchGlobalProducts,
   searchBrands,
@@ -41,6 +41,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImageGalleryManager, type ImageFile } from "@/components/ImageGalleryManager";
 import { ProductPreviewModal } from "@/components/ProductPreviewModal";
+import { ImageManager } from "@/components/ImageManager";
 
 // Type alias for Json type
 type Json = Database["public"]["Tables"]["seller_product_listings"]["Row"]["seller_certifications"];
@@ -114,6 +115,7 @@ export default function AddProductDialog({
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [status, setStatus] = useState<"draft" | "active">("draft");
   const [showPreview, setShowPreview] = useState(false);
+  const [showImageManager, setShowImageManager] = useState(false);
   
   const [productImages, setProductImages] = useState<File[]>([]);
   const [galleryImages, setGalleryImages] = useState<ImageFile[]>([]);
@@ -141,7 +143,7 @@ export default function AddProductDialog({
 
   useEffect(() => {
     loadInitialData();
-  }, []);
+  }, [loadInitialData]);
 
   useEffect(() => {
     if (editingProduct && open) {
@@ -168,7 +170,7 @@ export default function AddProductDialog({
     }
   }, [editingProduct, open]);
 
-  async function loadInitialData() {
+  const loadInitialData = useCallback(async () => {
     const sellerId = await getAuthenticatedSellerId();
     
     if (!sellerId) {
@@ -193,7 +195,7 @@ export default function AddProductDialog({
     setCategories(categoriesData || []);
     setBrands(allBrands || []);
     setGlobalProducts(allProducts || []);
-  }
+  }, [toast]);
 
   async function loadEditingProduct(product: ListingWithDetails) {
     if (!product?.global_products) return;
@@ -309,11 +311,19 @@ export default function AddProductDialog({
     }
     
     try {
+      console.log("Creating global product with:", {
+        productName: globalProductSearch,
+        brandId: selectedBrand.brand_id,
+        categoryId: selectedCategory
+      });
+      
       const newProduct = await createGlobalProduct(
         globalProductSearch,
         selectedBrand.brand_id,
         selectedCategory
       );
+      
+      console.log("Global product created successfully:", newProduct);
       
       // Format the response to match GlobalProduct interface with brand data
       const formattedProduct: GlobalProduct = {
@@ -348,6 +358,7 @@ export default function AddProductDialog({
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      console.error("Global product creation failed:", error);
       toast({
         title: "Error creating product",
         description: errorMessage,
@@ -363,7 +374,10 @@ export default function AddProductDialog({
     }
     
     try {
+      console.log("Creating brand with name:", brandSearch);
       const newBrand = await createBrand(brandSearch);
+      console.log("Brand created successfully:", newBrand);
+      
       setSelectedBrand(newBrand);
       // Add to brands list so it appears in dropdown
       setBrands([newBrand, ...brands]);
@@ -371,6 +385,7 @@ export default function AddProductDialog({
       toast({ title: "Brand created successfully" });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      console.error("Brand creation failed:", error);
       toast({
         title: "Error creating brand",
         description: errorMessage,
@@ -419,7 +434,9 @@ export default function AddProductDialog({
     setVariants(updated);
   }
 
-  async function handleSave() {
+  async function handleSave(overrideStatus?: "draft" | "active") {
+    const finalStatus = overrideStatus || status;
+    console.log("handleSave called with status:", finalStatus, "override:", overrideStatus, "state:", status);
     if (!sellerId) {
       toast({ title: "Not authenticated", variant: "destructive" });
       return;
@@ -456,9 +473,14 @@ export default function AddProductDialog({
     try {
       setLoading(true);
 
+      // For new products, upload all files. For editing, only upload new files.
+      const filesToUpload = isEditing 
+        ? galleryImages.filter(img => !img.isExisting && img.file).map(img => img.file!)
+        : productImages;
+
       // Upload files
       const uploadedImages = await Promise.all(
-        productImages.map((file) => uploadFile(file, sellerId, "product-images"))
+        filesToUpload.map((file) => uploadFile(file, sellerId, "product-images"))
       );
       
       const uploadedCerts = await Promise.all(
@@ -526,6 +548,7 @@ export default function AddProductDialog({
           throw new Error("You don't have permission to edit this product");
         }
         
+        console.log("About to update database with status:", finalStatus);
         const { data, error } = await supabase
           .from("seller_product_listings")
           .update({
@@ -541,8 +564,8 @@ export default function AddProductDialog({
             discount_percentage: discountPercentage,
             shipping_info: shippingInfo,
             seller_certifications: (sellerCertifications.length > 0 ? sellerCertifications : null) as unknown as Json,
-            status: status,
-            published_at: status === "active" ? new Date().toISOString() : null,
+            status: finalStatus,
+            published_at: finalStatus === "active" ? new Date().toISOString() : null,
             updated_at: new Date().toISOString()
           })
           .eq("listing_id", editingProduct.listing_id)
@@ -553,6 +576,7 @@ export default function AddProductDialog({
         listing = data;
         listingError = error;
       } else {
+        console.log("About to create new product with status:", finalStatus);
         const { data, error } = await supabase
           .from("seller_product_listings")
           .insert({
@@ -570,11 +594,11 @@ export default function AddProductDialog({
             discount_percentage: discountPercentage,
             shipping_info: shippingInfo,
             seller_certifications: (sellerCertifications.length > 0 ? sellerCertifications : null) as unknown as Json,
-            status: status,
+            status: finalStatus,
             slug: listingSlug,
             review_count: 0,
             is_verified: false,
-            published_at: status === "active" ? new Date().toISOString() : null,
+            published_at: finalStatus === "active" ? new Date().toISOString() : null,
           })
           .select()
           .single();
@@ -642,30 +666,93 @@ export default function AddProductDialog({
 
       // Handle images
       if (isEditing) {
-        // Delete existing images first
-        const { error: deleteImageError } = await supabase
+        // Get the current gallery images to understand what needs to be updated
+        const existingImages = galleryImages.filter(img => img.isExisting && img.url);
+        const newImages = galleryImages.filter(img => !img.isExisting && img.file);
+        
+        // Only delete images that are no longer in the gallery (user removed them)
+        const { data: currentImages } = await supabase
           .from("listing_images")
-          .delete()
+          .select("image_id, image_url")
           .eq("listing_id", listing.listing_id);
 
-        if (deleteImageError) {
-          console.error("❌ Error deleting existing images:", deleteImageError);
-          throw new Error(`Failed to update images: ${deleteImageError.message}`);
-        }
-      }
+        if (currentImages) {
+          const existingImageUrls = existingImages.map(img => img.url);
+          const imagesToDelete = currentImages.filter(img => !existingImageUrls.includes(img.image_url));
+          
+          if (imagesToDelete.length > 0) {
+            const imageIdsToDelete = imagesToDelete.map(img => img.image_id);
+            const { error: deleteImageError } = await supabase
+              .from("listing_images")
+              .delete()
+              .in("image_id", imageIdsToDelete);
 
-      // Insert new images
-      for (let i = 0; i < uploadedImages.length; i++) {
-        const { error: imageError } = await supabase.from("listing_images").insert({
-          listing_id: listing.listing_id,
-          image_url: uploadedImages[i],
-          is_primary: i === 0,
-          sort_order: i,
-        });
+            if (deleteImageError) {
+              console.error("❌ Error deleting removed images:", deleteImageError);
+              throw new Error(`Failed to update images: ${deleteImageError.message}`);
+            }
+          }
+        }
+
+        // Insert new images (uploadedImages contains only newly uploaded files)
+        for (let i = 0; i < uploadedImages.length; i++) {
+          const { error: imageError } = await supabase.from("listing_images").insert({
+            listing_id: listing.listing_id,
+            image_url: uploadedImages[i],
+            is_primary: false, // We'll update primary status separately
+            sort_order: existingImages.length + i,
+          });
+          
+          if (imageError) {
+            console.error("❌ RLS ERROR on listing_images:", imageError);
+            throw new Error(`Failed to upload new image: ${imageError.message}`);
+          }
+        }
+
+        // Update primary image status for all images
+        const allImages = [...existingImages, ...newImages];
+        const primaryImage = allImages.find(img => img.isPrimary);
         
-        if (imageError) {
-          console.error("❌ RLS ERROR on listing_images:", imageError);
-          throw new Error(`Failed to ${isEditing ? 'update' : 'upload'} image: ${imageError.message}`);
+        if (primaryImage) {
+          // Reset all images to non-primary first
+          await supabase
+            .from("listing_images")
+            .update({ is_primary: false })
+            .eq("listing_id", listing.listing_id);
+          
+          // Set the primary image
+          let primaryImageUrl = primaryImage.url;
+          if (!primaryImageUrl && primaryImage.file) {
+            // This is a new image, find its uploaded URL
+            const newImageIndex = newImages.findIndex(img => img.id === primaryImage.id);
+            if (newImageIndex !== -1 && newImageIndex < uploadedImages.length) {
+              primaryImageUrl = uploadedImages[newImageIndex];
+            }
+          }
+          
+          if (primaryImageUrl) {
+            await supabase
+              .from("listing_images")
+              .update({ is_primary: true })
+              .eq("listing_id", listing.listing_id)
+              .eq("image_url", primaryImageUrl);
+          }
+        }
+      } else {
+        // For new products, handle all images normally
+        // Insert new images
+        for (let i = 0; i < uploadedImages.length; i++) {
+          const { error: imageError } = await supabase.from("listing_images").insert({
+            listing_id: listing.listing_id,
+            image_url: uploadedImages[i],
+            is_primary: i === 0,
+            sort_order: i,
+          });
+          
+          if (imageError) {
+            console.error("❌ RLS ERROR on listing_images:", imageError);
+            throw new Error(`Failed to upload image: ${imageError.message}`);
+          }
         }
       }
 
@@ -693,12 +780,15 @@ export default function AddProductDialog({
       }
       */
 
+      // Update the component state to reflect the new status
+      setStatus(finalStatus);
+      
       const action = isEditing 
-        ? (status === "active" ? "updated and published" : "updated and saved as draft")
-        : (status === "draft" ? "saved as draft" : "published");
+        ? (finalStatus === "active" ? "updated and published" : "updated and saved as draft")
+        : (finalStatus === "draft" ? "saved as draft" : "published");
       toast({ 
         title: `Product ${action} successfully`,
-        description: status === "active" ? "Your product is now live in the marketplace" : "You can publish this product later"
+        description: finalStatus === "active" ? "Your product is now live in the marketplace" : "You can publish this product later"
       });
       onSuccess();
       onOpenChange(false);
@@ -824,32 +914,25 @@ export default function AddProductDialog({
                       ))}
                   </SelectContent>
                 </Select>
-                {!isEditing && (
-                  <Button 
-                    variant="outline" 
-                    size="icon"
-                    disabled={!selectedBrand}
-                    onClick={() => {
-                      if (!selectedBrand) return;
-                      const newProductName = prompt("Enter new product name:");
-                      if (newProductName) {
-                        setGlobalProductSearch(newProductName);
-                        handleCreateGlobalProduct();
-                      }
-                    }}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                )}
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  disabled={!selectedBrand}
+                  onClick={() => {
+                    if (!selectedBrand) return;
+                    const newProductName = prompt("Enter new product name:");
+                    if (newProductName) {
+                      setGlobalProductSearch(newProductName);
+                      handleCreateGlobalProduct();
+                    }
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
               {selectedGlobalProduct && (
                 <p className="text-xs text-muted-foreground">
                   Selected: {selectedGlobalProduct.product_name}
-                </p>
-              )}
-              {isEditing && (
-                <p className="text-xs text-orange-600">
-                  ⚠️ Changing the global product will affect the core product information
                 </p>
               )}
             </div>
@@ -1083,9 +1166,9 @@ export default function AddProductDialog({
                       <Input
                         type="number"
                         placeholder="e.g., 250"
-                        value={variant.nutritional_info?.calories || ""}
+                        value={typeof variant.nutritional_info?.calories === 'number' ? variant.nutritional_info.calories : ""}
                         onChange={(e) => {
-                          const newNutrInfo = { ...variant.nutritional_info, calories: Number(e.target.value) };
+                          const newNutrInfo = { ...variant.nutritional_info, calories: Number(e.target.value) || 0 };
                           updateVariant(index, "nutritional_info", newNutrInfo);
                         }}
                       />
@@ -1095,9 +1178,9 @@ export default function AddProductDialog({
                       <Input
                         type="number"
                         placeholder="e.g., 10"
-                        value={variant.nutritional_info?.protein || ""}
+                        value={typeof variant.nutritional_info?.protein === 'number' ? variant.nutritional_info.protein : ""}
                         onChange={(e) => {
-                          const newNutrInfo = { ...variant.nutritional_info, protein: Number(e.target.value) };
+                          const newNutrInfo = { ...variant.nutritional_info, protein: Number(e.target.value) || 0 };
                           updateVariant(index, "nutritional_info", newNutrInfo);
                         }}
                       />
@@ -1107,9 +1190,9 @@ export default function AddProductDialog({
                       <Input
                         type="number"
                         placeholder="e.g., 5"
-                        value={variant.nutritional_info?.fat || ""}
+                        value={typeof variant.nutritional_info?.fat === 'number' ? variant.nutritional_info.fat : ""}
                         onChange={(e) => {
-                          const newNutrInfo = { ...variant.nutritional_info, fat: Number(e.target.value) };
+                          const newNutrInfo = { ...variant.nutritional_info, fat: Number(e.target.value) || 0 };
                           updateVariant(index, "nutritional_info", newNutrInfo);
                         }}
                       />
@@ -1119,9 +1202,9 @@ export default function AddProductDialog({
                       <Input
                         type="number"
                         placeholder="e.g., 30"
-                        value={variant.nutritional_info?.carbohydrates || ""}
+                        value={typeof variant.nutritional_info?.carbohydrates === 'number' ? variant.nutritional_info.carbohydrates : ""}
                         onChange={(e) => {
-                          const newNutrInfo = { ...variant.nutritional_info, carbohydrates: Number(e.target.value) };
+                          const newNutrInfo = { ...variant.nutritional_info, carbohydrates: Number(e.target.value) || 0 };
                           updateVariant(index, "nutritional_info", newNutrInfo);
                         }}
                       />
@@ -1131,9 +1214,9 @@ export default function AddProductDialog({
                       <Input
                         type="number"
                         placeholder="e.g., 5"
-                        value={variant.nutritional_info?.fiber || ""}
+                        value={typeof variant.nutritional_info?.fiber === 'number' ? variant.nutritional_info.fiber : ""}
                         onChange={(e) => {
-                          const newNutrInfo = { ...variant.nutritional_info, fiber: Number(e.target.value) };
+                          const newNutrInfo = { ...variant.nutritional_info, fiber: Number(e.target.value) || 0 };
                           updateVariant(index, "nutritional_info", newNutrInfo);
                         }}
                       />
@@ -1193,6 +1276,17 @@ export default function AddProductDialog({
 
           {/* Media Tab */}
           <TabsContent value="media" className="space-y-4">
+            <div className="flex justify-between items-center">
+              <Label>Product Images</Label>
+              <Button 
+                variant="outline" 
+                onClick={() => setShowImageManager(true)}
+              >
+                <ImageIcon className="h-4 w-4 mr-2" />
+                Select from Manage Images
+              </Button>
+            </div>
+            
             <ImageGalleryManager
               images={galleryImages}
               onImagesChange={(images) => {
@@ -1450,8 +1544,8 @@ export default function AddProductDialog({
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setStatus("draft");
-                    handleSave();
+                    console.log("Add Product - Save as Draft clicked");
+                    handleSave("draft");
                   }}
                   disabled={loading}
                 >
@@ -1459,8 +1553,8 @@ export default function AddProductDialog({
                 </Button>
                 <Button
                   onClick={() => {
-                    setStatus("active");
-                    handleSave();
+                    console.log("Add Product - Publish Now clicked");
+                    handleSave("active");
                   }}
                   disabled={loading}
                 >
@@ -1473,8 +1567,8 @@ export default function AddProductDialog({
                 <Button
                   variant="outline"
                   onClick={() => {
-                    setStatus("draft");
-                    handleSave();
+                    console.log("Edit Product - Save as Draft clicked");
+                    handleSave("draft");
                   }}
                   disabled={loading}
                 >
@@ -1482,8 +1576,8 @@ export default function AddProductDialog({
                 </Button>
                 <Button
                   onClick={() => {
-                    setStatus("active");
-                    handleSave();
+                    console.log("Edit Product - Publish Now clicked");
+                    handleSave("active");
                   }}
                   disabled={loading}
                 >
@@ -1517,6 +1611,12 @@ export default function AddProductDialog({
                 shelf_life_months: shelfLifeMonths,
                 status: status,
                 published_at: new Date().toISOString(),
+                manufacturing_info: transparency.manufacturing_info,
+                certificates: {
+                  regular: certificateFiles.length,
+                  trust: trustCertificateFiles.length,
+                  total: certificateFiles.length + trustCertificateFiles.length
+                },
                 images: galleryImages
                   .map(img => {
                     let imageUrl = img.url || '';
@@ -1537,10 +1637,17 @@ export default function AddProductDialog({
                   price: v.price,
                   stock_quantity: v.stock_quantity,
                   nutritional_info: v.nutritional_info,
+                  manufacture_date: v.manufacture_date,
                 })),
               }
             : null
         }
+      />
+
+      {/* Image Manager Modal */}
+      <ImageManager
+        open={showImageManager}
+        onOpenChange={setShowImageManager}
       />
     </Dialog>
   );

@@ -21,6 +21,7 @@ interface SimpleRestockDialogProps {
   productName: string;
   currentStock: number;
   isBundle?: boolean;
+  isVariant?: boolean;  // New flag to indicate if productId is a variant_id
   sellerId?: string | null;
   onSuccess?: () => void;
 }
@@ -32,6 +33,7 @@ export function SimpleRestockDialog({
   productName,
   currentStock,
   isBundle = false,
+  isVariant = false,
   sellerId,
   onSuccess,
 }: SimpleRestockDialogProps) {
@@ -75,6 +77,47 @@ export function SimpleRestockDialog({
           .eq("seller_id", sellerId);
 
         if (error) throw error;
+      } else if (isVariant) {
+        // Update variant stock
+        const { error } = await supabase
+          .from("listing_variants")
+          .update({
+            stock_quantity: newStock,
+          })
+          .eq("variant_id", productId);
+
+        if (error) throw error;
+
+        // Also update the total stock quantity for the parent listing
+        // First get the variant to find its listing_id
+        const { data: variantData, error: variantError } = await supabase
+          .from("listing_variants")
+          .select("listing_id")
+          .eq("variant_id", productId)
+          .single();
+
+        if (variantError) throw variantError;
+
+        // Get all variants for this listing to calculate new total
+        const { data: allVariants, error: allVariantsError } = await supabase
+          .from("listing_variants")
+          .select("stock_quantity")
+          .eq("listing_id", variantData.listing_id);
+
+        if (allVariantsError) throw allVariantsError;
+
+        const totalStock = allVariants.reduce((sum, v) => sum + (v.stock_quantity || 0), 0);
+
+        // Update the parent listing's total stock
+        const { error: listingError } = await supabase
+          .from("seller_product_listings")
+          .update({
+            total_stock_quantity: totalStock,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("listing_id", variantData.listing_id);
+
+        if (listingError) throw listingError;
       } else {
         // Update product stock
         const { error } = await supabase

@@ -100,6 +100,21 @@ export async function createGlobalProduct(
   brandId: string,
   categoryId?: string
 ) {
+  // First check if a product with the same name and brand already exists
+  const { data: existingProduct, error: existingError } = await supabase
+    .from("global_products")
+    .select("*")
+    .eq("product_name", productName)
+    .eq("brand_id", brandId)
+    .maybeSingle();
+
+  if (existingError) throw existingError;
+
+  if (existingProduct) {
+    // Product already exists, return it instead of creating a duplicate
+    return existingProduct;
+  }
+
   let slug = productName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -131,14 +146,24 @@ export async function createGlobalProduct(
     .insert({
       product_name: productName,
       brand_id: brandId,
-      category_id: categoryId,
+      category_id: categoryId || null, // Ensure null instead of undefined
       slug: slug,
       is_active: true,
     })
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Error creating global product:", error);
+    console.error("Data being inserted:", {
+      product_name: productName,
+      brand_id: brandId,
+      category_id: categoryId || null,
+      slug: slug,
+      is_active: true,
+    });
+    throw error;
+  }
   return data;
 }
 
@@ -187,7 +212,16 @@ export async function createBrand(brandName: string) {
     .select()
     .single();
 
-  if (error) throw error;
+  if (error) {
+    console.error("Error creating brand:", error);
+    console.error("Data being inserted:", {
+      name: brandToInsert,
+      slug: slug,
+      is_active: true,
+      is_verified: false,
+    });
+    throw error;
+  }
   return data;
 }
 

@@ -26,7 +26,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Edit, Trash2, Plus, Filter, Search, Package, X, Images } from "lucide-react";
+import { Edit, Trash2, Plus, Filter, Search, Package, X, Images, ChevronLeft, ChevronRight } from "lucide-react";
 import { BundleCreation } from "@/components/BundleCreation";
 import { FilterOptions, ListingWithDetails, VariantForm, BundleWithDetails } from "@/types/inventory.types";
 import AddProductDialog from "@/components/AddProductDialog";
@@ -44,6 +44,93 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Slider } from "@/components/ui/slider";
+
+interface BundleImageItem {
+  image_url: string;
+  [key: string]: unknown;
+}
+
+interface BundleItem {
+  seller_product_listings?: {
+    listing_images?: BundleImageItem[];
+  };
+  [key: string]: unknown;
+}
+
+interface BundleWithImages {
+  bundle_items?: BundleItem[];
+  [key: string]: unknown;
+}
+
+// Bundle Image Scroller Component
+const BundleImageScroller = ({ bundle }: { bundle: BundleWithImages }) => {
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  
+  // Extract all images from bundle items
+  const allImages = bundle.bundle_items?.reduce((images: BundleImageItem[], item: BundleItem) => {
+    const itemImages = item.seller_product_listings?.listing_images || [];
+    return [...images, ...itemImages];
+  }, [] as BundleImageItem[]) || [];
+
+  const nextImage = () => {
+    setCurrentImageIndex((prev) => (prev + 1) % allImages.length);
+  };
+
+  const prevImage = () => {
+    setCurrentImageIndex((prev) => (prev - 1 + allImages.length) % allImages.length);
+  };
+
+  if (allImages.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Package className="h-16 w-16 text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative w-full h-full">
+      <img
+        src={allImages[currentImageIndex]?.image_url}
+        alt="Bundle product"
+        className="object-cover w-full h-full"
+      />
+      
+      {allImages.length > 1 && (
+        <>
+          <button
+            onClick={prevImage}
+            aria-label="Previous image"
+            className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <button
+            onClick={nextImage}
+            aria-label="Next image"
+            className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white p-1 rounded-full hover:bg-black/70 transition-colors"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+          
+          {/* Image indicators */}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+            {allImages.map((_, idx) => (
+              <button
+                key={idx}
+                onClick={() => setCurrentImageIndex(idx)}
+                aria-label={`Go to image ${idx + 1}`}
+                className={`w-2 h-2 rounded-full transition-colors ${
+                  idx === currentImageIndex ? 'bg-white' : 'bg-white/50'
+                }`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
 
 export default function Inventory() {
   const { toast } = useToast();
@@ -134,10 +221,23 @@ export default function Inventory() {
 
     setListings((data as ListingWithDetails[]) || []);
     
-    // Load bundles
+    // Load bundles with product images
     const { data: bundlesData, error: bundlesError } = await supabase
       .from("bundles")
-      .select("*")
+      .select(`
+        *,
+        bundle_items!inner(
+          listing_id,
+          quantity,
+          seller_product_listings!inner(
+            seller_title,
+            listing_images(
+              image_url,
+              is_primary
+            )
+          )
+        )
+      `)
       .eq("seller_id", seller_id)
       .order("created_at", { ascending: false });
 
@@ -227,18 +327,209 @@ export default function Inventory() {
 
     try {
       setLoading(true);
+      console.log("Starting deletion for listing:", listingId);
+      
+      // Get all variants for this listing first
+      const { data: variants, error: variantsQueryError } = await supabase
+        .from("listing_variants")
+        .select("variant_id")
+        .eq("listing_id", listingId);
+
+      if (variantsQueryError) {
+        console.error("Error fetching variants:", variantsQueryError);
+        throw variantsQueryError;
+      }
+
+      const variantIds = variants?.map(v => v.variant_id) || [];
+      console.log("Found variants to delete:", variantIds);
+
+      // Delete all related data using IN operator for better efficiency
+      if (variantIds.length > 0) {
+        console.log("Deleting cart items for variants...");
+        const { error: cartError } = await supabase
+          .from("cart_items")
+          .delete()
+          .in("variant_id", variantIds);
+
+        if (cartError) {
+          console.warn("Could not delete cart items:", cartError);
+        } else {
+          console.log("Successfully deleted cart items for variants");
+        }
+
+        console.log("Deleting order items for variants...");
+        const { error: orderError } = await supabase
+          .from("order_items")
+          .delete()
+          .in("variant_id", variantIds);
+
+        if (orderError) {
+          console.error("Could not delete order items for variants:", orderError);
+        } else {
+          console.log("Successfully deleted order items for variants");
+        }
+
+        console.log("Deleting product transparency data for variants...");
+        const { error: transparencyError } = await supabase
+          .from("product_transparency")
+          .delete()
+          .in("variant_id", variantIds);
+
+        if (transparencyError) {
+          console.warn("Could not delete transparency data for variants:", transparencyError);
+        } else {
+          console.log("Successfully deleted transparency data for variants");
+        }
+
+        console.log("Deleting variant-specific images...");
+        const { error: variantImagesError } = await supabase
+          .from("listing_images")
+          .delete()
+          .in("variant_id", variantIds);
+
+        if (variantImagesError) {
+          console.warn("Could not delete variant images:", variantImagesError);
+        } else {
+          console.log("Successfully deleted variant images");
+        }
+      }
+
+      // Delete all listing-level related data
+      console.log("Deleting cart items for listing...");
+      const { error: listingCartError } = await supabase
+        .from("cart_items")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (listingCartError) {
+        console.warn("Could not delete listing cart items:", listingCartError);
+      }
+
+      console.log("Deleting order items for listing...");
+      const { error: listingOrderError } = await supabase
+        .from("order_items")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (listingOrderError) {
+        console.warn("Could not delete listing order items:", listingOrderError);
+      }
+
+      console.log("Deleting product allergens...");
+      const { error: allergensError } = await supabase
+        .from("product_allergens")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (allergensError) {
+        console.warn("Could not delete product allergens:", allergensError);
+      }
+
+      console.log("Deleting product questions...");
+      const { error: questionsError } = await supabase
+        .from("product_questions")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (questionsError) {
+        console.warn("Could not delete product questions:", questionsError);
+      }
+
+      console.log("Deleting product reviews...");
+      const { error: reviewsError } = await supabase
+        .from("product_reviews")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (reviewsError) {
+        console.warn("Could not delete product reviews:", reviewsError);
+      }
+
+      console.log("Deleting product transparency data for listing...");
+      const { error: listingTransparencyError } = await supabase
+        .from("product_transparency")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (listingTransparencyError) {
+        console.warn("Could not delete listing transparency data:", listingTransparencyError);
+      }
+
+      console.log("Deleting product views...");
+      const { error: viewsError } = await supabase
+        .from("product_views")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (viewsError) {
+        console.warn("Could not delete product views:", viewsError);
+      }
+
+      console.log("Deleting wishlists...");
+      const { error: wishlistsError } = await supabase
+        .from("wishlists")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (wishlistsError) {
+        console.warn("Could not delete wishlists:", wishlistsError);
+      }
+
+      console.log("Deleting listing allergens...");
+      const { error: listingAllergensError } = await supabase
+        .from("listing_allergens")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (listingAllergensError) {
+        console.warn("Could not delete listing allergens:", listingAllergensError);
+      }
+
+      // Delete listing-level images
+      console.log("Deleting listing-level images...");
+      const { error: listingImagesError } = await supabase
+        .from("listing_images")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (listingImagesError) {
+        console.warn("Could not delete listing images:", listingImagesError);
+      } else {
+        console.log("Successfully deleted listing-level images");
+      }
+
+      // Now delete variants
+      console.log("Deleting variants...");
+      const { error: variantsError } = await supabase
+        .from("listing_variants")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (variantsError) {
+        console.error("Error deleting variants:", variantsError);
+        throw variantsError;
+      }
+      console.log("Successfully deleted variants");
+
+      // Finally delete the listing
+      console.log("Deleting main listing...");
       const { error } = await supabase
         .from("seller_product_listings")
         .delete()
         .eq("listing_id", listingId)
-        .eq("seller_id", sellerId); // Ensure seller can only delete their own listings
+        .eq("seller_id", sellerId);
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error deleting listing:", error);
+        throw error;
+      }
 
+      console.log("Successfully deleted listing:", listingId);
       toast({ title: "Product deleted successfully" });
       await loadListings(sellerId);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      console.error("Full delete error:", error);
       toast({
         title: "Error deleting product",
         description: errorMessage,
@@ -257,17 +548,51 @@ export default function Inventory() {
       setLoading(true);
       
       // First verify the variant belongs to a listing owned by this seller
-      const { data: variant } = await supabase
+      const { data: variant, error: verifyError } = await supabase
         .from("listing_variants")
-        .select("listing_id, seller_product_listings!inner(seller_id)")
+        .select(`
+          listing_id, 
+          seller_product_listings!inner(seller_id)
+        `)
         .eq("variant_id", variantId)
         .eq("seller_product_listings.seller_id", sellerId)
         .single();
       
-      if (!variant) {
+      if (verifyError || !variant) {
         throw new Error("Variant not found or access denied");
       }
       
+      // Delete related data first
+      console.log("Deleting cart items for variant...");
+      const { error: cartError } = await supabase
+        .from("cart_items")
+        .delete()
+        .eq("variant_id", variantId);
+
+      if (cartError) {
+        console.warn("Could not delete cart items:", cartError);
+      }
+
+      console.log("Deleting order items for variant...");
+      const { error: orderError } = await supabase
+        .from("order_items")
+        .delete()
+        .eq("variant_id", variantId);
+
+      if (orderError) {
+        console.warn("Could not delete order items:", orderError);
+      }
+
+      console.log("Deleting transparency data for variant...");
+      const { error: transparencyError } = await supabase
+        .from("product_transparency")
+        .delete()
+        .eq("variant_id", variantId);
+
+      if (transparencyError) {
+        console.warn("Could not delete transparency data:", transparencyError);
+      }
+
       // Now delete the variant
       const { error } = await supabase
         .from("listing_variants")
@@ -280,6 +605,7 @@ export default function Inventory() {
       await loadListings(sellerId);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      console.error("Variant deletion error:", error);
       toast({
         title: "Error deleting variant",
         description: errorMessage,
@@ -296,10 +622,35 @@ export default function Inventory() {
 
     try {
       setLoading(true);
+      
+      // First verify the bundle belongs to this seller
+      const { data: bundleData, error: verifyError } = await supabase
+        .from("bundles")
+        .select("id, seller_id")
+        .eq("id", bundleId)
+        .eq("seller_id", sellerId)
+        .single();
+
+      if (verifyError || !bundleData) {
+        throw new Error("Bundle not found or access denied");
+      }
+
+      // Delete related data first
+      console.log("Deleting bundle items...");
+      const { error: itemsError } = await supabase
+        .from("bundle_items")
+        .delete()
+        .eq("bundle_id", bundleId);
+
+      if (itemsError) {
+        console.warn("Could not delete bundle items:", itemsError);
+      }
+
+      // Delete the bundle
       const { error } = await supabase
         .from("bundles")
         .delete()
-        .eq("bundle_id", bundleId)
+        .eq("id", bundleId)
         .eq("seller_id", sellerId);
 
       if (error) throw error;
@@ -308,6 +659,7 @@ export default function Inventory() {
       await loadListings(sellerId);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      console.error("Bundle deletion error:", error);
       toast({
         title: "Error deleting bundle",
         description: errorMessage,
@@ -688,17 +1040,8 @@ export default function Inventory() {
                 <Card key={bundle.bundle_id} className="overflow-hidden border-primary/20">
                   <div className="relative">
                     <div className="aspect-square bg-muted relative">
-                      {bundle.thumbnail_url ? (
-                        <img
-                          src={bundle.thumbnail_url}
-                          alt={bundleName}
-                          className="object-cover w-full h-full"
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <Package className="h-16 w-16 text-primary" />
-                        </div>
-                      )}
+                      {/* Bundle Product Images Scroller */}
+                      <BundleImageScroller bundle={bundle} />
                     </div>
                     <div className="absolute top-2 right-2 flex gap-2">
                       <Badge
