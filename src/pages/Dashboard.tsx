@@ -4,13 +4,14 @@ import { SellerGraph } from "@/components/SellerGraph";
 import { DashboardProductStock } from "@/components/DashboardProductStock";
 import { SellerOrders } from "@/components/SellerOrders";
 import { BestWorstSelling } from "@/components/BestWorstSelling";
-import { HealthScoreDashboard } from "@/components/HealthScoreDashboard";
+import { AdvancedHealthScoreDashboard } from "@/components/AdvancedHealthScoreDashboard";
+import { ProductAnalytics } from "@/components/ProductAnalytics";
 import { ProductGalleryGrid } from "@/components/ProductGalleryGrid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   DollarSign, Package, ShoppingCart, TrendingUp, AlertCircle, Clock, 
-  RefreshCw, Plus, Filter 
+  RefreshCw, Plus, Filter, BarChart3, Heart, Award, Activity
 } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
@@ -84,32 +85,45 @@ export default function Dashboard() {
       setKycStatus(sellerData.verification_status);
       setSellerId(sellerData.id);
 
-      const { data: revenueNow } = await supabase
-        .from("orders")
-        .select("total_amount", { count: "exact", head: false })
-        .eq("seller_id", user.id)
-        .gte("created_at", new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
-
-      let totalRevenue = 0;
-      if (revenueNow && Array.isArray(revenueNow)) {
-        totalRevenue = revenueNow.reduce((s: number, r: OrderRecord) => s + (r.total_amount || 0), 0);
-      }
-
+      // Calculate current month revenue (from orders table, excluding cancelled/refunded)
       const now = new Date();
-      const startCurrent = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-      const startPrev = new Date(startCurrent.getTime() - 30 * 24 * 60 * 60 * 1000);
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
 
-      const { data: prevPeriod } = await supabase
+      const { data: currentMonthOrders } = await supabase
         .from("orders")
-        .select("total_amount")
-        .eq("seller_id", user.id)
-        .gte("created_at", startPrev.toISOString())
-        .lt("created_at", startCurrent.toISOString());
+        .select("total_amount, final_amount")
+        .eq("seller_id", sellerData.id)
+        .neq("status", "cancelled")
+        .neq("status", "refunded")
+        .gte("created_at", startOfMonth.toISOString());
 
-      const prevRevenue = (prevPeriod || []).reduce((s: number, r: OrderRecord) => s + (r.total_amount || 0), 0);
-      const change = prevRevenue === 0 ? (totalRevenue === 0 ? 0 : 100) : ((totalRevenue - prevRevenue) / prevRevenue) * 100;
-      setRevenueChange(Number(change.toFixed(1)));
+      const { data: lastMonthOrders } = await supabase
+        .from("orders")
+        .select("total_amount, final_amount")
+        .eq("seller_id", sellerData.id)
+        .neq("status", "cancelled")
+        .neq("status", "refunded")
+        .gte("created_at", startOfLastMonth.toISOString())
+        .lte("created_at", endOfLastMonth.toISOString());
 
+      // Calculate current month revenue
+      const currentRevenue = currentMonthOrders?.reduce((sum, order) => 
+        sum + (order.final_amount || order.total_amount), 0) || 0;
+      
+      // Calculate last month revenue  
+      const lastMonthRevenue = lastMonthOrders?.reduce((sum, order) => 
+        sum + (order.final_amount || order.total_amount), 0) || 0;
+
+      // Calculate percentage change
+      const revenueChangePercent = lastMonthRevenue === 0 
+        ? (currentRevenue > 0 ? 100 : 0)
+        : ((currentRevenue - lastMonthRevenue) / lastMonthRevenue) * 100;
+
+      setRevenueChange(Number(revenueChangePercent.toFixed(1)));
+
+      // Get product counts using seller_id from sellers table
       const { count: activeCount } = await supabase
         .from("seller_product_listings")
         .select("listing_id", { count: "exact" })
@@ -122,19 +136,20 @@ export default function Dashboard() {
         .eq("seller_id", sellerData.id)
         .eq("status", "draft");
 
+      // Get order counts using seller_id
       const { count: totalOrdersCount } = await supabase
         .from("orders")
-        .select("id", { count: "exact" })
-        .eq("seller_id", user.id);
+        .select("order_id", { count: "exact" })
+        .eq("seller_id", sellerData.id);
 
       const { count: pendingOrdersCount } = await supabase
         .from("orders")
-        .select("id", { count: "exact" })
-        .eq("seller_id", user.id)
+        .select("order_id", { count: "exact" })
+        .eq("seller_id", sellerData.id)
         .eq("status", "pending");
 
       setStats({
-        totalRevenue: totalRevenue,
+        totalRevenue: currentRevenue,
         totalOrders: totalOrdersCount || 0,
         totalProducts: (activeCount || 0) + (draftCount || 0),
         activeProducts: activeCount || 0,
@@ -159,7 +174,7 @@ export default function Dashboard() {
       title: "Total Revenue",
       value: `₹${stats.totalRevenue.toFixed(2)}`,
       icon: DollarSign,
-      description: revenueChange !== null ? `${revenueChange > 0 ? '+' : ''}${revenueChange.toFixed(1)}% from last month` : "Total earnings",
+      description: revenueChange !== null ? `${revenueChange > 0 ? '+' : ''}${revenueChange.toFixed(1)}% from last month` : "This month earnings",
       gradient: "from-green-500 to-emerald-600",
     },
     {
@@ -177,10 +192,10 @@ export default function Dashboard() {
       gradient: "from-purple-500 to-pink-600",
     },
     {
-      title: "Health Score",
-      value: "Soon",
-      icon: TrendingUp,
-      description: "Seller performance metric",
+      title: "Pending Orders",
+      value: stats.pendingOrders.toString(),
+      icon: Clock,
+      description: "Awaiting processing",
       gradient: "from-orange-500 to-red-600",
     },
   ];
@@ -247,10 +262,14 @@ export default function Dashboard() {
 
       {/* Main Content Tabs */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview" className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4" />
             Overview
+          </TabsTrigger>
+          <TabsTrigger value="analytics" className="flex items-center gap-2">
+            <BarChart3 className="h-4 w-4" />
+            Analytics
           </TabsTrigger>
           <TabsTrigger value="products" className="flex items-center gap-2">
             <Package className="h-4 w-4" />
@@ -261,8 +280,8 @@ export default function Dashboard() {
             Orders
           </TabsTrigger>
           <TabsTrigger value="health" className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" />
-            Health
+            <Heart className="h-4 w-4" />
+            Health Score
           </TabsTrigger>
         </TabsList>
 
@@ -286,7 +305,10 @@ export default function Dashboard() {
 
                 <Card>
                   <CardHeader>
-                    <CardTitle>Best & Worst Selling</CardTitle>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Performance Analytics
+                    </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <BestWorstSelling sellerId={sellerId} />
@@ -294,15 +316,60 @@ export default function Dashboard() {
                 </Card>
               </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Low Stock Alerts</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <LowStockNotifications />
-                </CardContent>
-              </Card>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <AlertCircle className="h-5 w-5 text-orange-600" />
+                      Low Stock Alerts
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <LowStockNotifications />
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Activity className="h-5 w-5" />
+                      Quick Stats
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="text-center p-3 bg-green-50 rounded-lg">
+                        <p className="text-2xl font-bold text-green-600">{stats.activeProducts}</p>
+                        <p className="text-sm text-green-700">Active Products</p>
+                      </div>
+                      <div className="text-center p-3 bg-blue-50 rounded-lg">
+                        <p className="text-2xl font-bold text-blue-600">{stats.draftProducts}</p>
+                        <p className="text-sm text-blue-700">Draft Products</p>
+                      </div>
+                      <div className="text-center p-3 bg-purple-50 rounded-lg">
+                        <p className="text-2xl font-bold text-purple-600">₹{stats.totalRevenue.toFixed(0)}</p>
+                        <p className="text-sm text-purple-700">Total Revenue</p>
+                      </div>
+                      <div className="text-center p-3 bg-orange-50 rounded-lg">
+                        <p className="text-2xl font-bold text-orange-600">{stats.pendingOrders}</p>
+                        <p className="text-sm text-orange-700">Pending Orders</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
             </>
+          )}
+        </TabsContent>
+
+        {/* Analytics Tab */}
+        <TabsContent value="analytics" className="space-y-6">
+          {!sellerId ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Loading analytics...</p>
+            </div>
+          ) : (
+            <ProductAnalytics sellerId={sellerId} />
           )}
         </TabsContent>
 
@@ -351,7 +418,13 @@ export default function Dashboard() {
 
         {/* Health Tab */}
         <TabsContent value="health">
-          <HealthScoreDashboard sellerId={sellerId} />
+          {!sellerId ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Loading health metrics...</p>
+            </div>
+          ) : (
+            <AdvancedHealthScoreDashboard sellerId={sellerId} />
+          )}
         </TabsContent>
       </Tabs>
     </div>
