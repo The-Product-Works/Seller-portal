@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 // Navbar is rendered by ProtectedRoute; do not render it here to avoid duplication
 import { SellerGraph } from "@/components/SellerGraph";
 import { OrderHistory } from "@/components/OrderHistory";
+import { DashboardProductStock } from "@/components/DashboardProductStock";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, Package, ShoppingCart, TrendingUp, AlertCircle, Clock } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -13,6 +14,15 @@ interface Stats {
   totalOrders: number;
   totalProducts: number;
   pendingOrders: number;
+}
+
+interface OrderRecord {
+  total_amount: number;
+}
+
+interface Seller {
+  id: string;
+  verification_status: string;
 }
 
 export default function Dashboard() {
@@ -49,9 +59,11 @@ export default function Dashboard() {
         return;
       }
 
+      const sellerData = seller as Seller;
+
       // Set KYC status for banner
-      setKycStatus(seller.verification_status);
-  setSellerId(seller.id);
+      setKycStatus(sellerData.verification_status);
+      setSellerId(sellerData.id);
 
       // Load products
       const { count: productsCount } = await supabase
@@ -61,7 +73,7 @@ export default function Dashboard() {
         .eq("status", "active");
 
       // Calculate total revenue from orders for the seller
-      const { data: revenueNow, error: revErr } = await (supabase as any)
+      const { data: revenueNow } = await supabase
         .from("orders")
         .select("total_amount", { count: "exact", head: false })
         .eq("seller_id", user.id)
@@ -69,7 +81,7 @@ export default function Dashboard() {
 
       let totalRevenue = 0;
       if (revenueNow && Array.isArray(revenueNow)) {
-        totalRevenue = revenueNow.reduce((s: number, r: any) => s + (r.total_amount || 0), 0);
+        totalRevenue = revenueNow.reduce((s: number, r: OrderRecord) => s + (r.total_amount || 0), 0);
       }
 
       // Compute previous period revenue for change percentage (previous 30 days)
@@ -77,14 +89,14 @@ export default function Dashboard() {
       const startCurrent = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       const startPrev = new Date(startCurrent.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-      const { data: prevPeriod } = await (supabase as any)
+      const { data: prevPeriod } = await supabase
         .from("orders")
         .select("total_amount")
         .eq("seller_id", user.id)
         .gte("created_at", startPrev.toISOString())
         .lt("created_at", startCurrent.toISOString());
 
-      const prevRevenue = (prevPeriod || []).reduce((s: number, r: any) => s + (r.total_amount || 0), 0);
+      const prevRevenue = (prevPeriod || []).reduce((s: number, r: OrderRecord) => s + (r.total_amount || 0), 0);
       const change = prevRevenue === 0 ? (totalRevenue === 0 ? 0 : 100) : ((totalRevenue - prevRevenue) / prevRevenue) * 100;
       setRevenueChange(Number(change.toFixed(1)));
 
@@ -212,9 +224,9 @@ export default function Dashboard() {
           <LowStockNotifications />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <DashboardProductStock sellerId={sellerId} limit={8} />
           <OrderHistory sellerId={sellerId} />
-          {/* Additional dashboard widgets can be added here */}
         </div>
       </div>
     </div>
