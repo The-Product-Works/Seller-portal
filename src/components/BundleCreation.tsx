@@ -38,10 +38,18 @@ interface SelectedListingItem {
   quantity: number;
 }
 
+interface BundleData {
+  bundle_id: string;
+  bundle_name: string;
+  description?: string;
+  discount_percentage?: number;
+  status?: 'draft' | 'active';
+}
+
 interface BundleCreationProps {
   open: boolean;
   onClose: () => void;
-  editingBundle?: Record<string, unknown>;
+  editingBundle?: BundleData;
 }
 
 export function BundleCreation({ open, onClose, editingBundle }: BundleCreationProps) {

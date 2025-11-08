@@ -13,7 +13,7 @@ export interface VariantForm {
   manufacture_date?: string;
   batch_number?: string;
   expiry_date?: string;
-  nutritional_info?: Record<string, any>;
+  nutritional_info?: Record<string, string | number | boolean | null>;
   is_available: boolean;
 }
 
@@ -76,6 +76,7 @@ export interface ListingWithDetails {
   base_price: number;
   discounted_price?: number;
   discount_percentage?: number;
+  return_days?: number;
   total_stock_quantity: number;
   shelf_life_months?: number;
   return_policy?: string;
@@ -102,4 +103,23 @@ export interface ListingWithDetails {
     image_url: string;
     is_primary: boolean;
   }>;
+}
+
+export interface BundleWithDetails {
+  bundle_id: string;
+  seller_id: string;
+  bundle_name: string;
+  description?: string;
+  base_price: number;
+  discounted_price?: number;
+  discount_percentage?: number;
+  total_items: number;
+  total_stock_quantity: number;
+  status: 'draft' | 'active';
+  published_at?: string;
+  slug: string;
+  thumbnail_url?: string;
+  created_at: string;
+  updated_at: string;
+  itemType: 'bundle';
 }

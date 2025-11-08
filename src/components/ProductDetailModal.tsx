@@ -12,16 +12,34 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Package, AlertTriangle, X } from "lucide-react";
 
+interface ListingImage {
+  image_url: string;
+  is_primary?: boolean;
+}
+
+interface BrandInfo {
+  name?: string;
+}
+
+interface GlobalProduct {
+  product_name?: string;
+  description?: string;
+  allergens?: string[];
+  brands?: BrandInfo;
+}
+
+interface ProductDetail {
+  [key: string]: unknown;
+  seller_title?: string;
+  description?: string;
+  global_products?: GlobalProduct;
+}
+
 interface ProductDetailModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   productId?: string;
   bundleId?: string;
-}
-
-interface ListingImage {
-  image_url: string;
-  is_primary?: boolean;
 }
 
 export function ProductDetailModal({
@@ -140,12 +158,13 @@ export function ProductDetailModal({
   const renderProductContent = () => {
     if (!product) return null;
 
-    const p = product as Record<string, unknown>;
+    const p = product as ProductDetail;
     const primaryImage = allImages?.find((img) => img.is_primary) || allImages?.[selectedImage];
-    const brandName = (p.global_products as Record<string, unknown>)?.brands?.name || "Unknown Brand";
-    const productName = p.seller_title || (p.global_products as Record<string, unknown>)?.product_name || "Untitled";
-    const description = (p.global_products as Record<string, unknown>)?.description || p.description || "No description available";
-    const allergens = (p.global_products as Record<string, unknown>)?.allergens || [];
+    const globalProducts = p.global_products as GlobalProduct | undefined;
+    const brandName = globalProducts?.brands?.name || "Unknown Brand";
+    const productName = (p.seller_title as string) || globalProducts?.product_name || "Untitled";
+    const description = globalProducts?.description || (p.description as string) || "No description available";
+    const allergens = (globalProducts?.allergens as string[]) || [];
 
     return (
       <div className="space-y-6">

@@ -27,7 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Edit, Trash2, Plus, Filter, Search, Package, X, Images } from "lucide-react";
 import { BundleCreation } from "@/components/BundleCreation";
-import { FilterOptions, ListingWithDetails, VariantForm } from "@/types/inventory.types";
+import { FilterOptions, ListingWithDetails, VariantForm, BundleWithDetails } from "@/types/inventory.types";
 import AddProductDialog from "@/components/AddProductDialog";
 import { ImageManager } from "@/components/ImageManager";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
@@ -46,7 +46,7 @@ import { Slider } from "@/components/ui/slider";
 export default function Inventory() {
   const { toast } = useToast();
   const [listings, setListings] = useState<ListingWithDetails[]>([]);
-  const [bundles, setBundles] = useState<Array<Record<string, unknown>>>([]);
+  const [bundles, setBundles] = useState<BundleWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [sellerId, setSellerId] = useState<string | null>(null);
 
@@ -71,7 +71,7 @@ export default function Inventory() {
   } | null>(null);
 
   // Bundle restock dialog
-  const [bundleRestockTarget, setBundleRestockTarget] = useState<Record<string, unknown> | null>(null);
+  const [bundleRestockTarget, setBundleRestockTarget] = useState<Omit<BundleWithDetails, 'itemType'> | null>(null);
 
   // Product/Bundle detail modal
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -648,19 +648,20 @@ export default function Inventory() {
             </Button>
           </div>
         ) : (
-          filteredListings.map((item: Record<string, unknown>) => {
+          filteredListings.map((item: ListingWithDetails | BundleWithDetails) => {
             // Handle both products and bundles
             if (item.itemType === 'bundle') {
-              console.log("Rendering bundle:", item.bundle_id, item.bundle_name);
-              const bundleName = item.bundle_name as string;
-              const discount = (item.discount_percentage as number) || 0;
+              const bundle = item as BundleWithDetails;
+              console.log("Rendering bundle:", bundle.bundle_id, bundle.bundle_name);
+              const bundleName = bundle.bundle_name;
+              const discount = bundle.discount_percentage || 0;
 
               return (
-                <Card key={item.bundle_id} className="overflow-hidden border-primary/20">
+                <Card key={bundle.bundle_id} className="overflow-hidden border-primary/20">
                   <div className="aspect-square bg-muted relative">
-                    {item.thumbnail_url ? (
+                    {bundle.thumbnail_url ? (
                       <img
-                        src={item.thumbnail_url}
+                        src={bundle.thumbnail_url}
                         alt={bundleName}
                         className="object-cover w-full h-full"
                       />
@@ -672,14 +673,14 @@ export default function Inventory() {
                     <div className="absolute top-2 right-2 flex gap-2">
                       <Badge
                         variant={
-                          item.status === "active"
+                          bundle.status === "active"
                             ? "default"
-                            : item.status === "draft"
+                            : bundle.status === "draft"
                             ? "secondary"
                             : "outline"
                         }
                       >
-                        {item.status}
+                        {bundle.status}
                       </Badge>
                       {discount > 0 && (
                         <Badge variant="destructive">{discount}% OFF</Badge>
@@ -694,27 +695,27 @@ export default function Inventory() {
                         {bundleName}
                       </h3>
 
-                      {item.description && (
+                      {bundle.description && (
                         <p className="text-sm text-muted-foreground line-clamp-2">
-                          {item.description}
+                          {bundle.description}
                         </p>
                       )}
 
                       <div className="flex items-baseline gap-2">
                         <span className="text-2xl font-bold">
-                          ₹{item.discounted_price?.toFixed(2) || item.base_price?.toFixed(2)}
+                          ₹{bundle.discounted_price?.toFixed(2) || bundle.base_price?.toFixed(2)}
                         </span>
-                        {item.base_price && item.discounted_price && item.base_price !== item.discounted_price && (
+                        {bundle.base_price && bundle.discounted_price && bundle.base_price !== bundle.discounted_price && (
                           <span className="text-sm text-muted-foreground line-through">
-                            ₹{item.base_price.toFixed(2)}
+                            ₹{bundle.base_price.toFixed(2)}
                           </span>
                         )}
                       </div>
 
                       <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                        <div>Items: {item.total_items}</div>
+                        <div>Items: {bundle.total_items}</div>
                         <div>•</div>
-                        <div>Stock: {item.total_stock_quantity || 0}</div>
+                        <div>Stock: {bundle.total_stock_quantity || 0}</div>
                       </div>
 
                       <div className="flex gap-2 pt-2">
@@ -723,7 +724,7 @@ export default function Inventory() {
                           variant="outline"
                           className="flex-1"
                           onClick={() => {
-                            setEditingBundle(item);
+                            setEditingBundle(bundle);
                             setBundleDialogOpen(true);
                           }}
                         >
@@ -734,8 +735,9 @@ export default function Inventory() {
                           size="sm"
                           variant="outline"
                           onClick={() => {
-                            console.log("Restock clicked for bundle:", item.bundle_id);
-                            setBundleRestockTarget(item);
+                            console.log("Restock clicked for bundle:", bundle.bundle_id);
+                            const { itemType, ...bundleData } = bundle;
+                            setBundleRestockTarget(bundleData);
                           }}
                           title="Restock Bundle"
                         >
@@ -812,11 +814,11 @@ export default function Inventory() {
 
                     <div className="flex items-baseline gap-2">
                       <span className="text-2xl font-bold">
-                        ₹{listing.base_price}
+                        ₹{(listing.base_price as number).toFixed(2)}
                       </span>
                       {listing.discounted_price && (
                         <span className="text-sm text-muted-foreground line-through">
-                          ₹{listing.discounted_price}
+                          ₹{(listing.discounted_price as number).toFixed(2)}
                         </span>
                       )}
                     </div>
@@ -887,7 +889,7 @@ export default function Inventory() {
                             <div className="flex-1">
                               <p className="font-medium">{variant.variant_name}</p>
                               <p className="text-muted-foreground">
-                                ₹{variant.price} • Stock: {variant.stock_quantity}
+                                ₹{(variant.price as number).toFixed(2)} • Stock: {variant.stock_quantity}
                               </p>
                             </div>
                             <div className="flex gap-1">
