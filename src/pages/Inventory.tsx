@@ -358,6 +358,30 @@ export default function Inventory() {
         }
 
         console.log("Deleting order items for variants...");
+        
+        // First, get all order_item_ids for these variants to delete related returns
+        const { data: orderItemsToDelete } = await supabase
+          .from("order_items")
+          .select("order_item_id")
+          .in("variant_id", variantIds);
+
+        if (orderItemsToDelete && orderItemsToDelete.length > 0) {
+          const orderItemIds = orderItemsToDelete.map(item => item.order_item_id);
+          
+          console.log("Deleting order returns for order items...");
+          const { error: returnsError } = await supabase
+            .from("order_returns")
+            .delete()
+            .in("order_item_id", orderItemIds);
+
+          if (returnsError) {
+            console.warn("Could not delete order returns:", returnsError);
+          } else {
+            console.log("Successfully deleted order returns");
+          }
+        }
+
+        // Now delete the order items
         const { error: orderError } = await supabase
           .from("order_items")
           .delete()
@@ -430,6 +454,28 @@ export default function Inventory() {
       }
 
       console.log("Deleting order items for listing...");
+      
+      // First, get all order_item_ids for this listing to delete related returns
+      const { data: listingOrderItemsToDelete } = await supabase
+        .from("order_items")
+        .select("order_item_id")
+        .eq("listing_id", listingId);
+
+      if (listingOrderItemsToDelete && listingOrderItemsToDelete.length > 0) {
+        const orderItemIds = listingOrderItemsToDelete.map(item => item.order_item_id);
+        
+        console.log("Deleting order returns for listing order items...");
+        const { error: listingReturnsError } = await supabase
+          .from("order_returns")
+          .delete()
+          .in("order_item_id", orderItemIds);
+
+        if (listingReturnsError) {
+          console.warn("Could not delete listing order returns:", listingReturnsError);
+        }
+      }
+
+      // Now delete the order items for the listing
       const { error: listingOrderError } = await supabase
         .from("order_items")
         .delete()
@@ -600,6 +646,28 @@ export default function Inventory() {
       }
 
       console.log("Deleting order items for variant...");
+      
+      // First, get all order_item_ids for this variant to delete related returns
+      const { data: orderItemsToDelete } = await supabase
+        .from("order_items")
+        .select("order_item_id")
+        .eq("variant_id", variantId);
+
+      if (orderItemsToDelete && orderItemsToDelete.length > 0) {
+        const orderItemIds = orderItemsToDelete.map(item => item.order_item_id);
+        
+        console.log("Deleting order returns for order items...");
+        const { error: returnsError } = await supabase
+          .from("order_returns")
+          .delete()
+          .in("order_item_id", orderItemIds);
+
+        if (returnsError) {
+          console.warn("Could not delete order returns:", returnsError);
+        }
+      }
+
+      // Now delete the order items
       const { error: orderError } = await supabase
         .from("order_items")
         .delete()
