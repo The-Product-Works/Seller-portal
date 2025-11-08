@@ -267,34 +267,42 @@ export default function Dashboard() {
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Sales Trend</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <SellerGraph sellerId={sellerId} />
-              </CardContent>
-            </Card>
+          {!sellerId ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Loading dashboard data...</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Sales Trend</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <SellerGraph sellerId={sellerId} />
+                  </CardContent>
+                </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Best & Worst Selling</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <BestWorstSelling sellerId={sellerId} />
-              </CardContent>
-            </Card>
-          </div>
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Best & Worst Selling</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <BestWorstSelling sellerId={sellerId} />
+                  </CardContent>
+                </Card>
+              </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Low Stock Alerts</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <LowStockNotifications />
-            </CardContent>
-          </Card>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Low Stock Alerts</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <LowStockNotifications />
+                </CardContent>
+              </Card>
+            </>
+          )}
         </TabsContent>
 
         {/* Products Tab */}
@@ -307,7 +315,20 @@ export default function Dashboard() {
             </Button>
           </div>
 
-          <DashboardProductStock sellerId={sellerId} limit={50} />
+          <RestockDialog
+            open={showRestockDialog}
+            onOpenChange={setShowRestockDialog}
+            sellerId={sellerId}
+            onSuccess={loadDashboardData}
+          />
+
+          {!sellerId ? (
+            <div className="text-center py-8">
+              <p className="text-muted-foreground">Loading products...</p>
+            </div>
+          ) : (
+            <DashboardProductStock sellerId={sellerId} limit={50} />
+          )}
         </TabsContent>
 
         {/* Orders Tab */}

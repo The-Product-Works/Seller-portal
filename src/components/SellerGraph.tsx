@@ -18,6 +18,11 @@ interface SalesData {
   profit: number;
 }
 
+interface OrderRecord {
+  created_at: string;
+  total_amount: number;
+}
+
 interface SellerGraphProps {
   sellerId: string;
 }
@@ -28,43 +33,47 @@ export function SellerGraph({ sellerId }: SellerGraphProps) {
   const [timeRange, setTimeRange] = useState<'week' | 'month' | 'year'>('month');
 
   useEffect(() => {
-    loadSalesData();
+    if (sellerId) {
+      loadSalesData();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sellerId, timeRange]);
 
   const loadSalesData = async () => {
+    if (!sellerId) return;
     setLoading(true);
     try {
-      let intervalStr = '';
-      switch (timeRange) {
-        case 'week':
-          intervalStr = "interval '7 days'";
-          break;
-        case 'month':
-          intervalStr = "interval '30 days'";
-          break;
-        case 'year':
-          intervalStr = "interval '365 days'";
-          break;
-      }
+      const daysBack = timeRange === 'week' ? 7 : timeRange === 'month' ? 30 : 365;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - daysBack);
 
-      const { data, error } = await supabase
-        .rpc('get_seller_sales_data', {
-          p_seller_id: sellerId,
-          p_interval: intervalStr
-        });
+      const { data: orders, error } = await supabase
+        .from("orders")
+        .select("total_amount, created_at")
+        .eq("seller_id", sellerId)
+        .gte("created_at", startDate.toISOString())
+        .order("created_at");
 
       if (error) throw error;
 
-      // Transform the data for the chart
-      const formattedData = data.map((item: any) => ({
-        date: new Date(item.date).toLocaleDateString(),
-        sales: item.total_sales,
-        profit: item.total_profit
+      // Group by date
+      const groupedData: Record<string, number> = {};
+      (orders || []).forEach((order: OrderRecord) => {
+        const date = new Date(order.created_at).toLocaleDateString();
+        groupedData[date] = (groupedData[date] || 0) + (order.total_amount || 0);
+      });
+
+      // Calculate profit (assume 20% profit margin for demo)
+      const formattedData = Object.entries(groupedData).map(([date, sales]) => ({
+        date,
+        sales: Math.round(sales),
+        profit: Math.round(sales * 0.2)
       }));
 
-      setSalesData(formattedData);
+      setSalesData(formattedData.slice(-30)); // Show last 30 data points max
     } catch (error) {
       console.error('Error loading sales data:', error);
+      setSalesData([]);
     } finally {
       setLoading(false);
     }

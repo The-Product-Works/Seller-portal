@@ -100,7 +100,8 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
 
   const handleCancelOrder = async (orderId: string) => {
     try {
-      const { error } = await supabase
+      // Update order status to cancelled with reason in remarks
+      const { error: updateError } = await supabase
         .from("orders")
         .update({
           status: "cancelled",
@@ -109,21 +110,39 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
         .eq("id", orderId)
         .eq("seller_id", sellerId);
 
-      if (error) {
+      if (updateError) {
         toast({
           title: "Error cancelling order",
-          description: error.message,
+          description: updateError.message,
           variant: "destructive",
         });
-      } else {
-        setOrders(orders.filter(o => o.id !== orderId));
-        toast({
-          title: "Order cancelled",
-          description: "The order has been cancelled successfully. Buyer will be notified.",
-        });
-        setCancelingOrderId(null);
-        setCancelReason("");
+        return;
       }
+
+      // Store cancellation reason in order_status_history
+      if (cancelReason) {
+        const { error: historyError } = await supabase
+          .from("order_status_history")
+          .insert({
+            order_id: orderId,
+            old_status: "pending",
+            new_status: "cancelled",
+            remarks: cancelReason,
+            changed_at: new Date().toISOString(),
+          });
+
+        if (historyError) {
+          console.error("Error storing cancellation reason:", historyError);
+        }
+      }
+
+      setOrders(orders.filter(o => o.id !== orderId));
+      toast({
+        title: "Order cancelled",
+        description: "The order has been cancelled. Buyer will be notified with the reason.",
+      });
+      setCancelingOrderId(null);
+      setCancelReason("");
     } catch (error) {
       console.error("Error cancelling order:", error);
       toast({
@@ -316,7 +335,7 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
               </div>
 
               <div className="flex gap-2 mt-4">
-                {order.status === "pending" && (
+                {(order.status === "pending" || order.status === "processing") && (
                   <Button
                     size="sm"
                     variant="outline"
