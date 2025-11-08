@@ -38,6 +38,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ImageGalleryManager } from "@/components/ImageGalleryManager";
 
 interface Brand {
   brand_id: string;
@@ -1133,20 +1134,21 @@ export default function AddProductDialog({
 
           {/* Media Tab */}
           <TabsContent value="media" className="space-y-4">
-            <div className="space-y-2">
-              <Label>Product Images</Label>
-              <Input
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={(e) => setProductImages(Array.from(e.target.files || []))}
-              />
-              <p className="text-xs text-muted-foreground">
-                {productImages.length} image(s) selected
-              </p>
-            </div>
+            <ImageGalleryManager
+              images={productImages.map((file, idx) => ({
+                id: `file-${idx}`,
+                file,
+                isPrimary: idx === 0,
+                altText: '',
+              }))}
+              onImagesChange={(images) => {
+                const files = images.map(img => img.file).filter((f): f is File => f !== undefined);
+                setProductImages(files);
+              }}
+              maxImages={10}
+            />
 
-            <div className="space-y-2">
+            <div className="space-y-2 mt-6 pt-6 border-t">
               <Label>Certificates</Label>
               <Input
                 type="file"
