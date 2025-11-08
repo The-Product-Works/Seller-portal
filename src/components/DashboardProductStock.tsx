@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, TrendingDown, Package } from "lucide-react";
@@ -54,6 +55,7 @@ interface DashboardProductStockProps {
 }
 
 export function DashboardProductStock({ sellerId, limit = 8 }: DashboardProductStockProps) {
+  const navigate = useNavigate();
   const [products, setProducts] = useState<ProductStockInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [lowStockCount, setLowStockCount] = useState(0);
@@ -241,9 +243,15 @@ export function DashboardProductStock({ sellerId, limit = 8 }: DashboardProductS
             return (
               <div
                 key={`${product.type}-${product.id}`}
+                onClick={() => {
+                  if (product.low_stock) {
+                    // Navigate to inventory page with product ID as filter
+                    navigate(`/inventory?restockProductId=${product.id}`);
+                  }
+                }}
                 className={`flex items-center justify-between p-3 rounded-lg border transition ${
                   product.low_stock
-                    ? "border-red-200 bg-red-50/30"
+                    ? "border-red-200 bg-red-50/30 cursor-pointer hover:bg-red-50/50 hover:border-red-300"
                     : "border-border bg-muted/30 hover:border-primary/30"
                 }`}
               >
@@ -294,8 +302,8 @@ export function DashboardProductStock({ sellerId, limit = 8 }: DashboardProductS
                   </div>
                   {product.low_stock && (
                     <div className="flex-shrink-0">
-                      <Badge variant="destructive" className="text-xs">
-                        Low
+                      <Badge variant="destructive" className="text-xs cursor-pointer">
+                        Click to Restock
                       </Badge>
                     </div>
                   )}

@@ -464,22 +464,8 @@ export default function AddProductDialog({
       console.log(`=== ${isEditing ? "Updating" : "Creating"} Product Listing ===`);
       console.log("Operation:", isEditing ? "Update" : "Create");
       
-      // Check for duplicate names only when creating a new product
-      if (!isEditing) {
-        const { data: existingProduct, error: checkError } = await supabase
-          .from("seller_product_listings")
-          .select("listing_id, seller_title")
-          .eq("seller_id", sellerId)
-          .ilike("seller_title", sellerTitle || productTitle)
-          .neq("listing_id", editingProduct?.listing_id || "") // Exclude current product when editing
-          .maybeSingle();
-
-        if (checkError) {
-          console.error("Error checking existing products:", checkError);
-        } else if (existingProduct) {
-          throw new Error("Another product with this name already exists in your inventory");
-        }
-      }
+      // Note: Duplicate product names are allowed since different sellers can sell the same product
+      // and even one seller can have multiple listings of the same product with different variants/prices
 
       console.log("Seller ID:", sellerId);
       console.log("Product Title:", productTitle);
@@ -517,7 +503,7 @@ export default function AddProductDialog({
             return_policy: returnPolicy,
             discount_percentage: discountPercentage,
             shipping_info: shippingInfo,
-            seller_certifications: sellerCertifications.length > 0 ? sellerCertifications : null,
+            seller_certifications: (sellerCertifications.length > 0 ? sellerCertifications : null) as unknown as Json,
             status: status,
             published_at: status === "active" ? new Date().toISOString() : null,
             updated_at: new Date().toISOString()
@@ -546,7 +532,7 @@ export default function AddProductDialog({
             return_policy: returnPolicy,
             discount_percentage: discountPercentage,
             shipping_info: shippingInfo,
-            seller_certifications: sellerCertifications.length > 0 ? sellerCertifications : null,
+            seller_certifications: (sellerCertifications.length > 0 ? sellerCertifications : null) as unknown as Json,
             status: status,
             slug: listingSlug,
             review_count: 0,

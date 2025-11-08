@@ -100,10 +100,31 @@ export async function createGlobalProduct(
   brandId: string,
   categoryId?: string
 ) {
-  const slug = productName
+  let slug = productName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+
+  // Handle duplicate slugs by adding timestamp
+  let counter = 0;
+  const baseSlug = slug;
+  
+  while (true) {
+    const { data: existing, error: checkError } = await supabase
+      .from("global_products")
+      .select("global_product_id")
+      .eq("slug", slug)
+      .maybeSingle();
+    
+    if (checkError) throw checkError;
+    
+    if (!existing) {
+      break; // Slug is unique, we can use it
+    }
+    
+    counter++;
+    slug = `${baseSlug}-${Date.now()}-${counter}`;
+  }
 
   const { data, error } = await supabase
     .from("global_products")
@@ -125,15 +146,40 @@ export async function createGlobalProduct(
  * Create new brand
  */
 export async function createBrand(brandName: string) {
-  const slug = brandName
+  let slug = brandName
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
+  // Handle duplicate brand names
+  let counter = 0;
+  let brandToInsert = brandName;
+  
+  while (true) {
+    const { data: existing, error: checkError } = await supabase
+      .from("brands")
+      .select("brand_id")
+      .eq("name", brandToInsert)
+      .maybeSingle();
+    
+    if (checkError) throw checkError;
+    
+    if (!existing) {
+      break; // Brand name is unique, we can use it
+    }
+    
+    counter++;
+    brandToInsert = `${brandName} (${counter})`;
+    slug = brandToInsert
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
   const { data, error } = await supabase
     .from("brands")
     .insert({
-      name: brandName,
+      name: brandToInsert,
       slug: slug,
       is_active: true,
       is_verified: false,

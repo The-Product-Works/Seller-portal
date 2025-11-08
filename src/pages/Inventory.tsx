@@ -1,5 +1,6 @@
 // Comprehensive Inventory Management System
 import React, { useEffect, useState, useMemo, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import { useToast } from "@/hooks/use-toast";
@@ -45,6 +46,7 @@ import { Slider } from "@/components/ui/slider";
 
 export default function Inventory() {
   const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [listings, setListings] = useState<ListingWithDetails[]>([]);
   const [bundles, setBundles] = useState<BundleWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
@@ -170,6 +172,23 @@ export default function Inventory() {
   useEffect(() => {
     loadUserAndListings();
   }, [loadUserAndListings]);
+
+  // Handle restock redirect from dashboard
+  useEffect(() => {
+    const restockProductId = searchParams.get("restockProductId");
+    if (restockProductId && listings.length > 0) {
+      const product = listings.find((p) => p.listing_id === restockProductId);
+      if (product && product.listing_variants && product.listing_variants.length > 0) {
+        // Open restock dialog for the first variant
+        setRestockTarget({
+          variant: product.listing_variants[0],
+          listingId: product.listing_id,
+        });
+        // Clear the query parameter
+        setSearchParams({});
+      }
+    }
+  }, [searchParams, listings, setSearchParams]);
 
   // Real-time subscription for product updates
   useEffect(() => {

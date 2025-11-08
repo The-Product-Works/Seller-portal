@@ -89,6 +89,40 @@ export default function Orders() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const cancelOrder = async (orderId: string) => {
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({ status: "cancelled", updated_at: new Date().toISOString() })
+        .eq("order_id", orderId)
+        .single();
+
+      if (error) {
+        toast({
+          title: "Error",
+          description: "Failed to cancel order: " + error.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Success",
+        description: "Order cancelled successfully",
+      });
+
+      // Reload orders
+      loadOrders();
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "An error occurred";
+      toast({
+        title: "Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  };
+
   const loadOrders = async () => {
     setLoading(true);
     try {
@@ -456,10 +490,21 @@ export default function Orders() {
                             {/* Order Status */}
                             <div className="space-y-2">
                               <h3 className="font-semibold">Status</h3>
-                              <Badge variant={order.status_badge_variant} className="flex items-center gap-1 w-fit">
-                                {getStatusIcon(order.status)}
-                                {order.status}
-                              </Badge>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant={order.status_badge_variant} className="flex items-center gap-1 w-fit">
+                                  {getStatusIcon(order.status)}
+                                  {order.status}
+                                </Badge>
+                                {order.status?.toLowerCase() !== "cancelled" && (
+                                  <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    onClick={() => cancelOrder(order.order_id)}
+                                  >
+                                    Cancel Order
+                                  </Button>
+                                )}
+                              </div>
                             </div>
 
                             {/* Order Summary */}
