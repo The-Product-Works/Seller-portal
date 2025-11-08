@@ -24,6 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { X, Package } from "lucide-react";
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
+import { BundlePreviewModal } from "@/components/BundlePreviewModal";
 
 interface Listing {
   listing_id: string;
@@ -53,6 +54,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
   const [selectedListingId, setSelectedListingId] = useState<string>("");
   const [quantity, setQuantity] = useState<number>(1);
   const [status, setStatus] = useState<"draft" | "active">("draft");
+  const [showPreview, setShowPreview] = useState(false);
   const { toast } = useToast();
 
   // Load editing bundle data
@@ -575,6 +577,13 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
           <div className="flex gap-2">
             <Button
               variant="outline"
+              onClick={() => setShowPreview(true)}
+              disabled={selectedItems.length < 2 || !bundleName.trim() || loading}
+            >
+              👁️ Preview
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => handleSubmit("draft")}
               disabled={selectedItems.length < 2 || !bundleName.trim() || loading}
             >
@@ -589,6 +598,27 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
           </div>
         </DialogFooter>
       </DialogContent>
+
+      {/* Bundle Preview Modal */}
+      <BundlePreviewModal
+        open={showPreview}
+        onOpenChange={setShowPreview}
+        bundle={
+          bundleName.trim() && selectedItems.length > 0
+            ? {
+                bundle_name: bundleName,
+                description: description,
+                base_price: selectedItems.reduce((sum, item) => sum + item.listing.base_price * item.quantity, 0),
+                discounted_price: selectedItems.reduce((sum, item) => sum + item.listing.base_price * item.quantity, 0) * (1 - (discountPercentage / 100)),
+                discount_percentage: discountPercentage,
+                total_items: selectedItems.reduce((sum, item) => sum + item.quantity, 0),
+                status: status,
+                published_at: new Date().toISOString(),
+                items: selectedItems,
+              }
+            : null
+        }
+      />
     </Dialog>
   );
 }

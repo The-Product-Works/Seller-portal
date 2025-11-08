@@ -39,6 +39,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ImageGalleryManager, type ImageFile } from "@/components/ImageGalleryManager";
+import { ProductPreviewModal } from "@/components/ProductPreviewModal";
 
 interface Brand {
   brand_id: string;
@@ -108,6 +109,7 @@ export default function AddProductDialog({
   const [shelfLifeMonths, setShelfLifeMonths] = useState<number>(12);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [status, setStatus] = useState<"draft" | "active">("draft");
+  const [showPreview, setShowPreview] = useState(false);
   
   const [productImages, setProductImages] = useState<File[]>([]);
   const [galleryImages, setGalleryImages] = useState<ImageFile[]>([]);
@@ -1267,6 +1269,13 @@ export default function AddProductDialog({
           <div className="flex gap-2">
             <Button
               variant="outline"
+              onClick={() => setShowPreview(true)}
+              disabled={loading || !sellerDescription.trim()}
+            >
+              👁️ Preview
+            </Button>
+            <Button
+              variant="outline"
               onClick={() => {
                 setStatus("draft");
                 handleSave();
@@ -1287,6 +1296,47 @@ export default function AddProductDialog({
           </div>
         </div>
       </DialogContent>
+
+      {/* Product Preview Modal */}
+      <ProductPreviewModal
+        open={showPreview}
+        onOpenChange={setShowPreview}
+        product={
+          sellerDescription.trim()
+            ? {
+                seller_title: sellerTitle || selectedGlobalProduct?.product_name || "Product",
+                seller_description: sellerDescription,
+                seller_ingredients: sellerIngredients,
+                base_price: variants.length > 0
+                  ? Math.min(...variants.map(v => v.price))
+                  : undefined,
+                discounted_price: variants.length > 0
+                  ? Math.min(...variants.map(v => v.price)) * (1 - (discountPercentage / 100))
+                  : undefined,
+                discount_percentage: discountPercentage,
+                return_policy: returnPolicy,
+                shipping_info: shippingInfo,
+                shelf_life_months: shelfLifeMonths,
+                status: status,
+                published_at: new Date().toISOString(),
+                images: galleryImages
+                  .filter(img => !img.isExisting || img.url)
+                  .map(img => ({
+                    image_url: img.url || '',
+                    is_primary: img.isPrimary,
+                  })),
+                variants: variants.map(v => ({
+                  variant_name: v.variant_name,
+                  flavor: v.flavor,
+                  size: v.size,
+                  price: v.price,
+                  stock_quantity: v.stock_quantity,
+                  nutritional_info: v.nutritional_info,
+                })),
+              }
+            : null
+        }
+      />
     </Dialog>
   );
 }
