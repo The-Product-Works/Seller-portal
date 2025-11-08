@@ -325,12 +325,27 @@ export default function AddProductDialog({
         },
       };
       
-      // Set as selected and add to the list for display
+      // Set as selected and add to the list for display (only if it's not already there)
       setSelectedGlobalProduct(formattedProduct);
-      setGlobalProducts([formattedProduct, ...globalProducts]);
+      const existsInList = globalProducts.some(p => p.global_product_id === formattedProduct.global_product_id);
+      if (!existsInList) {
+        setGlobalProducts([formattedProduct, ...globalProducts]);
+      }
       setGlobalProductSearch(""); // Clear search field
       
-      toast({ title: "Global product created successfully" });
+      // Check if this was an existing product or newly created
+      const isExisting = globalProducts.some(p => 
+        p.product_name === newProduct.product_name && p.brand_id === newProduct.brand_id
+      );
+      
+      if (isExisting) {
+        toast({ 
+          title: "Product found", 
+          description: "Selected existing global product instead of creating duplicate" 
+        });
+      } else {
+        toast({ title: "Global product created successfully" });
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       toast({
@@ -678,7 +693,9 @@ export default function AddProductDialog({
       }
       */
 
-      const action = isEditing ? 'updated' : status === "draft" ? "saved as draft" : "published";
+      const action = isEditing 
+        ? (status === "active" ? "updated and published" : "updated and saved as draft")
+        : (status === "draft" ? "saved as draft" : "published");
       toast({ 
         title: `Product ${action} successfully`,
         description: status === "active" ? "Your product is now live in the marketplace" : "You can publish this product later"
@@ -786,56 +803,53 @@ export default function AddProductDialog({
             <div className="space-y-2">
               <Label>Global Product Name *</Label>
               <div className="flex gap-2">
-                {isEditing ? (
-                  <div className="flex-1 p-2 border rounded-md bg-muted">
-                    <p className="text-sm text-muted-foreground">
-                      {selectedGlobalProduct?.product_name || 'Loading...'}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <Select 
-                      value={selectedGlobalProduct?.global_product_id || ""} 
-                      onValueChange={(value) => {
-                        const product = globalProducts.find(p => p.global_product_id === value);
-                        setSelectedGlobalProduct(product || null);
-                      }}
-                      disabled={!selectedBrand}
-                    >
-                      <SelectTrigger className="flex-1">
-                        <SelectValue placeholder={selectedBrand ? "Select a product" : "Select brand first"} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {globalProducts
-                          .filter(p => !selectedBrand || p.brand_id === selectedBrand.brand_id)
-                          .map((product) => (
-                            <SelectItem key={product.global_product_id} value={product.global_product_id}>
-                              {product.product_name}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
-                    <Button 
-                      variant="outline" 
-                      size="icon"
-                      disabled={!selectedBrand}
-                      onClick={() => {
-                        if (!selectedBrand) return;
-                        const newProductName = prompt("Enter new product name:");
-                        if (newProductName) {
-                          setGlobalProductSearch(newProductName);
-                          handleCreateGlobalProduct();
-                        }
-                      }}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </>
+                <Select 
+                  value={selectedGlobalProduct?.global_product_id || ""} 
+                  onValueChange={(value) => {
+                    const product = globalProducts.find(p => p.global_product_id === value);
+                    setSelectedGlobalProduct(product || null);
+                  }}
+                  disabled={!selectedBrand}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder={selectedBrand ? "Select a product" : "Select brand first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {globalProducts
+                      .filter(p => !selectedBrand || p.brand_id === selectedBrand.brand_id)
+                      .map((product) => (
+                        <SelectItem key={product.global_product_id} value={product.global_product_id}>
+                          {product.product_name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                {!isEditing && (
+                  <Button 
+                    variant="outline" 
+                    size="icon"
+                    disabled={!selectedBrand}
+                    onClick={() => {
+                      if (!selectedBrand) return;
+                      const newProductName = prompt("Enter new product name:");
+                      if (newProductName) {
+                        setGlobalProductSearch(newProductName);
+                        handleCreateGlobalProduct();
+                      }
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
                 )}
               </div>
               {selectedGlobalProduct && (
                 <p className="text-xs text-muted-foreground">
                   Selected: {selectedGlobalProduct.product_name}
+                </p>
+              )}
+              {isEditing && (
+                <p className="text-xs text-orange-600">
+                  ⚠️ Changing the global product will affect the core product information
                 </p>
               )}
             </div>
@@ -1430,25 +1444,53 @@ export default function AddProductDialog({
             >
               👁️ Preview
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setStatus("draft");
-                handleSave();
-              }}
-              disabled={loading}
-            >
-              Save as Draft
-            </Button>
-            <Button
-              onClick={() => {
-                setStatus("active");
-                handleSave();
-              }}
-              disabled={loading}
-            >
-              Publish Now
-            </Button>
+            {!editingProduct ? (
+              // New Product Buttons
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setStatus("draft");
+                    handleSave();
+                  }}
+                  disabled={loading}
+                >
+                  Save as Draft
+                </Button>
+                <Button
+                  onClick={() => {
+                    setStatus("active");
+                    handleSave();
+                  }}
+                  disabled={loading}
+                >
+                  Publish Now
+                </Button>
+              </>
+            ) : (
+              // Edit Product Buttons - Same functionality, clear labels
+              <>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setStatus("draft");
+                    handleSave();
+                  }}
+                  disabled={loading}
+                >
+                  Save as Draft
+                </Button>
+                <Button
+                  onClick={() => {
+                    setStatus("active");
+                    handleSave();
+                  }}
+                  disabled={loading}
+                >
+                  Publish Now
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </DialogContent>

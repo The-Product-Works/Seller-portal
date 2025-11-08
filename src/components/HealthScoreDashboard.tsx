@@ -1,16 +1,31 @@
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
-import { TrendingUp, TrendingDown, AlertCircle } from "lucide-react";
+import React, { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { TrendingUp, TrendingDown, AlertCircle, Edit2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { useToast } from "@/hooks/use-toast";
 
 interface HealthScoreDashboardProps {
-  sellerId?: string | null;
+  sellerId: string;
 }
 
 export function HealthScoreDashboard({ sellerId }: HealthScoreDashboardProps) {
   const [healthScore, setHealthScore] = useState(0);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [editScore, setEditScore] = useState("");
   const [metrics, setMetrics] = useState({
     totalOrders: 0,
     successfulOrders: 0,
@@ -18,26 +33,38 @@ export function HealthScoreDashboard({ sellerId }: HealthScoreDashboardProps) {
     returnedOrders: 0,
     activeProducts: 0,
     draftProducts: 0,
-    averageRating: 0,
-    responseTime: 0, // hours
-    shippingAccuracy: 0, // percentage
+    responseTime: 24, // hours
     fulfillmentRate: 0, // percentage
+    shippingAccuracy: 0, // percentage
     returnRate: 0, // percentage
     cancellationRate: 0, // percentage
   });
   const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
 
   useEffect(() => {
     if (sellerId) {
       calculateHealthScore();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sellerId]);
 
   const calculateHealthScore = async () => {
     if (!sellerId) return;
     setLoading(true);
     try {
+      // Check if there's a manually set health score first
+      const { data: manualScore } = await supabase
+        .from("seller_health")
+        .select("health_score")
+        .eq("seller_id", sellerId)
+        .single();
+
+      if (manualScore?.health_score) {
+        setHealthScore(manualScore.health_score);
+        setLoading(false);
+        return;
+      }
+
       // Get order statistics
       const { data: orders, error: ordersError } = await supabase
         .from("orders")
@@ -82,27 +109,19 @@ export function HealthScoreDashboard({ sellerId }: HealthScoreDashboardProps) {
       const fulfillmentRate = totalOrders > 0 ? ((successfulOrders / totalOrders) * 100) : 0;
 
       // Calculate health score using weighted formula:
-      // 40% - Order Fulfillment Rate (successful orders)
-      // 25% - Return Rate (lower is better)
-      // 20% - Cancellation Rate (lower is better)
-      // 10% - Product Activity (active vs draft ratio)
-      // 5% - Response Time (assumed 24 hours standard)
+      // - Order fulfillment: 40%
+      // - Return rate: 25% (inverted - lower is better)
+      // - Cancellation rate: 20% (inverted - lower is better)
+      // - Product activity: 10%
+      // - Response time: 5%
 
-      const fulfillmentScore = (successfulOrders / Math.max(totalOrders, 1)) * 40; // Max 40 points
-      const returnPenalty = Math.min(returnRate * 0.25, 25); // Max penalty 25 points
-      const cancellationPenalty = Math.min(cancellationRate * 0.20, 20); // Max penalty 20 points
-      const productActivityScore = activeCount && (activeCount || 0) > 0 ? 10 : 5; // Max 10 points
-      const responseScore = 5; // Assuming good response time
+      const fulfillmentScore = fulfillmentRate * 0.4;
+      const returnScore = Math.max(0, 25 - returnRate * 0.25);
+      const cancellationScore = Math.max(0, 20 - cancellationRate * 0.20);
+      const productScore = activeCount && activeCount > 0 ? 10 : 5;
+      const responseScore = 5; // Assuming good response time for now
 
-      let score =
-        fulfillmentScore +
-        (25 - returnPenalty) +
-        (20 - cancellationPenalty) +
-        productActivityScore +
-        responseScore;
-
-      // Cap score at 100
-      score = Math.min(Math.max(score, 0), 100);
+      const calculatedScore = fulfillmentScore + returnScore + cancellationScore + productScore + responseScore;
 
       setMetrics({
         totalOrders,
@@ -111,20 +130,68 @@ export function HealthScoreDashboard({ sellerId }: HealthScoreDashboardProps) {
         returnedOrders,
         activeProducts: activeCount || 0,
         draftProducts: draftCount || 0,
-        averageRating: 4.5, // TODO: Fetch from actual ratings
-        responseTime: 8, // TODO: Calculate from actual response times
-        shippingAccuracy,
+        responseTime: 24,
         fulfillmentRate,
+        shippingAccuracy,
         returnRate,
         cancellationRate,
       });
 
-      setHealthScore(score);
+      setHealthScore(Math.min(100, Math.max(0, calculatedScore)));
     } catch (error) {
       console.error("Error calculating health score:", error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEditScore = async () => {
+    if (!editScore || isNaN(Number(editScore))) {
+      toast({
+        title: "Invalid Score",
+        description: "Please enter a valid number between 0-100",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const newScore = Math.min(100, Math.max(0, Number(editScore)));
+
+    try {
+      const { error } = await supabase
+        .from("seller_health")
+        .upsert({
+          seller_id: sellerId,
+          health_score: newScore,
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: "seller_id"
+        });
+
+      if (error) throw error;
+
+      setHealthScore(newScore);
+      setShowEditDialog(false);
+      setEditScore("");
+      toast({
+        title: "Health Score Updated",
+        description: `Health score updated to ${newScore}/100`,
+      });
+    } catch (error) {
+      console.error("Error updating health score:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update health score",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getHealthBadge = (score: number) => {
+    if (score >= 90) return { label: "Excellent", color: "bg-green-500", variant: "default" as const };
+    if (score >= 75) return { label: "Good", color: "bg-blue-500", variant: "default" as const };
+    if (score >= 60) return { label: "Fair", color: "bg-yellow-500", variant: "default" as const };
+    return { label: "Needs Improvement", color: "bg-red-500", variant: "default" as const };
   };
 
   if (loading) {
@@ -137,13 +204,6 @@ export function HealthScoreDashboard({ sellerId }: HealthScoreDashboardProps) {
     );
   }
 
-  const getHealthBadge = (score: number) => {
-    if (score >= 90) return { label: "Excellent", color: "bg-green-500", variant: "default" as const };
-    if (score >= 75) return { label: "Good", color: "bg-blue-500", variant: "default" as const };
-    if (score >= 60) return { label: "Fair", color: "bg-yellow-500", variant: "default" as const };
-    return { label: "Needs Improvement", color: "bg-red-500", variant: "default" as const };
-  };
-
   const badge = getHealthBadge(healthScore);
 
   return (
@@ -153,7 +213,20 @@ export function HealthScoreDashboard({ sellerId }: HealthScoreDashboardProps) {
         <CardHeader>
           <div className="flex justify-between items-start">
             <CardTitle>Seller Health Score</CardTitle>
-            <Badge className={badge.color}>{badge.label}</Badge>
+            <div className="flex items-center gap-2">
+              <Badge className={badge.color}>{badge.label}</Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setEditScore(healthScore.toString());
+                  setShowEditDialog(true);
+                }}
+              >
+                <Edit2 className="h-4 w-4 mr-2" />
+                Edit
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -295,6 +368,36 @@ export function HealthScoreDashboard({ sellerId }: HealthScoreDashboardProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Edit Health Score Dialog */}
+      <AlertDialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Edit Health Score</AlertDialogTitle>
+            <AlertDialogDescription>
+              Manually update your seller health score. This will override the calculated score.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4">
+            <Label htmlFor="score">Health Score (0-100)</Label>
+            <Input
+              id="score"
+              type="number"
+              min="0"
+              max="100"
+              value={editScore}
+              onChange={(e) => setEditScore(e.target.value)}
+              placeholder="Enter score between 0-100"
+            />
+          </div>
+          <div className="flex gap-3">
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleEditScore}>
+              Update Score
+            </AlertDialogAction>
+          </div>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -2,11 +2,10 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Package, Edit2, Plus } from "lucide-react";
+import { AlertCircle, Package } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ProductImageGalleryCard } from "@/components/ProductImageGalleryCard";
-import { SimpleRestockDialog } from "@/components/SimpleRestockDialog";
 
 interface ProductImage {
   image_id: string;
@@ -61,8 +60,6 @@ export function ProductGalleryGrid({ sellerId, limit = 12, showOnlyOutOfStock = 
   const [products, setProducts] = useState<ProductCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [lowStockCount, setLowStockCount] = useState(0);
-  const [showRestockDialog, setShowRestockDialog] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<ProductCard | null>(null);
 
   useEffect(() => {
     if (sellerId) {
@@ -320,20 +317,17 @@ export function ProductGalleryGrid({ sellerId, limit = 12, showOnlyOutOfStock = 
 
                 {/* Action Buttons */}
                 <div className="flex gap-2">
-                  <Button size="sm" className="flex-1" variant="outline">
-                    <Edit2 className="h-3 w-3 mr-2" />
-                    Edit
-                  </Button>
-                  <Button
-                    size="sm"
-                    className="flex-1"
+                  <Button 
+                    size="sm" 
+                    className="flex-1" 
+                    variant="outline"
                     onClick={() => {
-                      setSelectedProduct(product);
-                      setShowRestockDialog(true);
+                      // Navigate to inventory page for editing
+                      window.location.href = '/inventory';
                     }}
                   >
-                    <Plus className="h-3 w-3 mr-2" />
-                    Restock
+                    <Package className="h-3 w-3 mr-2" />
+                    View in Inventory
                   </Button>
                 </div>
               </div>
@@ -342,22 +336,6 @@ export function ProductGalleryGrid({ sellerId, limit = 12, showOnlyOutOfStock = 
         </div>
       </CardContent>
 
-      {/* Simple Restock Dialog */}
-      {selectedProduct && (
-        <SimpleRestockDialog
-          open={showRestockDialog}
-          onOpenChange={setShowRestockDialog}
-          productId={selectedProduct.id}
-          productName={selectedProduct.name}
-          currentStock={selectedProduct.stock}
-          isBundle={selectedProduct.type === "bundle"}
-          sellerId={sellerId}
-          onSuccess={() => {
-            loadProducts();
-            setSelectedProduct(null);
-          }}
-        />
-      )}
     </Card>
   );
 }

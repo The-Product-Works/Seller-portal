@@ -310,18 +310,7 @@ export default function Dashboard() {
         <TabsContent value="products" className="space-y-6">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold">All Products & Bundles</h2>
-            <Button onClick={() => setShowRestockDialog(true)} className="gap-2">
-              <Plus className="h-4 w-4" />
-              Restock Product
-            </Button>
           </div>
-
-          <RestockDialog
-            open={showRestockDialog}
-            onOpenChange={setShowRestockDialog}
-            sellerId={sellerId}
-            onSuccess={loadDashboardData}
-          />
 
           {!sellerId ? (
             <div className="text-center py-8">

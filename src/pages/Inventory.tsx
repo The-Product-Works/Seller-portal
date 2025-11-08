@@ -32,7 +32,7 @@ import { FilterOptions, ListingWithDetails, VariantForm, BundleWithDetails } fro
 import AddProductDialog from "@/components/AddProductDialog";
 import { ImageManager } from "@/components/ImageManager";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
-import RestockDialog from "@/components/RestockDialog";
+import { SimpleRestockDialog } from "@/components/SimpleRestockDialog";
 import BundleRestockDialog from "@/components/BundleRestockDialog";
 import { ProductDetailModal } from "@/components/ProductDetailModal";
 import { ProductImageGalleryCard } from "@/components/ProductImageGalleryCard";
@@ -69,8 +69,10 @@ export default function Inventory() {
 
   // Restock dialog
   const [restockTarget, setRestockTarget] = useState<{
-    variant: VariantForm;
-    listingId: string;
+    productId: string;
+    productName: string;
+    currentStock: number;
+    isBundle?: boolean;
   } | null>(null);
 
   // Bundle restock dialog
@@ -181,9 +183,12 @@ export default function Inventory() {
       const product = listings.find((p) => p.listing_id === restockProductId);
       if (product && product.listing_variants && product.listing_variants.length > 0) {
         // Open restock dialog for the first variant
+        const firstVariant = product.listing_variants[0];
         setRestockTarget({
-          variant: product.listing_variants[0],
-          listingId: product.listing_id,
+          productId: firstVariant.variant_id || "",
+          productName: `${product.seller_title || product.global_products?.product_name} - ${firstVariant.variant_name}`,
+          currentStock: firstVariant.stock_quantity,
+          isBundle: false,
         });
         // Clear the query parameter
         setSearchParams({});
@@ -483,7 +488,10 @@ export default function Inventory() {
             <Package className="h-4 w-4 mr-2" />
             Create Bundle
           </Button>
-          <Button onClick={() => setAddDialogOpen(true)}>
+          <Button onClick={() => {
+            setEditingListing(null); // Clear any editing state for new product
+            setAddDialogOpen(true);
+          }}>
             <Plus className="h-4 w-4 mr-2" />
             Add Product
           </Button>
@@ -913,8 +921,10 @@ export default function Inventory() {
                                 variant="outline"
                                 onClick={() =>
                                   setRestockTarget({
-                                    variant: variant,
-                                    listingId: listing.listing_id,
+                                    productId: variant.variant_id || "",
+                                    productName: `${listing.seller_title || listing.global_products?.product_name} - ${variant.variant_name}`,
+                                    currentStock: variant.stock_quantity,
+                                    isBundle: false,
                                   })
                                 }
                               >
@@ -949,28 +959,34 @@ export default function Inventory() {
       {/* Add Product Dialog */}
       <AddProductDialog
         open={addDialogOpen}
-        onOpenChange={setAddDialogOpen}
+        onOpenChange={(open) => {
+          setAddDialogOpen(open);
+          if (!open) {
+            setEditingListing(null); // Clear editing state when dialog closes
+          }
+        }}
         onSuccess={() => {
           if (sellerId) loadListings(sellerId);
+          setEditingListing(null); // Clear editing state on success
         }}
         editingProduct={editingListing}
       />
 
       {/* Restock Dialog */}
-      {restockTarget && restockTarget.variant.variant_id && (
-        <RestockDialog
+      {restockTarget && (
+        <SimpleRestockDialog
           open={!!restockTarget}
           onOpenChange={(open) => !open && setRestockTarget(null)}
+          productId={restockTarget.productId}
+          productName={restockTarget.productName}
+          currentStock={restockTarget.currentStock}
+          isBundle={restockTarget.isBundle || false}
+          isVariant={true}  // We're always restocking individual variants in inventory
+          sellerId={sellerId}
           onSuccess={() => {
             if (sellerId) loadListings(sellerId);
+            setRestockTarget(null);
           }}
-          variant={{
-            variant_id: restockTarget.variant.variant_id,
-            variant_name: restockTarget.variant.variant_name,
-            sku: restockTarget.variant.sku,
-            stock_quantity: restockTarget.variant.stock_quantity,
-          }}
-          listingId={restockTarget.listingId}
         />
       )}
 
@@ -1039,27 +1055,6 @@ export default function Inventory() {
         }}
         editingBundle={editingBundle}
       />
-
-      {/* Restock Dialog for Products */}
-      {restockTarget && (
-        <RestockDialog
-          open={!!restockTarget}
-          onOpenChange={(open) => {
-            if (!open) setRestockTarget(null);
-          }}
-          variant={{
-            variant_id: restockTarget.variant.variant_id || "",
-            variant_name: restockTarget.variant.variant_name,
-            sku: restockTarget.variant.sku,
-            stock_quantity: restockTarget.variant.stock_quantity,
-          }}
-          listingId={restockTarget.listingId}
-          onSuccess={() => {
-            if (sellerId) loadListings(sellerId);
-            setRestockTarget(null);
-          }}
-        />
-      )}
 
       {/* Restock Dialog for Bundles */}
       {bundleRestockTarget && (
