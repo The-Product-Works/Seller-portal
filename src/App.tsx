@@ -13,6 +13,7 @@ import Landing from "./pages/Landing";
 import Dashboard from "./pages/Dashboard";
 import NotFound from "./pages/NotFound";
 import Inventory from "./pages/Inventory";
+import Orders from "./pages/Orders";
 import SellerProfile from "./pages/SellerProfile";
 import Notifications from "./pages/Notifications";
 import SellerVerification from "./pages/SellerVerification";
@@ -34,6 +35,7 @@ const App = () => (
           <Route path="/landing" element={<ProtectedRoute requiresKYC><Landing /></ProtectedRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute requiresKYC><Dashboard /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute requiresKYC><Inventory /></ProtectedRoute>} />
+          <Route path="/orders" element={<ProtectedRoute requiresKYC><Orders /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute requiresKYC><SellerProfile /></ProtectedRoute>} />
             <Route path="/notifications" element={<ProtectedRoute requiresKYC><Notifications /></ProtectedRoute>} />
             <Route path="/seller-verification" element={<ProtectedRoute requiresKYC><SellerVerification /></ProtectedRoute>} />
