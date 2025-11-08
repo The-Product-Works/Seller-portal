@@ -36,9 +36,10 @@ interface SellerOrder {
 interface SellerOrdersProps {
   sellerId?: string | null;
   limit?: number;
+  statusFilter?: string;
 }
 
-export function SellerOrders({ sellerId, limit = 10 }: SellerOrdersProps) {
+export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: SellerOrdersProps) {
   const [orders, setOrders] = useState<SellerOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
@@ -53,17 +54,24 @@ export function SellerOrders({ sellerId, limit = 10 }: SellerOrdersProps) {
       loadOrders();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sellerId]);
+  }, [sellerId, statusFilter]);
 
   const loadOrders = async () => {
     if (!sellerId) return;
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("orders")
         .select("*")
-        .eq("seller_id", sellerId)
-        .neq("status", "cancelled")
+        .eq("seller_id", sellerId);
+
+      if (statusFilter && statusFilter !== "all") {
+        query = query.eq("status", statusFilter);
+      } else {
+        query = query.neq("status", "cancelled");
+      }
+
+      const { data, error } = await query
         .order("created_at", { ascending: false })
         .limit(limit);
 

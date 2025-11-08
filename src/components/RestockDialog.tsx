@@ -1,191 +1,316 @@
-// Restock Dialog Component
-import React, { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { supabase } from "@/integrations/supabase/client";
-import { getAuthenticatedSellerId, getAuthenticatedUserId } from "@/lib/seller-helpers";
-import { Plus, Minus } from "lucide-react";
+import { Loader2 } from "lucide-react";
+
+interface Product {
+  listing_id: string;
+  product_name: string;
+  sku: string;
+  stock_quantity: number;
+}
+
+interface Variant {
+  id: string;
+  variant_name: string;
+  stock_quantity: number;
+}
+
+interface SellerProductListing {
+  listing_id: string;
+  seller_title: string;
+  sku: string;
+  total_stock_quantity: number;
+  global_products?: {
+    product_name: string;
+  };
+}
+
+interface ListingVariant {
+  variant_id: string;
+  variant_name: string;
+  stock_quantity: number;
+}
 
 interface RestockDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: () => void;
-  variant: {
-    variant_id: string;
-    variant_name: string;
-    sku: string;
-    stock_quantity: number;
-  };
-  listingId: string;
+  sellerId: string | null;
+  onSuccess?: () => void;
 }
 
 export default function RestockDialog({
   open,
   onOpenChange,
+  sellerId,
   onSuccess,
-  variant,
-  listingId,
 }: RestockDialogProps) {
-  const { toast } = useToast();
-  const [restockAmount, setRestockAmount] = useState<number>(0);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<string>("");
+  const [selectedVariant, setSelectedVariant] = useState<string>("");
+  const [quantity, setQuantity] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const { toast } = useToast();
 
-  const newStock = variant.stock_quantity + restockAmount;
-
-  async function handleRestock() {
-    if (restockAmount === 0) {
-      toast({ title: "Enter a restock amount", variant: "destructive" });
-      return;
-    }
-
+  const loadProducts = useCallback(async () => {
+    if (!sellerId) return;
+    setLoading(true);
     try {
-      setLoading(true);
-
-      // Update variant stock
-      const { error: variantError } = await supabase
-        .from("listing_variants")
-        .update({ stock_quantity: newStock })
-        .eq("variant_id", variant.variant_id);
-
-      if (variantError) throw variantError;
-
-      // Recalculate total stock for listing
-      const { data: allVariants, error: fetchError } = await supabase
-        .from("listing_variants")
-        .select("stock_quantity")
-        .eq("listing_id", listingId);
-
-      if (fetchError) throw fetchError;
-
-      const totalStock = allVariants.reduce((sum, v) => sum + v.stock_quantity, 0);
-
-      // Update listing total stock
-      const { error: listingError } = await supabase
+      const { data, error } = await supabase
         .from("seller_product_listings")
-        .update({ total_stock_quantity: totalStock })
-        .eq("listing_id", listingId);
+        .select(`
+          listing_id,
+          seller_title,
+          sku,
+          total_stock_quantity,
+          global_products(product_name)
+        `)
+        .eq("seller_id", sellerId)
+        .eq("status", "active")
+        .order("seller_title");
 
-      if (listingError) throw listingError;
+      if (error) throw error;
 
-      // Create low stock notification if stock is 10 or less
-      if (newStock <= 10) {
-        const authUserId = await getAuthenticatedUserId();
-        if (authUserId) {
-          // Create notification - note: related_seller_id should store auth.users.id for RLS policy to work
-          try {
-            const { error: notifError } = await supabase.from("notifications").insert({
-              related_seller_id: authUserId,
-              type: "low_stock",
-              title: "Low Stock Alert",
-              message: `Variant "${variant.variant_name}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
-            });
-            if (notifError) throw notifError;
-          } catch (notifError) {
-            // Silently fail if notification creation fails
-            console.error("Error creating notification:", notifError);
-          }
-        }
-      }
-
-      toast({
-        title: "Stock updated successfully",
-        description: `${variant.variant_name} stock updated to ${newStock} units`,
-      });
-
-      onSuccess();
-      onOpenChange(false);
-      setRestockAmount(0);
+      setProducts(
+        (data as SellerProductListing[] | null || []).map((p) => ({
+          listing_id: p.listing_id,
+          product_name: p.seller_title || p.global_products?.product_name || "Untitled",
+          sku: p.sku,
+          stock_quantity: p.total_stock_quantity || 0,
+        }))
+      );
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      console.error("Error loading products:", error);
       toast({
-        title: "Error updating stock",
-        description: errorMessage,
+        title: "Error",
+        description: "Failed to load products",
         variant: "destructive",
       });
     } finally {
       setLoading(false);
     }
-  }
+  }, [sellerId, toast]);
+
+  useEffect(() => {
+    if (open && sellerId) {
+      loadProducts();
+    }
+  }, [open, sellerId, loadProducts]);
+
+  useEffect(() => {
+    if (selectedProduct) {
+      loadVariants(selectedProduct);
+      setSelectedVariant("");
+    }
+  }, [selectedProduct]);
+
+  const loadVariants = async (listingId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from("listing_variants")
+        .select("variant_id, variant_name, stock_quantity")
+        .eq("listing_id", listingId)
+        .order("variant_name");
+
+      if (error) throw error;
+
+      setVariants(
+        (data as ListingVariant[] | null || []).map((v) => ({
+          id: v.variant_id,
+          variant_name: v.variant_name || "Default",
+          stock_quantity: v.stock_quantity || 0,
+        }))
+      );
+    } catch (error) {
+      console.error("Error loading variants:", error);
+      setVariants([]);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!selectedProduct || !quantity || parseInt(quantity) <= 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a product and enter a valid quantity",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (variants.length > 0 && !selectedVariant) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a variant",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const quantityNum = parseInt(quantity);
+
+      if (variants.length > 0 && selectedVariant) {
+        // Update variant stock
+        const currentVariant = variants.find((v) => v.id === selectedVariant);
+        const newStock = (currentVariant?.stock_quantity || 0) + quantityNum;
+
+        const { error: updateError } = await supabase
+          .from("listing_variants")
+          .update({ stock_quantity: newStock })
+          .eq("variant_id", selectedVariant);
+
+        if (updateError) throw updateError;
+
+        toast({
+          title: "Success",
+          description: `Added ${quantityNum} units to ${currentVariant?.variant_name}`,
+        });
+      } else {
+        // Update main product stock
+        const currentProduct = products.find((p) => p.listing_id === selectedProduct);
+        const newStock = (currentProduct?.stock_quantity || 0) + quantityNum;
+
+        const { error: updateError } = await supabase
+          .from("seller_product_listings")
+          .update({ total_stock_quantity: newStock })
+          .eq("listing_id", selectedProduct);
+
+        if (updateError) throw updateError;
+
+        toast({
+          title: "Success",
+          description: `Restocked ${currentProduct?.product_name} with ${quantityNum} units`,
+        });
+      }
+
+      // Reset form
+      setSelectedProduct("");
+      setSelectedVariant("");
+      setQuantity("");
+      onOpenChange(false);
+
+      if (onSuccess) {
+        onSuccess();
+      }
+    } catch (error) {
+      console.error("Error restocking:", error);
+      toast({
+        title: "Error",
+        description: "Failed to restock product",
+        variant: "destructive",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Restock Variant</DialogTitle>
+          <DialogTitle>Restock Product</DialogTitle>
+          <DialogDescription>
+            Add inventory to your products directly from the dashboard
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
+          {/* Product Selection */}
           <div className="space-y-2">
-            <Label>Variant</Label>
-            <div className="p-3 bg-muted rounded">
-              <p className="font-medium">{variant.variant_name}</p>
-              <p className="text-sm text-muted-foreground">SKU: {variant.sku}</p>
-              <p className="text-sm text-muted-foreground">
-                Current Stock: {variant.stock_quantity} units
-              </p>
-            </div>
+            <Label htmlFor="product">Product</Label>
+            <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+              <SelectTrigger id="product" disabled={loading}>
+                <SelectValue
+                  placeholder={loading ? "Loading products..." : "Select a product"}
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {products.map((product) => (
+                  <SelectItem key={product.listing_id} value={product.listing_id}>
+                    {product.product_name} (Stock: {product.stock_quantity})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Restock Amount</Label>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => setRestockAmount(Math.max(restockAmount - 10, -variant.stock_quantity))}
-              >
-                <Minus className="h-4 w-4" />
-              </Button>
-              <Input
-                type="number"
-                value={restockAmount}
-                onChange={(e) => {
-                  const value = parseInt(e.target.value) || 0;
-                  setRestockAmount(Math.max(value, -variant.stock_quantity));
-                }}
-                className="text-center"
-                placeholder="0"
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="icon"
-                onClick={() => setRestockAmount(restockAmount + 10)}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
+          {/* Variant Selection */}
+          {variants.length > 0 && selectedProduct && (
+            <div className="space-y-2">
+              <Label htmlFor="variant">Variant</Label>
+              <Select value={selectedVariant} onValueChange={setSelectedVariant}>
+                <SelectTrigger id="variant">
+                  <SelectValue placeholder="Select a variant" />
+                </SelectTrigger>
+                <SelectContent>
+                  {variants.map((variant) => (
+                    <SelectItem key={variant.id} value={variant.id}>
+                      {variant.variant_name} (Current: {variant.stock_quantity})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Use negative numbers to reduce stock
-            </p>
-          </div>
+          )}
 
-          <div className="p-3 bg-primary/10 rounded">
-            <div className="flex justify-between items-center">
-              <span className="font-medium">New Stock:</span>
-              <span className={`text-lg font-bold ${newStock < 10 ? 'text-destructive' : 'text-primary'}`}>
-                {newStock} units
-              </span>
-            </div>
+          {/* Quantity Input */}
+          <div className="space-y-2">
+            <Label htmlFor="quantity">Quantity to Add</Label>
+            <Input
+              id="quantity"
+              type="number"
+              min="1"
+              placeholder="Enter quantity"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              disabled={!selectedProduct}
+            />
           </div>
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={submitting}
+          >
             Cancel
           </Button>
-          <Button onClick={handleRestock} disabled={loading || restockAmount === 0}>
-            {loading ? "Updating..." : "Update Stock"}
+          <Button
+            type="button"
+            onClick={handleSubmit}
+            disabled={submitting || !selectedProduct || !quantity}
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Restocking...
+              </>
+            ) : (
+              "Restock"
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

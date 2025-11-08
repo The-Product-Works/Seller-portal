@@ -1,15 +1,27 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-// Navbar is rendered by ProtectedRoute; do not render it here to avoid duplication
 import { SellerGraph } from "@/components/SellerGraph";
-import { OrderHistory } from "@/components/OrderHistory";
 import { DashboardProductStock } from "@/components/DashboardProductStock";
 import { SellerOrders } from "@/components/SellerOrders";
 import { BestWorstSelling } from "@/components/BestWorstSelling";
+import { HealthScoreDashboard } from "@/components/HealthScoreDashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { DollarSign, Package, ShoppingCart, TrendingUp, AlertCircle, Clock } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { 
+  DollarSign, Package, ShoppingCart, TrendingUp, AlertCircle, Clock, 
+  RefreshCw, Plus, Filter 
+} from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
+import { Button } from "@/components/ui/button";
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from "@/components/ui/select";
+import RestockDialog from "@/components/RestockDialog";
 
 interface Stats {
   totalRevenue: number;
@@ -42,6 +54,9 @@ export default function Dashboard() {
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [sellerId, setSellerId] = useState<string | null>(null);
   const [revenueChange, setRevenueChange] = useState<number | null>(null);
+  const [showRestockDialog, setShowRestockDialog] = useState(false);
+  const [orderFilter, setOrderFilter] = useState<string>("all");
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
@@ -53,7 +68,6 @@ export default function Dashboard() {
     if (!user) return;
 
     try {
-      // Get seller record to check KYC status
       const { data: seller } = await supabase
         .from("sellers")
         .select("id, verification_status")
@@ -66,12 +80,9 @@ export default function Dashboard() {
       }
 
       const sellerData = seller as Seller;
-
-      // Set KYC status for banner
       setKycStatus(sellerData.verification_status);
       setSellerId(sellerData.id);
 
-      // Calculate total revenue from orders for the seller
       const { data: revenueNow } = await supabase
         .from("orders")
         .select("total_amount", { count: "exact", head: false })
@@ -83,7 +94,6 @@ export default function Dashboard() {
         totalRevenue = revenueNow.reduce((s: number, r: OrderRecord) => s + (r.total_amount || 0), 0);
       }
 
-      // Compute previous period revenue for change percentage (previous 30 days)
       const now = new Date();
       const startCurrent = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       const startPrev = new Date(startCurrent.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -99,7 +109,6 @@ export default function Dashboard() {
       const change = prevRevenue === 0 ? (totalRevenue === 0 ? 0 : 100) : ((totalRevenue - prevRevenue) / prevRevenue) * 100;
       setRevenueChange(Number(change.toFixed(1)));
 
-      // Load product counts by status
       const { count: activeCount } = await supabase
         .from("seller_product_listings")
         .select("listing_id", { count: "exact" })
@@ -112,13 +121,11 @@ export default function Dashboard() {
         .eq("seller_id", sellerData.id)
         .eq("status", "draft");
 
-      // Load total orders count
       const { count: totalOrdersCount } = await supabase
         .from("orders")
         .select("id", { count: "exact" })
         .eq("seller_id", user.id);
 
-      // Load pending orders count
       const { count: pendingOrdersCount } = await supabase
         .from("orders")
         .select("id", { count: "exact" })
@@ -140,19 +147,25 @@ export default function Dashboard() {
     }
   };
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await loadDashboardData();
+    setRefreshing(false);
+  };
+
   const statCards = [
     {
       title: "Total Revenue",
       value: `₹${stats.totalRevenue.toFixed(2)}`,
       icon: DollarSign,
-      description: "Total earnings",
+      description: revenueChange !== null ? `${revenueChange > 0 ? '+' : ''}${revenueChange.toFixed(1)}% from last month` : "Total earnings",
       gradient: "from-green-500 to-emerald-600",
     },
     {
       title: "Total Orders",
       value: stats.totalOrders.toString(),
       icon: ShoppingCart,
-      description: "All orders placed",
+      description: `${stats.pendingOrders} pending`,
       gradient: "from-blue-500 to-cyan-600",
     },
     {
@@ -163,103 +176,173 @@ export default function Dashboard() {
       gradient: "from-purple-500 to-pink-600",
     },
     {
-      title: "Pending Orders",
-      value: stats.pendingOrders.toString(),
+      title: "Health Score",
+      value: "Soon",
       icon: TrendingUp,
-      description: "Awaiting action",
+      description: "Seller performance metric",
       gradient: "from-orange-500 to-red-600",
     },
   ];
 
-  return (
-    <div className="min-h-screen bg-background">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold gradient-text mb-2">Dashboard</h1>
-          <p className="text-muted-foreground">Overview of your ProtiMart seller account</p>
+  if (loading && !sellerId) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading dashboard...</p>
         </div>
+      </div>
+    );
+  }
 
-        {/* KYC Pending Banner */}
-        {kycStatus === "pending" && (
-          <Alert className="mb-6 border-amber-500/50 bg-amber-500/10">
-            <Clock className="h-5 w-5 text-amber-500" />
-            <AlertTitle className="text-amber-500 font-semibold">KYC Verification Pending</AlertTitle>
-            <AlertDescription className="text-amber-600">
-              Your documents are currently under review. You can continue using the platform with limited features. We'll notify you once your account is fully verified.
-            </AlertDescription>
-          </Alert>
-        )}
+  return (
+    <div className="space-y-6 p-6">
+      {/* Header with Refresh Button */}
+      <div className="flex justify-between items-center">
+        <h1 className="text-4xl font-bold">Seller Dashboard</h1>
+        <Button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          size="lg"
+          variant="outline"
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </Button>
+      </div>
 
-        {/* KYC Rejected Banner */}
-        {kycStatus === "rejected" && (
-          <Alert className="mb-6 border-red-500/50 bg-red-500/10">
-            <AlertCircle className="h-5 w-5 text-red-500" />
-            <AlertTitle className="text-red-500 font-semibold">KYC Verification Rejected</AlertTitle>
-            <AlertDescription className="text-red-600">
-              Your KYC verification was rejected. Please resubmit your documents with correct information.
-            </AlertDescription>
-          </Alert>
-        )}
+      {/* KYC Alert */}
+      {kycStatus !== "verified" && (
+        <Alert className="border-yellow-200 bg-yellow-50">
+          <AlertCircle className="h-4 w-4 text-yellow-600" />
+          <AlertTitle className="text-yellow-800">KYC Verification Pending</AlertTitle>
+          <AlertDescription className="text-yellow-700">
+            Complete your KYC verification to unlock all seller features
+          </AlertDescription>
+        </Alert>
+      )}
 
-        {stats.pendingOrders > 0 && (
-          <Alert className="mb-6 border-primary/20 bg-primary/5">
-            <AlertCircle className="h-4 w-4 text-primary" />
-            <AlertDescription className="text-primary">
-              You have {stats.pendingOrders} pending order(s) requiring attention
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-6">
-          {statCards.map((stat, index) => (
-            <Card 
-              key={index} 
-              className="relative overflow-hidden group hover:shadow-pink transition-smooth"
-            >
-              <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${stat.gradient} opacity-10 rounded-full -mr-16 -mt-16 group-hover:scale-110 transition-smooth`} />
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-sm font-medium text-muted-foreground">
-                    {stat.title}
-                  </CardTitle>
-                  <stat.icon className="w-5 h-5 text-primary" />
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        {statCards.map((card, index) => {
+          const Icon = card.icon;
+          return (
+            <Card key={index} className="hover:shadow-lg transition-shadow">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{card.title}</CardTitle>
+                <div className={`bg-gradient-to-br ${card.gradient} p-2 rounded-lg`}>
+                  <Icon className="h-4 w-4 text-white" />
                 </div>
               </CardHeader>
               <CardContent>
-                {loading ? (
-                  <div className="h-10 bg-muted rounded animate-pulse" />
-                ) : (
-                  <>
-                    <div className="flex items-center gap-3 mb-1">
-                      <div className="text-3xl font-bold gradient-text">{stat.value}</div>
-                      {stat.title === 'Total Revenue' && revenueChange !== null && (
-                        <div className={`px-2 py-1 rounded text-sm ${revenueChange >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                          {revenueChange >= 0 ? `+${revenueChange}%` : `${revenueChange}%`}
-                        </div>
-                      )}
-                    </div>
-                    <p className="text-sm text-muted-foreground">{stat.description}</p>
-                  </>
-                )}
+                <div className="text-2xl font-bold">{card.value}</div>
+                <p className="text-xs text-muted-foreground mt-1">{card.description}</p>
               </CardContent>
             </Card>
-          ))}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <SellerGraph sellerId={sellerId ?? ''} />
-          <LowStockNotifications />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <DashboardProductStock sellerId={sellerId} limit={8} />
-          <SellerOrders sellerId={sellerId} limit={10} />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <BestWorstSelling sellerId={sellerId} />
-        </div>
+          );
+        })}
       </div>
+
+      {/* Main Content Tabs */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="overview" className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="products" className="flex items-center gap-2">
+            <Package className="h-4 w-4" />
+            Products
+          </TabsTrigger>
+          <TabsTrigger value="orders" className="flex items-center gap-2">
+            <ShoppingCart className="h-4 w-4" />
+            Orders
+          </TabsTrigger>
+          <TabsTrigger value="health" className="flex items-center gap-2">
+            <TrendingUp className="h-4 w-4" />
+            Health
+          </TabsTrigger>
+        </TabsList>
+
+        {/* Overview Tab */}
+        <TabsContent value="overview" className="space-y-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Sales Trend</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <SellerGraph sellerId={sellerId} />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Best & Worst Selling</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <BestWorstSelling sellerId={sellerId} />
+              </CardContent>
+            </Card>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Low Stock Alerts</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <LowStockNotifications />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Products Tab */}
+        <TabsContent value="products" className="space-y-6">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-semibold">Product Management</h2>
+            <Button onClick={() => setShowRestockDialog(true)} className="gap-2">
+              <Plus className="h-4 w-4" />
+              Restock Product
+            </Button>
+          </div>
+
+          <DashboardProductStock sellerId={sellerId} limit={50} />
+        </TabsContent>
+
+        {/* Orders Tab */}
+        <TabsContent value="orders" className="space-y-6">
+          <div className="flex gap-4 items-center">
+            <div className="flex-1 max-w-xs">
+              <Select value={orderFilter} onValueChange={setOrderFilter}>
+                <SelectTrigger>
+                  <Filter className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Filter orders" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Orders</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="processing">Processing</SelectItem>
+                  <SelectItem value="shipped">Shipped</SelectItem>
+                  <SelectItem value="delivered">Delivered</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="return_requested">Return Requested</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Showing {orderFilter === 'all' ? 'all' : orderFilter} orders
+            </p>
+          </div>
+
+          <SellerOrders sellerId={sellerId} limit={50} statusFilter={orderFilter} />
+        </TabsContent>
+
+        {/* Health Tab */}
+        <TabsContent value="health">
+          <HealthScoreDashboard sellerId={sellerId} />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
