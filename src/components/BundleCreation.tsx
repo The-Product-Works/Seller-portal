@@ -302,6 +302,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
         discount_percentage: discountPercentage,
         total_items: totalItems,
         status: submitStatus,
+        published_at: submitStatus === "active" ? new Date().toISOString() : null,
         slug: generateSlug(bundleName),
         thumbnail_url: getThumbnailUrl(),
       };
@@ -403,9 +404,9 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Create Product Bundle</DialogTitle>
+          <DialogTitle>{editingBundle ? 'Edit Bundle' : 'Create Bundle'}</DialogTitle>
           <DialogDescription>
-            Combine 2 or more products into a discounted bundle
+            {editingBundle ? 'Update bundle details and products' : 'Combine 2 or more products into a discounted bundle'}
           </DialogDescription>
         </DialogHeader>
 

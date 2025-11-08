@@ -102,8 +102,10 @@ export default function AddProductDialog({
   
   const [variants, setVariants] = useState<VariantForm[]>([]);
   const [returnPolicy, setReturnPolicy] = useState("");
+  const [returnDays, setReturnDays] = useState<number>(7);
   const [shippingInfo, setShippingInfo] = useState("");
   const [shelfLifeMonths, setShelfLifeMonths] = useState<number>(12);
+  const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [status, setStatus] = useState<"draft" | "active">("draft");
   
   const [productImages, setProductImages] = useState<File[]>([]);
@@ -129,8 +131,10 @@ export default function AddProductDialog({
       setSelectedAllergens([]);
       setVariants([]);
       setReturnPolicy("");
+      setReturnDays(7);
       setShippingInfo("");
       setShelfLifeMonths(12);
+      setDiscountPercentage(0);
       setStatus("draft");
       setProductImages([]);
       setCertificateFiles([]);
@@ -189,6 +193,8 @@ export default function AddProductDialog({
     setSellerDescription(product.seller_description || "");
     setSellerIngredients(product.seller_ingredients || "");
     setShelfLifeMonths(product.shelf_life_months || 12);
+    setReturnDays(product.return_days || 7);
+    setDiscountPercentage(product.discount_percentage || 0);
     setStatus(product.status as "draft" | "active" || "draft");
     setReturnPolicy(product.return_policy || "");
     setShippingInfo(product.shipping_info || "");
@@ -473,7 +479,9 @@ export default function AddProductDialog({
             base_price: basePrice,
             total_stock_quantity: totalStock,
             shelf_life_months: shelfLifeMonths,
+            return_days: returnDays,
             return_policy: returnPolicy,
+            discount_percentage: discountPercentage,
             shipping_info: shippingInfo,
             status: status,
             published_at: status === "active" ? new Date().toISOString() : null,
@@ -499,7 +507,9 @@ export default function AddProductDialog({
             base_price: basePrice,
             total_stock_quantity: totalStock,
             shelf_life_months: shelfLifeMonths,
+            return_days: returnDays,
             return_policy: returnPolicy,
+            discount_percentage: discountPercentage,
             shipping_info: shippingInfo,
             status: status,
             slug: listingSlug,
@@ -652,6 +662,11 @@ export default function AddProductDialog({
     setSellerIngredients("");
     setSelectedAllergens([]);
     setVariants([]);
+    setReturnPolicy("");
+    setReturnDays(7);
+    setShippingInfo("");
+    setShelfLifeMonths(12);
+    setDiscountPercentage(0);
     setProductImages([]);
     setCertificateFiles([]);
     setTrustCertificateFiles([]);
@@ -663,7 +678,7 @@ export default function AddProductDialog({
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {editingProduct ? 'Edit Product' : 'Add New Product'}
+            {editingProduct ? 'Edit Product' : 'Add Product'}
           </DialogTitle>
         </DialogHeader>
 
@@ -855,6 +870,30 @@ export default function AddProductDialog({
                 onChange={(e) => setShelfLifeMonths(Number(e.target.value))}
               />
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Return Days *</Label>
+                <Input
+                  type="number"
+                  value={returnDays}
+                  onChange={(e) => setReturnDays(Number(e.target.value))}
+                  min="0"
+                  placeholder="e.g., 7"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Discount Percentage (%)</Label>
+                <Input
+                  type="number"
+                  value={discountPercentage}
+                  onChange={(e) => setDiscountPercentage(Number(e.target.value))}
+                  min="0"
+                  max="100"
+                  placeholder="0"
+                />
+              </div>
+            </div>
           </TabsContent>
 
           {/* Variants Tab */}
@@ -972,6 +1011,73 @@ export default function AddProductDialog({
                       onCheckedChange={(checked) => updateVariant(index, "is_available", checked)}
                     />
                     <Label>Available for Sale</Label>
+                  </div>
+                </div>
+
+                {/* Nutritional Info */}
+                <div className="border-t pt-3">
+                  <Label className="font-semibold mb-2 block">Nutritional Information</Label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-sm">Calories (per serving)</Label>
+                      <Input
+                        type="number"
+                        placeholder="e.g., 250"
+                        value={variant.nutritional_info?.calories || ""}
+                        onChange={(e) => {
+                          const newNutrInfo = { ...variant.nutritional_info, calories: Number(e.target.value) };
+                          updateVariant(index, "nutritional_info", newNutrInfo);
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm">Protein (g)</Label>
+                      <Input
+                        type="number"
+                        placeholder="e.g., 10"
+                        value={variant.nutritional_info?.protein || ""}
+                        onChange={(e) => {
+                          const newNutrInfo = { ...variant.nutritional_info, protein: Number(e.target.value) };
+                          updateVariant(index, "nutritional_info", newNutrInfo);
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm">Fat (g)</Label>
+                      <Input
+                        type="number"
+                        placeholder="e.g., 5"
+                        value={variant.nutritional_info?.fat || ""}
+                        onChange={(e) => {
+                          const newNutrInfo = { ...variant.nutritional_info, fat: Number(e.target.value) };
+                          updateVariant(index, "nutritional_info", newNutrInfo);
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm">Carbohydrates (g)</Label>
+                      <Input
+                        type="number"
+                        placeholder="e.g., 30"
+                        value={variant.nutritional_info?.carbohydrates || ""}
+                        onChange={(e) => {
+                          const newNutrInfo = { ...variant.nutritional_info, carbohydrates: Number(e.target.value) };
+                          updateVariant(index, "nutritional_info", newNutrInfo);
+                        }}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-sm">Fiber (g)</Label>
+                      <Input
+                        type="number"
+                        placeholder="e.g., 5"
+                        value={variant.nutritional_info?.fiber || ""}
+                        onChange={(e) => {
+                          const newNutrInfo = { ...variant.nutritional_info, fiber: Number(e.target.value) };
+                          updateVariant(index, "nutritional_info", newNutrInfo);
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1144,50 +1250,25 @@ export default function AddProductDialog({
             Cancel
           </Button>
           <div className="flex gap-2">
-            {!editingProduct ? (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setStatus("draft");
-                    handleSave();
-                  }}
-                  disabled={loading}
-                >
-                  Save as Draft
-                </Button>
-                <Button
-                  onClick={() => {
-                    setStatus("active");
-                    handleSave();
-                  }}
-                  disabled={loading}
-                >
-                  Publish Now
-                </Button>
-              </>
-            ) : (
-              <>
-                <Button
-                  variant="outline"
-                  onClick={handleSave}
-                  disabled={loading}
-                >
-                  Save Changes
-                </Button>
-                {status === "draft" && (
-                  <Button
-                    onClick={() => {
-                      setStatus("active");
-                      handleSave();
-                    }}
-                    disabled={loading}
-                  >
-                    Publish Now
-                  </Button>
-                )}
-              </>
-            )}
+            <Button
+              variant="outline"
+              onClick={() => {
+                setStatus("draft");
+                handleSave();
+              }}
+              disabled={loading}
+            >
+              Save as Draft
+            </Button>
+            <Button
+              onClick={() => {
+                setStatus("active");
+                handleSave();
+              }}
+              disabled={loading}
+            >
+              Publish Now
+            </Button>
           </div>
         </div>
       </DialogContent>
