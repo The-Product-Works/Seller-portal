@@ -13,9 +13,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ShoppingCart, X, Clock, CheckCircle, XCircle, RotateCcw } from "lucide-react";
+import { ShoppingCart, X, Clock, CheckCircle, XCircle, RotateCcw, Truck, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { ReturnQCDialog } from "@/components/ReturnQCDialog";
+import { ReturnTrackingDialog } from "@/components/ReturnTrackingDialog";
 
 interface SellerOrder {
   id: string;
@@ -47,6 +49,10 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
   const [cancelReason, setCancelReason] = useState("");
   const [returnReason, setReturnReason] = useState("");
   const [returnRefundAmount, setReturnRefundAmount] = useState<number>(0);
+  const [showQCDialog, setShowQCDialog] = useState(false);
+  const [showTrackingDialog, setShowTrackingDialog] = useState(false);
+  const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null);
+  const [selectedOrderForTracking, setSelectedOrderForTracking] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -334,17 +340,33 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
                 Ordered: {new Date(order.created_at).toLocaleString()}
               </div>
 
-              <div className="flex gap-2 mt-4">
+              <div className="flex gap-2 mt-4 flex-wrap">
                 {(order.status === "pending" || order.status === "processing") && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setCancelingOrderId(order.id)}
-                    className="text-red-600 border-red-200 hover:bg-red-50"
-                  >
-                    <X className="h-4 w-4 mr-1" />
-                    Cancel Order
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setCancelingOrderId(order.id)}
+                      className="text-red-600 border-red-200 hover:bg-red-50"
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Cancel Order
+                    </Button>
+                    {order.status === "processing" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSelectedOrderForTracking(order.id);
+                          setShowTrackingDialog(true);
+                        }}
+                        className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                      >
+                        <Truck className="h-4 w-4 mr-1" />
+                        Add Tracking
+                      </Button>
+                    )}
+                  </>
                 )}
                 {(order.status === "delivered" || order.status === "shipped") && (
                   <Button
@@ -360,11 +382,51 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
                     Return Request
                   </Button>
                 )}
+                {order.status === "return_requested" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedReturnId(order.id);
+                      setShowQCDialog(true);
+                    }}
+                    className="text-green-600 border-green-200 hover:bg-green-50"
+                  >
+                    <CheckCircle2 className="h-4 w-4 mr-1" />
+                    Quality Check
+                  </Button>
+                )}
               </div>
             </div>
           ))}
         </CardContent>
       </Card>
+
+      {/* Quality Check Dialog */}
+      {selectedReturnId && (
+        <ReturnQCDialog
+          open={showQCDialog}
+          onOpenChange={setShowQCDialog}
+          returnId={selectedReturnId}
+          sellerId={sellerId}
+          onSuccess={() => {
+            loadOrders();
+          }}
+        />
+      )}
+
+      {/* Return Tracking Dialog */}
+      {selectedOrderForTracking && (
+        <ReturnTrackingDialog
+          open={showTrackingDialog}
+          onOpenChange={setShowTrackingDialog}
+          returnId={selectedOrderForTracking}
+          sellerId={sellerId}
+          onSuccess={() => {
+            loadOrders();
+          }}
+        />
+      )}
 
       {/* Cancel Order Dialog */}
       <AlertDialog open={!!cancelingOrderId} onOpenChange={(open) => {
