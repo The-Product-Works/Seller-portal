@@ -1454,11 +1454,18 @@ export default function AddProductDialog({
                 status: status,
                 published_at: new Date().toISOString(),
                 images: galleryImages
-                  .filter(img => !img.isExisting || img.url)
-                  .map(img => ({
-                    image_url: img.url || '',
-                    is_primary: img.isPrimary,
-                  })),
+                  .map(img => {
+                    let imageUrl = img.url || '';
+                    // For new files, create a data URL for preview
+                    if (img.file && !imageUrl) {
+                      imageUrl = URL.createObjectURL(img.file);
+                    }
+                    return {
+                      image_url: imageUrl,
+                      is_primary: img.isPrimary,
+                    };
+                  })
+                  .filter(img => img.image_url),
                 variants: variants.map(v => ({
                   variant_name: v.variant_name,
                   flavor: v.flavor,

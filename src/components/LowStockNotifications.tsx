@@ -182,21 +182,9 @@ export function LowStockNotifications({ onProductClick, onBundleClick }: LowStoc
     return null;
   }
 
-  // Show empty state message if no notifications (but don't return null - show info message)
+  // Only show card if there are actual low stock notifications
   if (notifications.length === 0) {
-    return (
-      <Card className="border-green-200 bg-green-50/50">
-        <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-green-600" />
-            <CardTitle className="text-green-800">All Stock Levels Good</CardTitle>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-green-700">No low stock alerts at the moment. All your products have healthy inventory levels.</p>
-        </CardContent>
-      </Card>
-    );
+    return null;
   }
 
   return (
