@@ -35,6 +35,7 @@ import { LowStockNotifications } from "@/components/LowStockNotifications";
 import RestockDialog from "@/components/RestockDialog";
 import BundleRestockDialog from "@/components/BundleRestockDialog";
 import { ProductDetailModal } from "@/components/ProductDetailModal";
+import { ProductImageGalleryCard } from "@/components/ProductImageGalleryCard";
 import {
   Sheet,
   SheetContent,
@@ -677,18 +678,20 @@ export default function Inventory() {
 
               return (
                 <Card key={bundle.bundle_id} className="overflow-hidden border-primary/20">
-                  <div className="aspect-square bg-muted relative">
-                    {bundle.thumbnail_url ? (
-                      <img
-                        src={bundle.thumbnail_url}
-                        alt={bundleName}
-                        className="object-cover w-full h-full"
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-full">
-                        <Package className="h-16 w-16 text-primary" />
-                      </div>
-                    )}
+                  <div className="relative">
+                    <div className="aspect-square bg-muted relative">
+                      {bundle.thumbnail_url ? (
+                        <img
+                          src={bundle.thumbnail_url}
+                          alt={bundleName}
+                          className="object-cover w-full h-full"
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center h-full">
+                          <Package className="h-16 w-16 text-primary" />
+                        </div>
+                      )}
+                    </div>
                     <div className="absolute top-2 right-2 flex gap-2">
                       <Badge
                         variant={
@@ -785,7 +788,6 @@ export default function Inventory() {
 
             // Original product rendering
             const listing = item as ListingWithDetails;
-            const primaryImage = listing.listing_images?.find((img) => img.is_primary);
             const brandName = listing.global_products?.brands?.name || "Unknown Brand";
             const productName =
               listing.seller_title || listing.global_products?.product_name || "Untitled";
@@ -794,18 +796,12 @@ export default function Inventory() {
 
             return (
               <Card key={listing.listing_id} className="overflow-hidden">
-                <div className="aspect-square bg-muted relative">
-                  {primaryImage?.image_url ? (
-                    <img
-                      src={primaryImage.image_url}
-                      alt={productName}
-                      className="object-cover w-full h-full"
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-full">
-                      <Package className="h-16 w-16 text-muted-foreground" />
-                    </div>
-                  )}
+                <div className="relative">
+                  <ProductImageGalleryCard
+                    images={listing.listing_images}
+                    productName={productName}
+                    className="aspect-square"
+                  />
                   <div className="absolute top-2 right-2 flex gap-2">
                     <Badge
                       variant={
