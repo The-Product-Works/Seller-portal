@@ -381,6 +381,30 @@ export default function Inventory() {
           console.log("Successfully deleted transparency data for variants");
         }
 
+        console.log("Deleting inventory records for variants...");
+        const { error: inventoryError } = await supabase
+          .from("inventory")
+          .delete()
+          .in("variant_id", variantIds);
+
+        if (inventoryError) {
+          console.warn("Could not delete inventory records for variants:", inventoryError);
+        } else {
+          console.log("Successfully deleted inventory records for variants");
+        }
+
+        console.log("Deleting variant attribute values...");
+        const { error: variantAttributesError } = await supabase
+          .from("variant_attribute_values")
+          .delete()
+          .in("variant_id", variantIds);
+
+        if (variantAttributesError) {
+          console.warn("Could not delete variant attributes for variants:", variantAttributesError);
+        } else {
+          console.log("Successfully deleted variant attributes for variants");
+        }
+
         console.log("Deleting variant-specific images...");
         const { error: variantImagesError } = await supabase
           .from("listing_images")
@@ -413,6 +437,16 @@ export default function Inventory() {
 
       if (listingOrderError) {
         console.warn("Could not delete listing order items:", listingOrderError);
+      }
+
+      console.log("Deleting bundle items referencing this listing...");
+      const { error: bundleItemsError } = await supabase
+        .from("bundle_items")
+        .delete()
+        .eq("listing_id", listingId);
+
+      if (bundleItemsError) {
+        console.warn("Could not delete bundle items:", bundleItemsError);
       }
 
       console.log("Deleting product allergens...");
@@ -475,15 +509,7 @@ export default function Inventory() {
         console.warn("Could not delete wishlists:", wishlistsError);
       }
 
-      console.log("Deleting listing allergens...");
-      const { error: listingAllergensError } = await supabase
-        .from("listing_allergens")
-        .delete()
-        .eq("listing_id", listingId);
-
-      if (listingAllergensError) {
-        console.warn("Could not delete listing allergens:", listingAllergensError);
-      }
+      // Note: listing_allergens table doesn't exist in schema, skipping deletion
 
       // Delete listing-level images
       console.log("Deleting listing-level images...");
@@ -593,6 +619,26 @@ export default function Inventory() {
         console.warn("Could not delete transparency data:", transparencyError);
       }
 
+      console.log("Deleting inventory record for variant...");
+      const { error: inventoryError } = await supabase
+        .from("inventory")
+        .delete()
+        .eq("variant_id", variantId);
+
+      if (inventoryError) {
+        console.warn("Could not delete inventory record:", inventoryError);
+      }
+
+      console.log("Deleting variant attribute values...");
+      const { error: variantAttributesError } = await supabase
+        .from("variant_attribute_values")
+        .delete()
+        .eq("variant_id", variantId);
+
+      if (variantAttributesError) {
+        console.warn("Could not delete variant attributes:", variantAttributesError);
+      }
+
       // Now delete the variant
       const { error } = await supabase
         .from("listing_variants")
@@ -626,8 +672,8 @@ export default function Inventory() {
       // First verify the bundle belongs to this seller
       const { data: bundleData, error: verifyError } = await supabase
         .from("bundles")
-        .select("id, seller_id")
-        .eq("id", bundleId)
+        .select("bundle_id, seller_id")
+        .eq("bundle_id", bundleId)
         .eq("seller_id", sellerId)
         .single();
 
@@ -650,7 +696,7 @@ export default function Inventory() {
       const { error } = await supabase
         .from("bundles")
         .delete()
-        .eq("id", bundleId)
+        .eq("bundle_id", bundleId)
         .eq("seller_id", sellerId);
 
       if (error) throw error;

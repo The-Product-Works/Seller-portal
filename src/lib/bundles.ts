@@ -29,12 +29,12 @@ export async function createBundle(input: CreateBundleInput): Promise<BundleWith
     const { data: bundle, error: bundleError } = await supabase
       .from("bundles")
       .insert({
-        name: input.name,
+        bundle_name: input.name,
         description: input.description,
         discount_percentage: input.discount_percentage,
         seller_id: input.seller_id,
         // These will be calculated by the trigger
-        total_price: 0,
+        base_price: 0,
         discounted_price: 0,
       })
       .select()
@@ -44,19 +44,19 @@ export async function createBundle(input: CreateBundleInput): Promise<BundleWith
 
     // Insert bundle products
     const bundleProducts = input.products.map(product => ({
-      bundle_id: bundle.id,
-      product_id: product.product_id,
+      bundle_id: bundle.bundle_id,
+      listing_id: product.product_id,  // Note: using listing_id as per database schema
       quantity: product.quantity
     }));
 
     const { error: productsError } = await supabase
-      .from("bundle_products")
+      .from("bundle_items")
       .insert(bundleProducts);
 
     if (productsError) throw productsError;
 
     // Fetch the complete bundle with products
-    return getBundleById(bundle.id);
+    return getBundleById(bundle.bundle_id);
 
   } catch (error) {
     console.error("Error creating bundle:", error);
@@ -70,27 +70,29 @@ export async function getBundleById(bundleId: string): Promise<BundleWithProduct
     const { data: bundle, error: bundleError } = await supabase
       .from("bundles")
       .select("*")
-      .eq("id", bundleId)
+      .eq("bundle_id", bundleId)
       .single();
 
     if (bundleError) throw bundleError;
 
     // Get all products in the bundle
     const { data: bundleProducts, error: productsError } = await supabase
-      .from("bundle_products")
+      .from("bundle_items")
       .select(`
-        product:products (*)
+        listing_id,
+        quantity,
+        seller_product_listings (*)
       `)
       .eq("bundle_id", bundleId);
 
     if (productsError) throw productsError;
 
-    const products = bundleProducts.map(bp => bp.product);
+    const products = bundleProducts?.map(bp => bp.seller_product_listings) || [];
 
     return {
       ...bundle,
       products
-    };
+    } as BundleWithProducts;
 
   } catch (error) {
     console.error("Error fetching bundle:", error);
@@ -104,11 +106,11 @@ export async function updateBundle(bundleId: string, input: UpdateBundleInput): 
     const { error: bundleError } = await supabase
       .from("bundles")
       .update({
-        name: input.name,
+        bundle_name: input.name,
         description: input.description,
         discount_percentage: input.discount_percentage,
       })
-      .eq("id", bundleId);
+      .eq("bundle_id", bundleId);
 
     if (bundleError) throw bundleError;
 
@@ -116,7 +118,7 @@ export async function updateBundle(bundleId: string, input: UpdateBundleInput): 
     if (input.products) {
       // First delete all existing bundle products
       const { error: deleteError } = await supabase
-        .from("bundle_products")
+        .from("bundle_items")
         .delete()
         .eq("bundle_id", bundleId);
 
@@ -125,12 +127,12 @@ export async function updateBundle(bundleId: string, input: UpdateBundleInput): 
       // Then insert new bundle products
       const bundleProducts = input.products.map(product => ({
         bundle_id: bundleId,
-        product_id: product.product_id,
+        listing_id: product.product_id,
         quantity: product.quantity
       }));
 
       const { error: productsError } = await supabase
-        .from("bundle_products")
+        .from("bundle_items")
         .insert(bundleProducts);
 
       if (productsError) throw productsError;
@@ -150,7 +152,7 @@ export async function deleteBundle(bundleId: string): Promise<boolean> {
     const { error } = await supabase
       .from("bundles")
       .delete()
-      .eq("id", bundleId);
+      .eq("bundle_id", bundleId);
 
     return !error;
   } catch (error) {
@@ -165,8 +167,10 @@ export async function listBundles(sellerId?: string): Promise<BundleWithProducts
       .from("bundles")
       .select(`
         *,
-        products:bundle_products (
-          product:products (*)
+        bundle_items (
+          listing_id,
+          quantity,
+          seller_product_listings (*)
         )
       `);
 
@@ -178,10 +182,10 @@ export async function listBundles(sellerId?: string): Promise<BundleWithProducts
 
     if (error) throw error;
 
-    return data.map(bundle => ({
+    return data?.map(bundle => ({
       ...bundle,
-      products: bundle.products.map((bp: any) => bp.product)
-    }));
+      products: bundle.bundle_items?.map((bp: any) => bp.seller_product_listings) || []
+    })) as BundleWithProducts[] || [];
 
   } catch (error) {
     console.error("Error listing bundles:", error);
