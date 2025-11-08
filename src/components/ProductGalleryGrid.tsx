@@ -2,10 +2,11 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, Package, Edit2 } from "lucide-react";
+import { AlertCircle, Package, Edit2, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { ProductImageGalleryCard } from "@/components/ProductImageGalleryCard";
+import { SimpleRestockDialog } from "@/components/SimpleRestockDialog";
 
 interface ProductImage {
   image_id: string;
@@ -17,26 +18,33 @@ interface ProductCard {
   id: string;
   type: "product" | "bundle";
   name: string;
+  description?: string;
   images: ProductImage[];
   stock: number;
   low_stock: boolean;
   status: string;
   price: number;
   discount_percentage?: number;
+  health_score?: number;
+  certifications?: Record<string, unknown>;
 }
 
 interface ProductGalleryGridProps {
   sellerId?: string | null;
   limit?: number;
+  showOnlyOutOfStock?: boolean;
 }
 
 interface SellerProductListing {
   listing_id: string;
   seller_title: string;
+  seller_description?: string;
   base_price: number;
   discount_percentage?: number;
   total_stock_quantity: number;
   status: string;
+  health_score?: number;
+  seller_certifications?: Record<string, unknown>;
   listing_images: ProductImage[];
 }
 
@@ -49,10 +57,12 @@ interface BundleRecord {
   status: string;
 }
 
-export function ProductGalleryGrid({ sellerId, limit = 12 }: ProductGalleryGridProps) {
+export function ProductGalleryGrid({ sellerId, limit = 12, showOnlyOutOfStock = false }: ProductGalleryGridProps) {
   const [products, setProducts] = useState<ProductCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [lowStockCount, setLowStockCount] = useState(0);
+  const [showRestockDialog, setShowRestockDialog] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<ProductCard | null>(null);
 
   useEffect(() => {
     if (sellerId) {
@@ -72,10 +82,13 @@ export function ProductGalleryGrid({ sellerId, limit = 12 }: ProductGalleryGridP
           `
           listing_id,
           seller_title,
+          seller_description,
           base_price,
           discount_percentage,
           total_stock_quantity,
           status,
+          health_score,
+          seller_certifications,
           listing_images(image_id, image_url, is_primary)
         `
         )
@@ -96,17 +109,23 @@ export function ProductGalleryGrid({ sellerId, limit = 12 }: ProductGalleryGridP
           const isLowStock = stock < lowStockThreshold;
           if (isLowStock) lowCount++;
 
-          productList.push({
-            id: listing.listing_id,
-            type: "product",
-            name: listing.seller_title,
-            images: listing.listing_images || [],
-            stock: stock,
-            low_stock: isLowStock,
-            status: listing.status,
-            price: listing.base_price,
-            discount_percentage: listing.discount_percentage,
-          });
+          // Only include out of stock products if showOnlyOutOfStock is true
+          if (!showOnlyOutOfStock || stock === 0) {
+            productList.push({
+              id: listing.listing_id,
+              type: "product",
+              name: listing.seller_title,
+              description: listing.seller_description,
+              images: listing.listing_images || [],
+              stock: stock,
+              low_stock: isLowStock,
+              status: listing.status,
+              price: listing.base_price,
+              discount_percentage: listing.discount_percentage,
+              health_score: listing.health_score,
+              certifications: listing.seller_certifications,
+            });
+          }
         });
       }
 
@@ -138,17 +157,20 @@ export function ProductGalleryGrid({ sellerId, limit = 12 }: ProductGalleryGridP
           const isLowStock = stock < lowStockThreshold;
           if (isLowStock) lowCount++;
 
-          productList.push({
-            id: bundle.bundle_id,
-            type: "bundle",
-            name: bundle.bundle_name,
-            images: [], // Bundles don't have images directly
-            stock: stock,
-            low_stock: isLowStock,
-            status: bundle.status,
-            price: bundle.base_price,
-            discount_percentage: bundle.discount_percentage,
-          });
+          // Only include out of stock bundles if showOnlyOutOfStock is true
+          if (!showOnlyOutOfStock || stock === 0) {
+            productList.push({
+              id: bundle.bundle_id,
+              type: "bundle",
+              name: bundle.bundle_name,
+              images: [], // Bundles don't have images directly
+              stock: stock,
+              low_stock: isLowStock,
+              status: bundle.status,
+              price: bundle.base_price,
+              discount_percentage: bundle.discount_percentage,
+            });
+          }
         });
       }
 
@@ -248,8 +270,23 @@ export function ProductGalleryGrid({ sellerId, limit = 12 }: ProductGalleryGridP
                       {product.type === "bundle" ? "Bundle" : "Product"}
                     </Badge>
                   </div>
+                  {product.description && (
+                    <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+                      {product.description}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">{product.status}</p>
                 </div>
+
+                {/* Health Score */}
+                {product.health_score && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium">Health Score:</span>
+                    <Badge variant={product.health_score >= 80 ? "default" : product.health_score >= 60 ? "secondary" : "destructive"}>
+                      {product.health_score}/100
+                    </Badge>
+                  </div>
+                )}
 
                 {/* Price */}
                 <div className="flex items-center gap-2">
@@ -269,28 +306,58 @@ export function ProductGalleryGrid({ sellerId, limit = 12 }: ProductGalleryGridP
                 {/* Stock Status */}
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className={`font-bold text-sm ${product.low_stock ? 'text-red-600' : 'text-green-600'}`}>
+                    <p className={`font-bold text-sm ${product.stock === 0 ? 'text-red-600' : product.low_stock ? 'text-amber-600' : 'text-green-600'}`}>
                       {product.stock} units
                     </p>
                     <p className="text-xs text-muted-foreground">In Stock</p>
                   </div>
-                  {product.low_stock && (
+                  {product.stock === 0 && (
                     <Badge variant="destructive" className="text-xs">
-                      Low Stock
+                      Out of Stock
                     </Badge>
                   )}
                 </div>
 
-                {/* Action Button */}
-                <Button size="sm" className="w-full" variant="outline">
-                  <Edit2 className="h-3 w-3 mr-2" />
-                  Edit
-                </Button>
+                {/* Action Buttons */}
+                <div className="flex gap-2">
+                  <Button size="sm" className="flex-1" variant="outline">
+                    <Edit2 className="h-3 w-3 mr-2" />
+                    Edit
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => {
+                      setSelectedProduct(product);
+                      setShowRestockDialog(true);
+                    }}
+                  >
+                    <Plus className="h-3 w-3 mr-2" />
+                    Restock
+                  </Button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       </CardContent>
+
+      {/* Simple Restock Dialog */}
+      {selectedProduct && (
+        <SimpleRestockDialog
+          open={showRestockDialog}
+          onOpenChange={setShowRestockDialog}
+          productId={selectedProduct.id}
+          productName={selectedProduct.name}
+          currentStock={selectedProduct.stock}
+          isBundle={selectedProduct.type === "bundle"}
+          sellerId={sellerId}
+          onSuccess={() => {
+            loadProducts();
+            setSelectedProduct(null);
+          }}
+        />
+      )}
     </Card>
   );
 }

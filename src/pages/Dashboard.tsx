@@ -328,7 +328,7 @@ export default function Dashboard() {
               <p className="text-muted-foreground">Loading products...</p>
             </div>
           ) : (
-            <ProductGalleryGrid sellerId={sellerId} limit={50} />
+            <ProductGalleryGrid sellerId={sellerId} limit={50} showOnlyOutOfStock={true} />
           )}
         </TabsContent>
 

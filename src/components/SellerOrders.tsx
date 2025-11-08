@@ -18,6 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ReturnQCDialog } from "@/components/ReturnQCDialog";
 import { ReturnTrackingDialog } from "@/components/ReturnTrackingDialog";
+import { OrderTrackingDialog } from "@/components/OrderTrackingDialog";
 
 interface SellerOrder {
   id: string;
@@ -53,6 +54,8 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
   const [showTrackingDialog, setShowTrackingDialog] = useState(false);
   const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null);
   const [selectedOrderForTracking, setSelectedOrderForTracking] = useState<string | null>(null);
+  const [showOrderTrackingDialog, setShowOrderTrackingDialog] = useState(false);
+  const [selectedOrderForOrderTracking, setSelectedOrderForOrderTracking] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -357,8 +360,8 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
                         size="sm"
                         variant="outline"
                         onClick={() => {
-                          setSelectedOrderForTracking(order.id);
-                          setShowTrackingDialog(true);
+                          setSelectedOrderForOrderTracking(order.id);
+                          setShowOrderTrackingDialog(true);
                         }}
                         className="text-blue-600 border-blue-200 hover:bg-blue-50"
                       >
@@ -415,12 +418,12 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
         />
       )}
 
-      {/* Return Tracking Dialog */}
-      {selectedOrderForTracking && (
-        <ReturnTrackingDialog
-          open={showTrackingDialog}
-          onOpenChange={setShowTrackingDialog}
-          returnId={selectedOrderForTracking}
+      {/* Order Tracking Dialog */}
+      {selectedOrderForOrderTracking && (
+        <OrderTrackingDialog
+          open={showOrderTrackingDialog}
+          onOpenChange={setShowOrderTrackingDialog}
+          orderId={selectedOrderForOrderTracking}
           sellerId={sellerId}
           onSuccess={() => {
             loadOrders();
