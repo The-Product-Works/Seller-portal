@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -12,7 +13,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ShoppingCart, X, Clock, CheckCircle, XCircle } from "lucide-react";
+import { ShoppingCart, X, Clock, CheckCircle, XCircle, RotateCcw } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -25,7 +26,7 @@ interface SellerOrder {
   customer_phone?: string;
   quantity: number;
   total_amount: number;
-  status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled";
+  status: "pending" | "confirmed" | "shipped" | "delivered" | "cancelled" | "return_requested";
   shipping_address?: string;
   estimated_delivery_date?: string;
   created_at: string;
@@ -41,7 +42,10 @@ export function SellerOrders({ sellerId, limit = 10 }: SellerOrdersProps) {
   const [orders, setOrders] = useState<SellerOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
+  const [returningOrderId, setReturningOrderId] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState("");
+  const [returnReason, setReturnReason] = useState("");
+  const [returnRefundAmount, setReturnRefundAmount] = useState<number>(0);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -107,7 +111,7 @@ export function SellerOrders({ sellerId, limit = 10 }: SellerOrdersProps) {
         setOrders(orders.filter(o => o.id !== orderId));
         toast({
           title: "Order cancelled",
-          description: "The order has been cancelled successfully",
+          description: "The order has been cancelled successfully. Buyer will be notified.",
         });
         setCancelingOrderId(null);
         setCancelReason("");
@@ -117,6 +121,48 @@ export function SellerOrders({ sellerId, limit = 10 }: SellerOrdersProps) {
       toast({
         title: "Error",
         description: "Failed to cancel order",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleReturnRequest = async (orderId: string) => {
+    try {
+      const { error } = await supabase
+        .from("orders")
+        .update({
+          status: "return_requested",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", orderId)
+        .eq("seller_id", sellerId);
+
+      if (error) {
+        toast({
+          title: "Error processing return request",
+          description: error.message,
+          variant: "destructive",
+        });
+      } else {
+        // Update order status in list to show return_requested
+        setOrders(orders.map(o => 
+          o.id === orderId 
+            ? { ...o, status: "return_requested" }
+            : o
+        ));
+        toast({
+          title: "Return request processed",
+          description: `Refund of ₹${returnRefundAmount.toFixed(2)} will be initiated. Buyer will be notified.`,
+        });
+        setReturningOrderId(null);
+        setReturnReason("");
+        setReturnRefundAmount(0);
+      }
+    } catch (error) {
+      console.error("Error processing return request:", error);
+      toast({
+        title: "Error",
+        description: "Failed to process return request",
         variant: "destructive",
       });
     }
@@ -134,6 +180,8 @@ export function SellerOrders({ sellerId, limit = 10 }: SellerOrdersProps) {
         return "bg-green-100 text-green-800";
       case "cancelled":
         return "bg-red-100 text-red-800";
+      case "return_requested":
+        return "bg-orange-100 text-orange-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
@@ -147,6 +195,8 @@ export function SellerOrders({ sellerId, limit = 10 }: SellerOrdersProps) {
         return <CheckCircle className="h-4 w-4" />;
       case "cancelled":
         return <XCircle className="h-4 w-4" />;
+      case "return_requested":
+        return <RotateCcw className="h-4 w-4" />;
       default:
         return <ShoppingCart className="h-4 w-4" />;
     }
@@ -258,15 +308,31 @@ export function SellerOrders({ sellerId, limit = 10 }: SellerOrdersProps) {
               </div>
 
               <div className="flex gap-2 mt-4">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => setCancelingOrderId(order.id)}
-                  className="text-red-600 border-red-200 hover:bg-red-50"
-                >
-                  <X className="h-4 w-4 mr-1" />
-                  Cancel Order
-                </Button>
+                {order.status === "pending" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setCancelingOrderId(order.id)}
+                    className="text-red-600 border-red-200 hover:bg-red-50"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Cancel Order
+                  </Button>
+                )}
+                {(order.status === "delivered" || order.status === "shipped") && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setReturningOrderId(order.id);
+                      setReturnRefundAmount(order.total_amount);
+                    }}
+                    className="text-amber-600 border-amber-200 hover:bg-amber-50"
+                  >
+                    <RotateCcw className="h-4 w-4 mr-1" />
+                    Return Request
+                  </Button>
+                )}
               </div>
             </div>
           ))}
@@ -309,6 +375,65 @@ export function SellerOrders({ sellerId, limit = 10 }: SellerOrdersProps) {
               className="bg-red-600 hover:bg-red-700"
             >
               Cancel Order
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Return Request Dialog */}
+      <AlertDialog open={!!returningOrderId} onOpenChange={(open) => {
+        if (!open) {
+          setReturningOrderId(null);
+          setReturnReason("");
+          setReturnRefundAmount(0);
+        }
+      }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Process Return Request</AlertDialogTitle>
+            <AlertDialogDescription>
+              Handle the customer's return request. A refund will be issued to the buyer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="py-4 space-y-4">
+            <div>
+              <label className="text-sm font-medium">Refund Amount (₹)</label>
+              <input
+                type="number"
+                className="w-full mt-2 p-2 border rounded text-sm"
+                value={returnRefundAmount}
+                onChange={(e) => setReturnRefundAmount(Number(e.target.value))}
+                placeholder="Enter refund amount"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Return Reason (optional)</label>
+              <textarea
+                className="w-full mt-2 p-2 border rounded text-sm"
+                placeholder="e.g., Defective product, Customer not satisfied, etc."
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Decline Return</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (returningOrderId && returnRefundAmount > 0) {
+                  handleReturnRequest(returningOrderId);
+                } else {
+                  toast({
+                    title: "Invalid refund amount",
+                    description: "Please enter a valid refund amount",
+                    variant: "destructive",
+                  });
+                }
+              }}
+              className="bg-amber-600 hover:bg-amber-700"
+            >
+              Accept & Process Return
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

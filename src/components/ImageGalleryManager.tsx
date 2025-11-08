@@ -27,9 +27,14 @@ export function ImageGalleryManager({
   maxImages = 10,
 }: ImageGalleryManagerProps) {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [isDragOverUpload, setIsDragOverUpload] = useState(false);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
+    addImages(files);
+  };
+
+  const addImages = (files: File[]) => {
     const remainingSlots = maxImages - images.length;
 
     if (files.length > remainingSlots) {
@@ -49,6 +54,29 @@ export function ImageGalleryManager({
 
     if (onImageUpload) {
       onImageUpload(files);
+    }
+  };
+
+  const handleDragOverUpload = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverUpload(true);
+  };
+
+  const handleDragLeaveUpload = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverUpload(false);
+  };
+
+  const handleDropUpload = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOverUpload(false);
+    
+    const files = Array.from(e.dataTransfer.files || []).filter(file => file.type.startsWith('image/'));
+    if (files.length > 0) {
+      addImages(files as File[]);
     }
   };
 
@@ -108,7 +136,16 @@ export function ImageGalleryManager({
       </div>
 
       {/* Upload Area */}
-      <div className="border-2 border-dashed rounded-lg p-6 text-center hover:bg-accent/50 transition-colors">
+      <div 
+        className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+          isDragOverUpload 
+            ? 'bg-blue-50 border-blue-400' 
+            : 'hover:bg-accent/50 border-gray-300'
+        } ${images.length >= maxImages ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+        onDragOver={handleDragOverUpload}
+        onDragLeave={handleDragLeaveUpload}
+        onDrop={handleDropUpload}
+      >
         <input
           type="file"
           multiple
@@ -120,12 +157,12 @@ export function ImageGalleryManager({
         />
         <label
           htmlFor="image-upload"
-          className="cursor-pointer flex flex-col items-center gap-2"
+          className={`${images.length >= maxImages ? 'cursor-not-allowed' : 'cursor-pointer'} flex flex-col items-center gap-2`}
         >
-          <Upload className="h-8 w-8 text-muted-foreground" />
+          <Upload className={`h-8 w-8 ${isDragOverUpload ? 'text-blue-500' : 'text-muted-foreground'}`} />
           <div>
             <p className="font-medium">
-              {images.length >= maxImages ? 'Maximum images reached' : 'Click to upload or drag images'}
+              {images.length >= maxImages ? 'Maximum images reached' : isDragOverUpload ? 'Drop images here' : 'Click to upload or drag images'}
             </p>
             <p className="text-xs text-muted-foreground">
               PNG, JPG, WEBP up to {maxImages} images

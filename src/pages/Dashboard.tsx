@@ -5,6 +5,7 @@ import { SellerGraph } from "@/components/SellerGraph";
 import { OrderHistory } from "@/components/OrderHistory";
 import { DashboardProductStock } from "@/components/DashboardProductStock";
 import { SellerOrders } from "@/components/SellerOrders";
+import { BestWorstSelling } from "@/components/BestWorstSelling";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, Package, ShoppingCart, TrendingUp, AlertCircle, Clock } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -14,6 +15,8 @@ interface Stats {
   totalRevenue: number;
   totalOrders: number;
   totalProducts: number;
+  activeProducts: number;
+  draftProducts: number;
   pendingOrders: number;
 }
 
@@ -31,6 +34,8 @@ export default function Dashboard() {
     totalRevenue: 0,
     totalOrders: 0,
     totalProducts: 0,
+    activeProducts: 0,
+    draftProducts: 0,
     pendingOrders: 0,
   });
   const [loading, setLoading] = useState(true);
@@ -66,13 +71,6 @@ export default function Dashboard() {
       setKycStatus(sellerData.verification_status);
       setSellerId(sellerData.id);
 
-      // Load products
-      const { count: productsCount } = await supabase
-        .from("products")
-        .select("product_id", { count: "exact" })
-        .eq("seller_id", user.id)
-        .eq("status", "active");
-
       // Calculate total revenue from orders for the seller
       const { data: revenueNow } = await supabase
         .from("orders")
@@ -101,11 +99,39 @@ export default function Dashboard() {
       const change = prevRevenue === 0 ? (totalRevenue === 0 ? 0 : 100) : ((totalRevenue - prevRevenue) / prevRevenue) * 100;
       setRevenueChange(Number(change.toFixed(1)));
 
+      // Load product counts by status
+      const { count: activeCount } = await supabase
+        .from("seller_product_listings")
+        .select("listing_id", { count: "exact" })
+        .eq("seller_id", sellerData.id)
+        .eq("status", "active");
+
+      const { count: draftCount } = await supabase
+        .from("seller_product_listings")
+        .select("listing_id", { count: "exact" })
+        .eq("seller_id", sellerData.id)
+        .eq("status", "draft");
+
+      // Load total orders count
+      const { count: totalOrdersCount } = await supabase
+        .from("orders")
+        .select("id", { count: "exact" })
+        .eq("seller_id", user.id);
+
+      // Load pending orders count
+      const { count: pendingOrdersCount } = await supabase
+        .from("orders")
+        .select("id", { count: "exact" })
+        .eq("seller_id", user.id)
+        .eq("status", "pending");
+
       setStats({
         totalRevenue: totalRevenue,
-        totalOrders: 0,
-        totalProducts: productsCount || 0,
-        pendingOrders: 0,
+        totalOrders: totalOrdersCount || 0,
+        totalProducts: (activeCount || 0) + (draftCount || 0),
+        activeProducts: activeCount || 0,
+        draftProducts: draftCount || 0,
+        pendingOrders: pendingOrdersCount || 0,
       });
     } catch (error) {
       console.error("Error loading dashboard data:", error);
@@ -126,14 +152,14 @@ export default function Dashboard() {
       title: "Total Orders",
       value: stats.totalOrders.toString(),
       icon: ShoppingCart,
-      description: "All time orders",
+      description: "All orders placed",
       gradient: "from-blue-500 to-cyan-600",
     },
     {
-      title: "Products",
+      title: "All Products",
       value: stats.totalProducts.toString(),
       icon: Package,
-      description: "Active products",
+      description: `${stats.activeProducts} active, ${stats.draftProducts} draft`,
       gradient: "from-purple-500 to-pink-600",
     },
     {
@@ -228,6 +254,10 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <DashboardProductStock sellerId={sellerId} limit={8} />
           <SellerOrders sellerId={sellerId} limit={10} />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <BestWorstSelling sellerId={sellerId} />
         </div>
       </div>
     </div>
