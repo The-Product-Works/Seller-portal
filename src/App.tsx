@@ -37,7 +37,7 @@ const App = () => (
           <Route path="/dashboard" element={<ProtectedRoute requiresKYC><Dashboard /></ProtectedRoute>} />
           <Route path="/inventory" element={<ProtectedRoute requiresKYC><Inventory /></ProtectedRoute>} />
           <Route path="/orders" element={<ProtectedRoute requiresKYC><Orders /></ProtectedRoute>} />
-          <Route path="/order/:orderId" element={<ProtectedRoute requiresKYC><OrderDetails /></ProtectedRoute>} />
+          <Route path="/order-item/:orderItemId" element={<ProtectedRoute requiresKYC><OrderDetails /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute requiresKYC><SellerProfile /></ProtectedRoute>} />
             <Route path="/notifications" element={<ProtectedRoute requiresKYC><Notifications /></ProtectedRoute>} />
             <Route path="/seller-verification" element={<ProtectedRoute requiresKYC><SellerVerification /></ProtectedRoute>} />

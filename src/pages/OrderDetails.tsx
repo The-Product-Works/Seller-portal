@@ -31,6 +31,7 @@ import type { Database } from "@/integrations/supabase/database.types";
 
 // Database type aliases for better readability
 type Order = Database['public']['Tables']['orders']['Row'];
+type OrderItem = Database['public']['Tables']['order_items']['Row'];
 type OrderReturn = Database['public']['Tables']['order_returns']['Row'];
 type OrderTracking = Database['public']['Tables']['order_tracking']['Row'];
 type OrderCancellation = Database['public']['Tables']['order_cancellations']['Row'];
@@ -38,7 +39,6 @@ type OrderRefund = Database['public']['Tables']['order_refunds']['Row'];
 type ReturnTracking = Database['public']['Tables']['return_tracking']['Row'];
 type ReturnQualityCheck = Database['public']['Tables']['return_quality_checks']['Row'];
 type OrderStatusHistory = Database['public']['Tables']['order_status_history']['Row'];
-type OrderItem = Database['public']['Tables']['order_items']['Row'];
 type Seller = Database['public']['Tables']['sellers']['Row'];
 
 interface Buyer {
@@ -71,11 +71,12 @@ interface ExtendedOrderItem extends OrderItem {
 }
 
 export default function OrderDetails() {
-  const { orderId } = useParams<{ orderId: string }>();
+  const { orderItemId } = useParams<{ orderItemId: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   
   // Main data states
+  const [orderItem, setOrderItem] = useState<OrderItem | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
   const [buyer, setBuyer] = useState<Buyer | null>(null);
   const [shippingAddress, setShippingAddress] = useState<Address | null>(null);
@@ -122,11 +123,11 @@ export default function OrderDetails() {
   const [cancelReason, setCancelReason] = useState("");
 
   useEffect(() => {
-    if (orderId) {
+    if (orderItemId) {
       loadOrderDetails();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId]);
+  }, [orderItemId]);
 
   const loadOrderDetails = async () => {
     try {
@@ -138,21 +139,45 @@ export default function OrderDetails() {
         return;
       }
 
-      console.log("🔍 Loading comprehensive order details:", orderId, "for seller:", sellerId);
+      console.log("🔍 Loading order item details:", orderItemId, "for seller:", sellerId);
 
-      // Get basic order
-      const { data: orderData, error } = await supabase
-        .from("orders")
-        .select("*")
-        .eq("order_id", orderId)
+      // Get order item with seller verification
+      const { data: orderItemData, error: orderItemError } = await supabase
+        .from("order_items")
+        .select(`
+          *,
+          seller_product_listings ( seller_title ),
+          listing_variants ( variant_name, sku )
+        `)
+        .eq("order_item_id", orderItemId)
         .eq("seller_id", sellerId)
         .single();
 
-      if (error || !orderData) {
-        console.error("❌ Order query error:", error);
+      if (orderItemError || !orderItemData) {
+        console.error("❌ Order item query error:", orderItemError);
+        toast({
+          title: "Order item not found",
+          description: "The order item you're looking for doesn't exist or you don't have access to it.",
+          variant: "destructive",
+        });
+        navigate("/orders");
+        return;
+      }
+
+      setOrderItem(orderItemData);
+
+      // Get the parent order
+      const { data: orderData, error: orderError } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("order_id", orderItemData.order_id)
+        .single();
+
+      if (orderError || !orderData) {
+        console.error("❌ Order query error:", orderError);
         toast({
           title: "Order not found",
-          description: "The order you're looking for doesn't exist or you don't have access to it.",
+          description: "Parent order not found.",
           variant: "destructive",
         });
         navigate("/orders");
@@ -170,12 +195,11 @@ export default function OrderDetails() {
       
       if (sellerData) setSellerDetails(sellerData);
 
-      // Fetch all related data in parallel - Fixed: removed full_name column
+      // Fetch all related data in parallel - using order_item_id
       const [
         buyerRes,
         addressRes,
         userProfileRes,
-        itemsRes,
         returnsRes,
         trackingRes,
         cancellationsRes,
@@ -187,12 +211,11 @@ export default function OrderDetails() {
         supabase.from("users").select("id, email, phone").eq("id", orderData.buyer_id).maybeSingle(),
         orderData.address_id ? supabase.from("addresses").select("*").eq("address_id", orderData.address_id).single() : Promise.resolve({ data: null, error: null }),
         supabase.from("user_profiles").select("full_name, user_id").eq("user_id", orderData.buyer_id).maybeSingle(),
-        supabase.from("order_items").select(`*, seller_product_listings ( seller_title ), listing_variants ( variant_name, sku )`).eq("order_id", orderData.order_id),
-        supabase.from("order_returns").select("*").eq("order_id", orderData.order_id),
-        supabase.from("order_tracking").select("*").eq("order_id", orderData.order_id).order("updated_at", { ascending: false }),
-        supabase.from("order_cancellations").select("*").eq("order_id", orderData.order_id),
-        supabase.from("order_refunds").select("*").eq("order_id", orderData.order_id),
-        supabase.from("order_status_history").select("*").eq("order_id", orderData.order_id).order("changed_at", { ascending: false }),
+        supabase.from("order_returns").select("*").eq("order_item_id", orderItemData.order_item_id),
+        supabase.from("order_tracking").select("*").eq("order_item_id", orderItemData.order_item_id).order("updated_at", { ascending: false }),
+        supabase.from("order_cancellations").select("*").eq("order_item_id", orderItemData.order_item_id),
+        supabase.from("order_refunds").select("*").eq("order_item_id", orderItemData.order_item_id),
+        supabase.from("order_status_history").select("*").eq("order_item_id", orderItemData.order_item_id).order("changed_at", { ascending: false }),
         supabase.from("return_tracking").select("*").order("updated_at", { ascending: false }),
         supabase.from("return_quality_checks").select("*")
       ]);
@@ -243,15 +266,16 @@ export default function OrderDetails() {
           }
         }
       }
-      if (itemsRes?.data && !itemsRes.error) {
-        const mappedItems: ExtendedOrderItem[] = itemsRes.data.map((item: Record<string, unknown>) => ({
-          ...item,
-          seller_title: (item.seller_product_listings as Record<string, unknown> | null | undefined)?.seller_title,
-          sku: (item.listing_variants as Record<string, unknown> | null | undefined)?.sku,
-          variant_name: (item.listing_variants as Record<string, unknown> | null | undefined)?.variant_name,
-        })) as ExtendedOrderItem[];
-        setItems(mappedItems);
-      }
+      
+      // Set the single order item as items array for compatibility
+      const mappedItem: ExtendedOrderItem = {
+        ...orderItemData,
+        seller_title: (orderItemData.seller_product_listings as any)?.seller_title,
+        sku: (orderItemData.listing_variants as any)?.sku,
+        variant_name: (orderItemData.listing_variants as any)?.variant_name,
+      };
+      setItems([mappedItem]);
+      
       if (returnsRes?.data && !returnsRes.error) setOrderReturns(returnsRes.data);
       if (trackingRes?.data && !trackingRes.error) setOrderTracking(trackingRes.data);
       if (cancellationsRes?.data && !cancellationsRes.error) setOrderCancellations(cancellationsRes.data);
@@ -261,9 +285,9 @@ export default function OrderDetails() {
       if (returnQCRes?.data && !returnQCRes.error) setReturnQualityChecks(returnQCRes.data);
 
     } catch (error) {
-      console.error("❌ Error loading order details:", error);
+      console.error("❌ Error loading order item details:", error);
       toast({
-        title: "Error loading order",
+        title: "Error loading order item",
         description: "Please try again later.",
         variant: "destructive",
       });
@@ -303,18 +327,17 @@ export default function OrderDetails() {
 
       const updateData: Record<string, unknown> = { 
         status: newStatus,
-        updated_at: new Date().toISOString()
       };
 
       if (additionalData) {
         Object.assign(updateData, additionalData);
       }
 
-      // Update order status
+      // Update order_item status
       const { error: orderError } = await supabase
-        .from("orders")
+        .from("order_items")
         .update(updateData)
-        .eq("order_id", orderId);
+        .eq("order_item_id", orderItemId);
 
       if (orderError) throw orderError;
 
@@ -323,9 +346,9 @@ export default function OrderDetails() {
         const { error: historyError } = await supabase
           .from("order_status_history")
           .insert({
-            order_id: orderId!,
+            order_item_id: orderItemId!,
             changed_by: sellerId || "",
-            old_status: order?.status || "",
+            old_status: orderItem?.status || "",
             new_status: newStatus,
             remarks: (additionalData?.notes as string | undefined) || `Status changed to ${newStatus}`,
           });
@@ -337,7 +360,7 @@ export default function OrderDetails() {
 
       toast({
         title: "Order Updated",
-        description: `Order status changed to ${newStatus}`,
+        description: `Order item status changed to ${newStatus}`,
       });
 
       loadOrderDetails();
@@ -371,7 +394,7 @@ export default function OrderDetails() {
         const { error: trackingError } = await supabase
           .from("order_tracking")
           .insert({
-            order_id: orderId!,
+            order_item_id: orderItemId!,
             status: "packed",
             url: courierDetails.trackingUrl || `https://track.courier.com/${courierDetails.consignmentNumber}`,
             location: sellerDetails?.city || "Warehouse",
@@ -410,11 +433,11 @@ export default function OrderDetails() {
         const { error: trackingError } = await supabase
           .from("order_tracking")
           .insert({
-            order_id: orderId!,
+            order_item_id: orderItemId!,
             status: "shipped",
             url: orderTracking[0]?.url || `https://track.courier.com/tracking`,
             location: "In Transit",
-            notes: "Order has been shipped and is on the way to customer",
+            notes: "Order item has been shipped and is on the way to customer",
           });
 
         if (trackingError) console.warn("Could not create tracking record:", trackingError);
@@ -424,7 +447,7 @@ export default function OrderDetails() {
 
       await updateOrderStatus("shipped");
     } catch (error) {
-      console.error("Error shipping order:", error);
+      console.error("Error shipping order item:", error);
     }
   };
 
@@ -434,11 +457,11 @@ export default function OrderDetails() {
         const { error: trackingError } = await supabase
           .from("order_tracking")
           .insert({
-            order_id: orderId!,
+            order_item_id: orderItemId!,
             status: "delivered",
             url: orderTracking[0]?.url || `https://track.courier.com/tracking`,
             location: shippingAddress?.city || "Customer Location",
-            notes: "Order has been successfully delivered to customer",
+            notes: "Order item has been successfully delivered to customer",
           });
 
         if (trackingError) console.warn("Could not create tracking record:", trackingError);
@@ -470,7 +493,7 @@ export default function OrderDetails() {
         const { error: cancellationError } = await supabase
           .from("order_cancellations")
           .insert({
-            order_id: orderId!,
+            order_item_id: orderItemId!,
             cancelled_by: sellerId!,
             cancelled_by_role: "seller",
             reason: cancelReason,
@@ -484,7 +507,7 @@ export default function OrderDetails() {
 
       await updateOrderStatus("cancelled", { cancel_reason: cancelReason });
     } catch (error) {
-      console.error("Error cancelling order:", error);
+      console.error("Error cancelling order item:", error);
     }
   };
 
@@ -613,10 +636,10 @@ export default function OrderDetails() {
         const { error: refundError } = await supabase
           .from("order_refunds")
           .insert({
-            order_id: orderId!,
+            order_item_id: orderItemId!,
             return_id: returnId,
             processed_by: sellerId!,
-            amount: order?.final_amount || order?.total_amount || 0,
+            amount: orderItem?.subtotal || 0,
             method: "original",
             status: "pending",
           });
@@ -738,15 +761,18 @@ export default function OrderDetails() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">
-                Order #{order.order_id.slice(0, 8)}
+                Order Item #{orderItem?.order_item_id.slice(0, 8)}
               </h1>
+              <p className="text-sm text-gray-600">
+                Order: #{order.order_id.slice(0, 8)}
+              </p>
               <p className="text-gray-600">
                 Created: {new Date(order.created_at!).toLocaleString()}
               </p>
             </div>
             
-            <Badge className={getStatusColor(order.status)}>
-              <span className="capitalize">{order.status}</span>
+            <Badge className={getStatusColor(orderItem?.status || "pending")}>
+              <span className="capitalize">{orderItem?.status || "pending"}</span>
             </Badge>
           </div>
         </div>
@@ -824,32 +850,60 @@ export default function OrderDetails() {
           {/* Order Summary */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Order Summary</CardTitle>
+              <CardTitle className="text-base">Your Earnings Breakdown</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span>Item Total:</span>
-                <span className="font-medium">₹{order.total_amount.toFixed(2)}</span>
+            <CardContent className="space-y-3">
+              {/* Seller's Item Subtotal */}
+              <div className="space-y-2 pb-3 border-b">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Your Item Subtotal:</span>
+                  <span className="font-medium">₹{(orderItem?.subtotal || 0).toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>{orderItem?.quantity || 0} × ₹{(orderItem?.price_per_unit || 0).toFixed(2)}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span>Shipping:</span>
-                <span className="font-medium">{order.shipping_cost ? `₹${order.shipping_cost.toFixed(2)}` : '₹0'}</span>
+
+              {/* Marketplace Fee */}
+              <div className="space-y-2 pb-3 border-b">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Marketplace Fee (10%):</span>
+                  <span className="font-medium text-red-600">-₹{computeMarketplaceFee(orderItem?.subtotal).toFixed(2)}</span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span>Discount:</span>
-                <span className="font-medium">-₹{order.discount_amount?.toFixed(2) || '0.00'}</span>
+
+              {/* Your Earnings */}
+              <div className="flex justify-between font-bold text-base pt-1">
+                <span className="text-green-700">Your Earnings:</span>
+                <span className="text-green-600">₹{((orderItem?.subtotal || 0) - computeMarketplaceFee(orderItem?.subtotal)).toFixed(2)}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Marketplace Fee:</span>
-                <span className="font-medium">₹{computeMarketplaceFee(order.total_amount).toFixed(2)}</span>
+
+              {/* Order Totals (for reference) */}
+              <div className="pt-3 border-t space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground mb-2">Complete Order Totals:</p>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Order Total:</span>
+                  <span>₹{order.total_amount.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Shipping:</span>
+                  <span>{order.shipping_cost ? `₹${order.shipping_cost.toFixed(2)}` : '₹0'}</span>
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Discount Applied:</span>
+                  <span>-₹{order.discount_amount?.toFixed(2) || '0.00'}</span>
+                </div>
+                <div className="flex justify-between text-xs font-medium pt-1 border-t">
+                  <span>Customer Paid:</span>
+                  <span>₹{order.final_amount?.toFixed(2) || order.total_amount.toFixed(2)}</span>
+                </div>
               </div>
-              <div className="flex justify-between font-bold border-t pt-2">
-                <span>Final Amount:</span>
-                <span className="text-green-600">₹{order.final_amount?.toFixed(2) || order.total_amount.toFixed(2)}</span>
-              </div>
-              <div className="flex justify-between text-green-700 font-semibold text-xs">
-                <span>Seller Earnings:</span>
-                <span>₹{(order.total_amount - computeMarketplaceFee(order.total_amount)).toFixed(2)}</span>
+
+              {/* Info message */}
+              <div className="pt-2">
+                <p className="text-xs text-muted-foreground italic">
+                  💡 This order may contain items from multiple sellers. Only your item earnings are shown above.
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -1139,11 +1193,11 @@ export default function OrderDetails() {
               <CardHeader>
                 <CardTitle className="text-base">Order Actions</CardTitle>
                 <p className="text-xs text-muted-foreground">
-                  Status: <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
+                  Status: <Badge className={getStatusColor(orderItem?.status || "pending")}>{orderItem?.status || "pending"}</Badge>
                 </p>
               </CardHeader>
               <CardContent className="space-y-3">
-                {(order.status === "confirmed" || order.status === "pending") && (
+                {(orderItem?.status === "confirmed" || orderItem?.status === "pending") && (
                   <Dialog open={packingDialogOpen} onOpenChange={setPackingDialogOpen}>
                     <DialogTrigger asChild>
                       <Button className="w-full bg-green-600 hover:bg-green-700">
@@ -1263,7 +1317,7 @@ export default function OrderDetails() {
                   </Dialog>
                 )}
 
-                {order.status === "packed" && (
+                {orderItem?.status === "packed" && (
                   <Button 
                     onClick={handleMarkAsShipped} 
                     disabled={updating}
@@ -1273,7 +1327,7 @@ export default function OrderDetails() {
                   </Button>
                 )}
 
-                {order.status === "shipped" && (
+                {orderItem?.status === "shipped" && (
                   <Button 
                     onClick={handleMarkAsDelivered} 
                     disabled={updating}
@@ -1283,7 +1337,7 @@ export default function OrderDetails() {
                   </Button>
                 )}
 
-                {!["delivered", "cancelled", "refunded"].includes(order.status) && (
+                {!["delivered", "cancelled", "refunded"].includes(orderItem?.status || "") && (
                   <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
                     <DialogTrigger asChild>
                       <Button variant="destructive" className="w-full">

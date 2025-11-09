@@ -53,23 +53,32 @@ import type { Database } from "@/integrations/supabase/database.types";
 
 // Database type aliases
 type OrderRow = Database['public']['Tables']['orders']['Row'];
+type OrderItemRow = Database['public']['Tables']['order_items']['Row'];
 type OrderReturnRow = Database['public']['Tables']['order_returns']['Row'];
 
-interface OrderWithDetails {
+interface OrderItemWithDetails {
+  order_item_id: string;
   order_id: string;
-  buyer_id: string;
+  listing_id: string;
+  variant_id: string | null;
   seller_id: string;
-  status: string;
+  quantity: number;
+  price_per_unit: number;
+  subtotal: number | null;
+  status: string | null;
+  created_at: string | null;
+  // Order details
+  buyer_id: string;
   total_amount: number;
   shipping_cost: number | null;
   discount_amount: number | null;
   final_amount: number | null;
   payment_status: string | null;
-  created_at: string;
-  updated_at: string | null;
+  order_created_at: string;
+  order_updated_at: string | null;
+  // Product details
   product_name: string;
   product_variant: string;
-  quantity: number;
   batch_code: string;
   return_status: string;
   // Relations
@@ -109,7 +118,7 @@ export default function Orders() {
   const { toast } = useToast();
   const navigate = useNavigate();
   
-  const [orders, setOrders] = useState<OrderWithDetails[]>([]);
+  const [orders, setOrders] = useState<OrderItemWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [sellerId, setSellerId] = useState<string | null>(null);
   
@@ -129,7 +138,7 @@ export default function Orders() {
   const ordersPerPage = 15;
 
   // Dialog states for order management
-  const [selectedOrder, setSelectedOrder] = useState<OrderWithDetails | null>(null);
+  const [selectedOrder, setSelectedOrder] = useState<OrderItemWithDetails | null>(null);
   const [courierDialogOpen, setCourierDialogOpen] = useState(false);
   const [orderDetailsOpen, setOrderDetailsOpen] = useState(false);
   const [returnDialogOpen, setReturnDialogOpen] = useState(false);
@@ -189,88 +198,76 @@ export default function Orders() {
   const loadOrders = useCallback(async () => {
     if (!sellerId) return;
     
-    console.log("🔍 Loading orders for seller:", sellerId);
+    console.log("🔍 Loading order items for seller:", sellerId);
     
     try {
       setLoading(true);
       
       // First, try a simple query without joins
-      const { data: simpleOrders, error: simpleError } = await supabase
-        .from("orders")
+      const { data: simpleOrderItems, error: simpleError } = await supabase
+        .from("order_items")
         .select("*")
         .eq("seller_id", sellerId)
         .limit(10);
 
-      console.log("🔍 Simple orders query:", { simpleOrders, simpleError });
+      console.log("🔍 Simple order_items query:", { simpleOrderItems, simpleError });
 
       if (simpleError) {
         console.error("❌ Simple query failed:", simpleError);
         throw simpleError;
       }
 
-      if (simpleOrders && simpleOrders.length === 0) {
-        console.log("📭 No orders found for this seller");
+      if (simpleOrderItems && simpleOrderItems.length === 0) {
+        console.log("📭 No order items found for this seller");
         setOrders([]);
         setTotalOrders(0);
         return;
       }
 
-      // Build the complex query
+      // Build the complex query - Query order_items with joins
       let query = supabase
-        .from("orders")
+        .from("order_items")
         .select(`
+          order_item_id,
           order_id,
-          buyer_id,
+          listing_id,
+          variant_id,
           seller_id,
+          quantity,
+          price_per_unit,
+          subtotal,
           status,
-          total_amount,
-          shipping_cost,
-          discount_amount,
-          final_amount,
-          payment_status,
           created_at,
-          updated_at,
-          address_id,
-          order_items (
-            quantity,
-            seller_product_listings (
-              seller_title,
-              listing_id
-            ),
-            listing_variants (
-              variant_name,
-              sku
-            )
+          orders!inner (
+            buyer_id,
+            address_id,
+            total_amount,
+            shipping_cost,
+            discount_amount,
+            final_amount,
+            payment_status,
+            created_at,
+            updated_at
           ),
-          order_returns (
-            return_id,
-            status
+          seller_product_listings (
+            seller_title,
+            listing_id
           ),
-          users!orders_buyer_id_fkey (
-            email,
-            phone
-          ),
-          addresses!orders_address_id_fkey (
-            name,
-            phone,
-            line1,
-            line2,
-            city,
-            state,
-            postal_code,
-            landmark
+          listing_variants (
+            variant_name,
+            sku
           )
         `)
         .eq("seller_id", sellerId);
 
       console.log("📊 Query filters:", { statusFilter, dateFilter, returnStatusFilter, searchQuery });
 
-      // Apply status filter
+      // Apply status filter on order_items.status
       if (statusFilter !== "all") {
         query = query.eq("status", statusFilter);
       }
 
-      // Apply date filter
+      // Apply date filter on order_items.created_at
       if (dateFilter !== "all" && dateFilter !== "custom") {
         const now = new Date();
         let startDate: Date;
@@ -312,23 +309,23 @@ export default function Orders() {
         }
       }
 
-      // Apply search filter
+      // Apply search filter on order_id or order_item_id
       if (searchQuery.trim()) {
-        query = query.or(`order_id.ilike.%${searchQuery}%,buyer_id.ilike.%${searchQuery}%`);
+        query = query.or(`order_id.ilike.%${searchQuery}%,order_item_id.ilike.%${searchQuery}%`);
       }
 
-      // Apply pagination
+      // Get total count
       const { count } = await supabase
-        .from("orders")
+        .from("order_items")
         .select("*", { count: "exact", head: true })
         .eq("seller_id", sellerId);
 
-      console.log("📈 Total orders count:", count);
+      console.log("📈 Total order items count:", count);
 
       setTotalOrders(count || 0);
 
       const offset = (currentPage - 1) * ordersPerPage;
-      const { data: ordersData, error } = await query
+      const { data: orderItemsData, error } = await query
         .order("created_at", { ascending: false })
         .range(offset, offset + ordersPerPage - 1);
 
@@ -337,116 +334,130 @@ export default function Orders() {
         throw error;
       }
 
-      console.log("📦 Raw orders data:", ordersData);
+      console.log("📦 Raw order items data:", orderItemsData);
 
-      if (!ordersData || ordersData.length === 0) {
-        console.log("📭 No orders found after filtering");
+      if (!orderItemsData || orderItemsData.length === 0) {
+        console.log("📭 No order items found after filtering");
         setOrders([]);
         return;
       }
 
-      // Transform the data to include return status
-      const transformedOrders: OrderWithDetails[] = (ordersData || []).map((order: Record<string, unknown>) => {
-        const orderRec = order as Record<string, unknown>;
-        const orderItems = orderRec.order_items as Record<string, unknown>[] | undefined;
-        const firstItem = orderItems?.[0] as Record<string, unknown> | undefined;
-        const productName = (firstItem?.seller_product_listings as Record<string, unknown> | undefined)?.seller_title as string | undefined || "Unknown Product";
-        const variantName = (firstItem?.listing_variants as Record<string, unknown> | undefined)?.variant_name as string | undefined || "";
-        const quantity = firstItem?.quantity as number | undefined || 0;
-        const sku = (firstItem?.listing_variants as Record<string, unknown> | undefined)?.sku as string | undefined || (firstItem?.seller_product_listings as Record<string, unknown> | undefined)?.listing_id as string | undefined || "";
-        
-        // Extract customer details
-        const addresses = orderRec.addresses as Record<string, unknown> | undefined;
-        const users = orderRec.users as Record<string, unknown> | undefined;
-        const customerName = addresses?.name as string | undefined || "Unknown Customer";
-        const customerEmail = users?.email as string | undefined || "";
-        const customerPhone = (addresses?.phone as string | undefined) || (users?.phone as string | undefined) || "";
-        
-        // Extract shipping address
-        const shippingAddress = addresses ? {
-          name: addresses.name,
-          phone: addresses.phone,
-          line1: addresses.line1,
-          line2: addresses.line2,
-          city: addresses.city,
-          state: addresses.state,
-          postal_code: addresses.postal_code,
-          landmark: addresses.landmark,
-        } : undefined;
-        
-        // Determine return status
-        let returnStatus = "NA";
-        const orderReturns = orderRec.order_returns as Record<string, unknown>[] | undefined;
-        if (orderReturns && orderReturns.length > 0) {
-          const latestReturn = orderReturns[0] as Record<string, unknown>;
-          switch (latestReturn.status) {
-            case "initiated":
-              returnStatus = "Return Requested";
-              break;
-            case "approved":
-              returnStatus = "Return Approved";
-              break;
-            case "rejected":
-              returnStatus = "Return Rejected";
-              break;
-            case "pickup_scheduled":
-              returnStatus = "In Return Transit";
-              break;
-            case "picked_up":
-            case "quality_check":
-              returnStatus = "Under QC";
-              break;
-            case "refunded":
-              returnStatus = "Refund Initiated";
-              break;
-            case "completed":
-              returnStatus = "Return Closed";
-              break;
-            default:
-              returnStatus = (latestReturn.status as string) || "NA";
+      // For each order_item, we need to fetch buyer, address, and return details
+      const orderItemsWithDetails = await Promise.all(
+        orderItemsData.map(async (item: any) => {
+          const order = item.orders;
+          
+          // Fetch buyer details
+          const { data: userData } = await supabase
+            .from("users")
+            .select("email, phone")
+            .eq("id", order.buyer_id)
+            .maybeSingle();
+
+          // Fetch address details
+          const { data: addressData } = await supabase
+            .from("addresses")
+            .select("name, phone, line1, line2, city, state, postal_code, landmark")
+            .eq("address_id", order.address_id)
+            .maybeSingle();
+
+          // Fetch return details for this order_item
+          const { data: returnData } = await supabase
+            .from("order_returns")
+            .select("return_id, status")
+            .eq("order_item_id", item.order_item_id);
+
+          const productName = item.seller_product_listings?.seller_title || "Unknown Product";
+          const variantName = item.listing_variants?.variant_name || "";
+          const sku = item.listing_variants?.sku || item.listing_id || "";
+          
+          // Determine return status
+          let returnStatus = "NA";
+          const orderReturns = returnData || [];
+          if (orderReturns.length > 0) {
+            const latestReturn = orderReturns[0];
+            switch (latestReturn.status) {
+              case "initiated":
+                returnStatus = "Return Requested";
+                break;
+              case "seller_review":
+                returnStatus = "Under Review";
+                break;
+              case "pickup_scheduled":
+                returnStatus = "Pickup Scheduled";
+                break;
+              case "picked_up":
+                returnStatus = "In Return Transit";
+                break;
+              case "quality_check":
+                returnStatus = "Under QC";
+                break;
+              case "approved":
+                returnStatus = "Return Approved";
+                break;
+              case "rejected":
+                returnStatus = "Return Rejected";
+                break;
+              case "refunded":
+                returnStatus = "Refund Initiated";
+                break;
+              case "completed":
+                returnStatus = "Return Closed";
+                break;
+            }
           }
-        }
 
-        return {
-          order_id: order.order_id,
-          buyer_id: order.buyer_id,
-          seller_id: order.seller_id,
-          status: order.status,
-          total_amount: order.total_amount,
-          shipping_cost: order.shipping_cost,
-          discount_amount: order.discount_amount,
-          final_amount: order.final_amount,
-          payment_status: order.payment_status,
-          created_at: order.created_at,
-          updated_at: order.updated_at,
-          product_name: productName,
-          product_variant: variantName,
-          quantity: quantity,
-          batch_code: sku,
-          return_status: returnStatus,
-          // Relations
-          users: order.users,
-          addresses: order.addresses,
-          order_returns: order.order_returns,
-        };
-      });
+          return {
+            order_item_id: item.order_item_id,
+            order_id: item.order_id,
+            listing_id: item.listing_id,
+            variant_id: item.variant_id,
+            seller_id: item.seller_id,
+            quantity: item.quantity,
+            price_per_unit: item.price_per_unit,
+            subtotal: item.subtotal,
+            status: item.status || "pending",
+            created_at: item.created_at,
+            // Order details
+            buyer_id: order.buyer_id,
+            total_amount: order.total_amount,
+            shipping_cost: order.shipping_cost,
+            discount_amount: order.discount_amount,
+            final_amount: order.final_amount,
+            payment_status: order.payment_status,
+            order_created_at: order.created_at,
+            order_updated_at: order.updated_at,
+            // Product details
+            product_name: productName,
+            product_variant: variantName,
+            batch_code: sku,
+            return_status: returnStatus,
+            // Relations
+            users: userData || undefined,
+            addresses: addressData || undefined,
+            order_returns: orderReturns,
+          };
+        })
+      );
 
-      console.log("🔄 Transformed orders:", transformedOrders);
+      console.log("🔄 Transformed order items:", orderItemsWithDetails);
 
       // Apply return status filter
-      let filteredOrders = transformedOrders;
+      let filteredOrders = orderItemsWithDetails;
       if (returnStatusFilter !== "all") {
-        filteredOrders = transformedOrders.filter(order => {
-          if (returnStatusFilter === "na") return order.return_status === "NA";
-          return order.return_status.toLowerCase().includes(returnStatusFilter.toLowerCase());
-        });
+        filteredOrders = orderItemsWithDetails.filter(
+          (item) => {
+            if (returnStatusFilter === "na") return item.return_status === "NA";
+            return item.return_status.toLowerCase().includes(returnStatusFilter.toLowerCase());
+          }
+        );
       }
 
-      console.log("✅ Final filtered orders:", filteredOrders);
+      console.log("✅ Final filtered order items:", filteredOrders);
       setOrders(filteredOrders);
 
-    } catch (error) {
-      console.error("💥 Error loading orders:", error);
+    } catch (error: any) {
+      console.error("💥 Error loading order items:", error);
       toast({
         title: "Error",
         description: `Failed to load orders: ${error.message || 'Unknown error'}`,
@@ -530,11 +541,11 @@ export default function Orders() {
     setCurrentPage(1);
   };
 
-  const handleViewOrder = (orderId: string) => {
-    navigate(`/order/${orderId}`);
+  const handleViewOrder = (orderItemId: string) => {
+    navigate(`/order-item/${orderItemId}`);
   };
 
-  const handleOrderAction = (order: OrderWithDetails, action: string) => {
+  const handleOrderAction = (order: OrderItemWithDetails, action: string) => {
     setSelectedOrder(order);
     
     switch (action) {
@@ -572,14 +583,13 @@ export default function Orders() {
     if (!selectedOrder) return;
 
     try {
-      // Update order status
+      // Update order_item status
       const { error: statusError } = await supabase
-        .from("orders")
+        .from("order_items")
         .update({ 
           status: newStatus,
-          updated_at: new Date().toISOString()
         })
-        .eq("order_id", selectedOrder.order_id);
+        .eq("order_item_id", selectedOrder.order_item_id);
 
       if (statusError) throw statusError;
 
@@ -587,18 +597,18 @@ export default function Orders() {
       const { error: historyError } = await supabase
         .from("order_status_history")
         .insert({
-          order_id: selectedOrder.order_id,
-          previous_status: selectedOrder.status,
+          order_item_id: selectedOrder.order_item_id,
+          old_status: selectedOrder.status,
           new_status: newStatus,
           changed_by: sellerId,
-          change_reason: `Status changed to ${newStatus}`,
+          remarks: `Status changed to ${newStatus}`,
         });
 
       if (historyError) console.warn("Failed to log status history:", historyError);
 
       toast({
         title: "Status Updated",
-        description: `Order status changed to ${newStatus}`,
+        description: `Order item status changed to ${newStatus}`,
       });
 
       // Reload orders
@@ -610,7 +620,7 @@ export default function Orders() {
       console.error("Error updating status:", error);
       toast({
         title: "Error",
-        description: "Failed to update order status",
+        description: "Failed to update order item status",
         variant: "destructive",
       });
     }
@@ -627,14 +637,13 @@ export default function Orders() {
     }
 
     try {
-      // Update order status
+      // Update order_item status
       const { error: statusError } = await supabase
-        .from("orders")
+        .from("order_items")
         .update({ 
           status: newStatus,
-          updated_at: new Date().toISOString()
         })
-        .eq("order_id", selectedOrder.order_id);
+        .eq("order_item_id", selectedOrder.order_item_id);
 
       if (statusError) throw statusError;
 
@@ -642,7 +651,7 @@ export default function Orders() {
       const { error: trackingError } = await supabase
         .from("order_tracking")
         .insert({
-          order_id: selectedOrder.order_id,
+          order_item_id: selectedOrder.order_item_id,
           url: courierDetails.tracking_url || "",
           status: newStatus === "packed" ? "ready_for_pickup" : "in_transit",
           location: "Seller Location",
@@ -655,18 +664,18 @@ export default function Orders() {
       const { error: historyError } = await supabase
         .from("order_status_history")
         .insert({
-          order_id: selectedOrder.order_id,
-          previous_status: selectedOrder.status,
+          order_item_id: selectedOrder.order_item_id,
+          old_status: selectedOrder.status,
           new_status: newStatus,
           changed_by: sellerId,
-          change_reason: `${newStatus} with courier ${courierDetails.courier_partner}`,
+          remarks: `${newStatus} with courier ${courierDetails.courier_partner}`,
         });
 
       if (historyError) console.warn("Failed to log status history:", historyError);
 
       toast({
         title: "Order Updated",
-        description: `Order ${newStatus} and courier assigned successfully`,
+        description: `Order item ${newStatus} and courier assigned successfully`,
       });
 
       // Reset form and close dialog
@@ -708,23 +717,11 @@ export default function Orders() {
     }
 
     try {
-      // Get the first order item
-      const { data: orderItems } = await supabase
-        .from("order_items")
-        .select("order_item_id")
-        .eq("order_id", selectedOrder.order_id)
-        .limit(1);
-
-      if (!orderItems || orderItems.length === 0) {
-        throw new Error("No order items found");
-      }
-
-      // Create return request
+      // Create return request for this specific order_item
       const { error: returnError } = await supabase
         .from("order_returns")
         .insert({
-          order_id: selectedOrder.order_id,
-          order_item_id: orderItems[0].order_item_id,
+          order_item_id: selectedOrder.order_item_id,
           buyer_id: selectedOrder.buyer_id,
           seller_id: selectedOrder.seller_id,
           reason: returnReason,
@@ -754,7 +751,7 @@ export default function Orders() {
     }
   };
 
-  const getActionButtons = (order: OrderWithDetails) => {
+  const getActionButtons = (order: OrderItemWithDetails) => {
     const buttons = [];
 
     switch (order.status) {
@@ -1034,6 +1031,7 @@ export default function Orders() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead>Order Item ID</TableHead>
                   <TableHead>Order ID</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead>Customer</TableHead>
@@ -1048,7 +1046,7 @@ export default function Orders() {
               <TableBody>
                 {orders.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="text-center py-8">
+                    <TableCell colSpan={10} className="text-center py-8">
                       <div className="flex flex-col items-center gap-2">
                         <Package className="h-8 w-8 text-muted-foreground" />
                         <p className="text-muted-foreground">No orders found</p>
@@ -1057,8 +1055,11 @@ export default function Orders() {
                   </TableRow>
                 ) : (
                   orders.map((order) => (
-                    <TableRow key={order.order_id} className="hover:bg-muted/50">
+                    <TableRow key={order.order_item_id} className="hover:bg-muted/50">
                       <TableCell className="font-mono text-sm">
+                        #{order.order_item_id.slice(0, 8).toUpperCase()}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
                         #{order.order_id.slice(0, 8).toUpperCase()}
                       </TableCell>
                       <TableCell>
@@ -1154,17 +1155,20 @@ export default function Orders() {
                         </div>
                       </TableCell>
                       <TableCell className="text-center">{order.quantity}</TableCell>
-                      <TableCell className="text-right font-medium">
-                        ₹{(order.final_amount || order.total_amount).toFixed(0)}
+                      <TableCell className="text-right">
+                        <div className="space-y-1">
+                          <p className="font-medium">₹{(order.subtotal || (order.quantity * order.price_per_unit)).toFixed(0)}</p>
+                          <p className="text-xs text-muted-foreground">Your earnings</p>
+                        </div>
                       </TableCell>
                       <TableCell className="text-center">
-                        <Badge variant={getStatusBadgeVariant(order.status)}>
+                        <Badge variant={getStatusBadgeVariant(order.status || "pending")}>
                           {order.status === "confirmed" ? "New Order" : 
                            order.status === "packed" ? "Packed" :
                            order.status === "shipped" ? "Shipped" :
                            order.status === "delivered" ? "Delivered" :
                            order.status === "cancelled" ? "Cancelled" :
-                           order.status}
+                           order.status || "Pending"}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
@@ -1177,7 +1181,7 @@ export default function Orders() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => handleViewOrder(order.order_id)}
+                            onClick={() => handleViewOrder(order.order_item_id)}
                             className="h-8 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
                           >
                             <Eye className="h-3 w-3 mr-1" />
