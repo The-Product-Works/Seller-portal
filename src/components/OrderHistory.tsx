@@ -1,42 +1,37 @@
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/database.types";
 
-interface OrderRow {
-  id: string;
-  created_at: string;
-  customer_name: string | null;
-  customer_email: string | null;
-  product_id: string | null;
-  bundle_id: string | null;
-  quantity: number;
-  total_amount: number;
-  status: string;
-  product?: { name?: string; title?: string };
-  bundle?: { title?: string };
+type Order = Database["public"]["Tables"]["orders"]["Row"];
+
+interface OrderWithRelations extends Order {
+  product?: { name?: string; title?: string } | null;
+  bundle?: { title?: string } | null;
 }
 
 export function OrderHistory({ sellerId }: { sellerId: string | null }) {
-  const [orders, setOrders] = useState<OrderRow[]>([]);
+  const [orders, setOrders] = useState<OrderWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!sellerId) return;
     loadOrders();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sellerId]);
 
   const loadOrders = async () => {
     setLoading(true);
     try {
-      const { data, error } = await (supabase as any)
+      const { data, error } = await supabase
         .from("orders")
-        .select(`*, product:products (name,title), bundle:bundles (title)`)
+        .select(`*`)
         .eq("seller_id", sellerId)
         .order("created_at", { ascending: false })
         .limit(20);
 
       if (error) throw error;
-      setOrders(data || []);
+      setOrders((data as OrderWithRelations[]) || []);
     } catch (err) {
       console.error("Error loading orders:", err);
       setOrders([]);
@@ -58,19 +53,16 @@ export function OrderHistory({ sellerId }: { sellerId: string | null }) {
         ) : (
           <div className="space-y-3">
             {orders.map((o) => (
-              <div key={o.id} className="p-3 border rounded">
+              <div key={o.order_id} className="p-3 border rounded">
                 <div className="flex justify-between items-start">
                   <div>
-                    <div className="text-sm font-semibold">{o.customer_name || o.customer_email || 'Customer'}</div>
+                    <div className="text-sm font-semibold">Order {o.order_id.slice(0, 8)}</div>
                     <div className="text-xs text-muted-foreground">{new Date(o.created_at).toLocaleString()}</div>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm">₹{o.total_amount.toFixed(2)}</div>
-                    <div className="text-xs text-muted-foreground">Qty: {o.quantity}</div>
+                    <div className="text-sm">₹{o.final_amount.toFixed(2)}</div>
+                    <div className="text-xs text-muted-foreground">{o.status}</div>
                   </div>
-                </div>
-                <div className="mt-2 text-sm text-muted-foreground">
-                  Bought: {o.product?.name || o.product?.title || o.bundle?.title || '—'}
                 </div>
               </div>
             ))}

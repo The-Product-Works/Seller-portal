@@ -43,7 +43,7 @@ export function InventoryFilter({ isAdmin = false, onFilterChange }: Omit<Filter
   const [filters, setFilters] = React.useState<FilterValues>({});
   const { options, loading } = useFilterOptions();
 
-  const handleFilterChange = (key: keyof FilterValues, value: any) => {
+  const handleFilterChange = (key: keyof FilterValues, value: string | number | undefined) => {
     const newFilters = { ...filters, [key]: value };
     setFilters(newFilters);
     onFilterChange(newFilters);

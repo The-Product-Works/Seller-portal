@@ -1,12 +1,17 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/database.types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
+type Order = Database["public"]["Tables"]["orders"]["Row"];
+type Seller = Database["public"]["Tables"]["sellers"]["Row"];
+type User = Database["public"]["Tables"]["users"]["Row"];
+
 export default function DatabaseTest() {
-  const [orders, setOrders] = useState<any[]>([]);
-  const [sellers, setSellers] = useState<any[]>([]);
-  const [users, setUsers] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [sellers, setSellers] = useState<Seller[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -184,7 +184,7 @@ export async function listBundles(sellerId?: string): Promise<BundleWithProducts
 
     return data?.map(bundle => ({
       ...bundle,
-      products: bundle.bundle_items?.map((bp: any) => bp.seller_product_listings) || []
+      products: bundle.bundle_items?.map((bp: Record<string, unknown>) => bp.seller_product_listings) || []
     })) as BundleWithProducts[] || [];
 
   } catch (error) {

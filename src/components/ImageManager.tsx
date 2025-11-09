@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,9 +54,10 @@ export function ImageManager({ open, onOpenChange }: ImageManagerProps) {
     if (open) {
       loadImages();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const loadImages = async () => {
+  const loadImages = useCallback(async () => {
     setLoading(true);
     try {
       const sellerId = await getAuthenticatedSellerId();
@@ -93,7 +94,8 @@ export function ImageManager({ open, onOpenChange }: ImageManagerProps) {
     } finally {
       setLoading(false);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleDelete = async (imageId: string) => {
     try {

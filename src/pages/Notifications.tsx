@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/database.types";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
+type EditNotification = Database["public"]["Tables"]["seller_edit_notifications"]["Row"];
+
 export default function Notifications() {
-  const [notes, setNotes] = useState<any[]>([]);
+  const [notes, setNotes] = useState<EditNotification[]>([]);
 
   useEffect(() => { fetchNotes(); }, []);
 

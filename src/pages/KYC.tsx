@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/database.types";
 import { Camera, CheckCircle, Loader2 } from "lucide-react";
 import { z } from "zod";
 
@@ -60,11 +61,14 @@ export default function KYC() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
+  type Seller = Database["public"]["Tables"]["sellers"]["Row"];
+  type Notification = Database["public"]["Tables"]["notifications"]["Row"];
+
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [seller, setSeller] = useState<any | null>(null);
+  const [seller, setSeller] = useState<Seller | null>(null);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
   const [formData, setFormData] = useState({
@@ -139,11 +143,12 @@ export default function KYC() {
             .limit(20);
           setNotifications(notifs ?? []);
         }
-      } catch (err: any) {
-        console.error("KYC load error", err);
+      } catch (err: unknown) {
+        const error = err instanceof Error ? err : new Error(String(err));
+        console.error("KYC load error", error);
         toast({
           title: "Error",
-          description: err.message || "Failed to load KYC",
+          description: error.message || "Failed to load KYC",
           variant: "destructive",
         });
       } finally {
@@ -290,11 +295,12 @@ export default function KYC() {
 
       toast({ title: "Resubmitted", description: "Your KYC was resubmitted" });
       navigate("/seller-verification");
-    } catch (err: any) {
-      console.error("KYC submit error", err);
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      console.error("KYC submit error", error);
       toast({
         title: "Error",
-        description: err.message || "Failed to submit KYC",
+        description: error.message || "Failed to submit KYC",
         variant: "destructive",
       });
     } finally {
@@ -589,7 +595,7 @@ export default function KYC() {
                       No notifications
                     </div>
                   ) : (
-                    notifications.map((n: any) => (
+                    notifications.map((n: Notification) => (
                       <div
                         key={n.id}
                         className="border rounded p-3 flex justify-between items-start"

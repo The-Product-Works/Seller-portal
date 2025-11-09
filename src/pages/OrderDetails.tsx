@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -125,6 +125,7 @@ export default function OrderDetails() {
     if (orderId) {
       loadOrderDetails();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
 
   const loadOrderDetails = async () => {
@@ -243,12 +244,12 @@ export default function OrderDetails() {
         }
       }
       if (itemsRes?.data && !itemsRes.error) {
-        const mappedItems: ExtendedOrderItem[] = itemsRes.data.map((item: any) => ({
+        const mappedItems: ExtendedOrderItem[] = itemsRes.data.map((item: Record<string, unknown>) => ({
           ...item,
-          seller_title: item.seller_product_listings?.seller_title,
-          sku: item.listing_variants?.sku,
-          variant_name: item.listing_variants?.variant_name,
-        }));
+          seller_title: (item.seller_product_listings as Record<string, unknown> | null | undefined)?.seller_title,
+          sku: (item.listing_variants as Record<string, unknown> | null | undefined)?.sku,
+          variant_name: (item.listing_variants as Record<string, unknown> | null | undefined)?.variant_name,
+        })) as ExtendedOrderItem[];
         setItems(mappedItems);
       }
       if (returnsRes?.data && !returnsRes.error) setOrderReturns(returnsRes.data);
@@ -295,12 +296,12 @@ export default function OrderDetails() {
     });
   };
 
-  const updateOrderStatus = async (newStatus: string, additionalData?: any) => {
+  const updateOrderStatus = async (newStatus: string, additionalData?: Record<string, unknown>) => {
     try {
       setUpdating(true);
       const sellerId = await getAuthenticatedSellerId();
 
-      const updateData: any = { 
+      const updateData: Record<string, unknown> = { 
         status: newStatus,
         updated_at: new Date().toISOString()
       };
@@ -323,10 +324,10 @@ export default function OrderDetails() {
           .from("order_status_history")
           .insert({
             order_id: orderId!,
-            changed_by: sellerId,
-            old_status: order?.status,
+            changed_by: sellerId || "",
+            old_status: order?.status || "",
             new_status: newStatus,
-            remarks: additionalData?.notes || `Status changed to ${newStatus}`,
+            remarks: (additionalData?.notes as string | undefined) || `Status changed to ${newStatus}`,
           });
 
         if (historyError) console.warn("Could not add status history:", historyError);

@@ -1,5 +1,5 @@
 // src/pages/SellerProfile.tsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Card,
   CardHeader,
@@ -12,19 +12,23 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/database.types";
 import { Loader2, Save, PlusCircle, Send } from "lucide-react";
+
+type Seller = Database["public"]["Tables"]["sellers"]["Row"];
+type SellerDocument = Database["public"]["Tables"]["seller_documents"]["Row"];
 
 export default function SellerProfile() {
   const { toast } = useToast();
-  const [seller, setSeller] = useState<any | null>(null);
+  const [seller, setSeller] = useState<Seller | null>(null);
   const [allowedFields, setAllowedFields] = useState<string[]>([]);
   const [adminMessage, setAdminMessage] = useState<string | null>(null);
-  const [docs, setDocs] = useState<any[]>([]);
+  const [docs, setDocs] = useState<SellerDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submittingRequest, setSubmittingRequest] = useState(false);
   const [reason, setReason] = useState("");
-  const [formData, setFormData] = useState<any>({});
+  const [formData, setFormData] = useState<Record<string, string>>({});
   const [selectedFiles, setSelectedFiles] = useState<{ [key: string]: File | null }>({
     aadhaar: null,
     pan: null,
@@ -53,6 +57,7 @@ export default function SellerProfile() {
 
   useEffect(() => {
     loadSellerProfile();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function loadSellerProfile() {
@@ -75,9 +80,9 @@ export default function SellerProfile() {
         .maybeSingle();
 
       if (feedback?.details) {
-        const det = feedback.details as any;
-        setAllowedFields(det.allowed_fields || []);
-        setAdminMessage(det.admin_message || null);
+        const det = feedback.details as Record<string, unknown>;
+        setAllowedFields((det.allowed_fields as string[]) || []);
+        setAdminMessage((det.admin_message as string | null) || null);
       }
 
       const { data: documents } = await supabase
@@ -100,8 +105,9 @@ export default function SellerProfile() {
         email: s.email || "",
         phone: s.phone || "",
       });
-    } catch (err: any) {
-      toast({ title: "Error loading profile", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      toast({ title: "Error loading profile", description: error.message, variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -123,7 +129,7 @@ export default function SellerProfile() {
   async function handleSave() {
     setSaving(true);
     try {
-      const editableNow: any = {};
+      const editableNow: Record<string, unknown> = {};
 
       for (const key of Object.keys(formData)) {
         const newVal = formData[key];
@@ -157,8 +163,9 @@ export default function SellerProfile() {
       }
 
       loadSellerProfile();
-    } catch (err: any) {
-      toast({ title: "Error saving", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      toast({ title: "Error saving", description: error.message, variant: "destructive" });
     } finally {
       setSaving(false);
     }
@@ -177,7 +184,7 @@ export default function SellerProfile() {
 
     setSubmittingRequest(true);
     try {
-      const restrictedChanges: any = {};
+      const restrictedChanges: Record<string, unknown> = {};
 
       for (const field of requestedFields) {
         if (field === "bank_details") {
@@ -207,7 +214,7 @@ export default function SellerProfile() {
         seller_id: seller.id,
         step: "edit_request",
         status: "pending",
-        details: { requested_changes: restrictedChanges, reason },
+        details: { requested_changes: restrictedChanges, reason } as unknown,
         verified_at: new Date().toISOString(),
       });
 
@@ -225,8 +232,9 @@ export default function SellerProfile() {
       setRequestedFields([]);
       setReason("");
       loadSellerProfile();
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      toast({ title: "Error", description: error.message, variant: "destructive" });
     } finally {
       setSubmittingRequest(false);
     }

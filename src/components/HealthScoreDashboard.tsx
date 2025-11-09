@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,9 +46,9 @@ export function HealthScoreDashboard({ sellerId }: HealthScoreDashboardProps) {
     if (sellerId) {
       calculateHealthScore();
     }
-  }, [sellerId]);
+  }, [sellerId, calculateHealthScore]);
 
-  const calculateHealthScore = async () => {
+  const calculateHealthScore = useCallback(async () => {
     if (!sellerId) return;
     setLoading(true);
     try {
@@ -143,7 +143,7 @@ export function HealthScoreDashboard({ sellerId }: HealthScoreDashboardProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sellerId]);
 
   const handleEditScore = async () => {
     if (!editScore || isNaN(Number(editScore))) {

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -155,15 +155,17 @@ export default function Orders() {
 
   useEffect(() => {
     initializeData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (sellerId) {
       loadOrders();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sellerId, searchQuery, statusFilter, dateFilter, returnStatusFilter, dateRange, currentPage]);
 
-  const initializeData = async () => {
+  const initializeData = useCallback(async () => {
     console.log("🔑 Initializing seller authentication...");
     try {
       const seller_id = await getAuthenticatedSellerId();
@@ -182,9 +184,9 @@ export default function Orders() {
         variant: "destructive",
       });
     }
-  };
+  }, [navigate, toast]);
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     if (!sellerId) return;
     
     console.log("🔍 Loading orders for seller:", sellerId);
@@ -286,11 +288,12 @@ export default function Orders() {
             startDate = startOfMonth(now);
             endDate = endOfMonth(now);
             break;
-          case "last_month":
+          case "last_month": {
             const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
             startDate = startOfMonth(lastMonth);
             endDate = endOfMonth(lastMonth);
             break;
+          }
           default:
             startDate = startOfDay(now);
         }
@@ -343,34 +346,39 @@ export default function Orders() {
       }
 
       // Transform the data to include return status
-      const transformedOrders: OrderWithDetails[] = (ordersData || []).map((order: any) => {
-        const firstItem = order.order_items?.[0];
-        const productName = firstItem?.seller_product_listings?.seller_title || "Unknown Product";
-        const variantName = firstItem?.listing_variants?.variant_name || "";
-        const quantity = firstItem?.quantity || 0;
-        const sku = firstItem?.listing_variants?.sku || firstItem?.seller_product_listings?.listing_id || "";
+      const transformedOrders: OrderWithDetails[] = (ordersData || []).map((order: Record<string, unknown>) => {
+        const orderRec = order as Record<string, unknown>;
+        const orderItems = orderRec.order_items as Record<string, unknown>[] | undefined;
+        const firstItem = orderItems?.[0] as Record<string, unknown> | undefined;
+        const productName = (firstItem?.seller_product_listings as Record<string, unknown> | undefined)?.seller_title as string | undefined || "Unknown Product";
+        const variantName = (firstItem?.listing_variants as Record<string, unknown> | undefined)?.variant_name as string | undefined || "";
+        const quantity = firstItem?.quantity as number | undefined || 0;
+        const sku = (firstItem?.listing_variants as Record<string, unknown> | undefined)?.sku as string | undefined || (firstItem?.seller_product_listings as Record<string, unknown> | undefined)?.listing_id as string | undefined || "";
         
         // Extract customer details
-        const customerName = order.addresses?.name || "Unknown Customer";
-        const customerEmail = order.users?.email || "";
-        const customerPhone = order.addresses?.phone || order.users?.phone || "";
+        const addresses = orderRec.addresses as Record<string, unknown> | undefined;
+        const users = orderRec.users as Record<string, unknown> | undefined;
+        const customerName = addresses?.name as string | undefined || "Unknown Customer";
+        const customerEmail = users?.email as string | undefined || "";
+        const customerPhone = (addresses?.phone as string | undefined) || (users?.phone as string | undefined) || "";
         
         // Extract shipping address
-        const shippingAddress = order.addresses ? {
-          name: order.addresses.name,
-          phone: order.addresses.phone,
-          line1: order.addresses.line1,
-          line2: order.addresses.line2,
-          city: order.addresses.city,
-          state: order.addresses.state,
-          postal_code: order.addresses.postal_code,
-          landmark: order.addresses.landmark,
+        const shippingAddress = addresses ? {
+          name: addresses.name,
+          phone: addresses.phone,
+          line1: addresses.line1,
+          line2: addresses.line2,
+          city: addresses.city,
+          state: addresses.state,
+          postal_code: addresses.postal_code,
+          landmark: addresses.landmark,
         } : undefined;
         
         // Determine return status
         let returnStatus = "NA";
-        if (order.order_returns && order.order_returns.length > 0) {
-          const latestReturn = order.order_returns[0];
+        const orderReturns = orderRec.order_returns as Record<string, unknown>[] | undefined;
+        if (orderReturns && orderReturns.length > 0) {
+          const latestReturn = orderReturns[0] as Record<string, unknown>;
           switch (latestReturn.status) {
             case "initiated":
               returnStatus = "Return Requested";
@@ -395,7 +403,7 @@ export default function Orders() {
               returnStatus = "Return Closed";
               break;
             default:
-              returnStatus = latestReturn.status;
+              returnStatus = (latestReturn.status as string) || "NA";
           }
         }
 
@@ -447,7 +455,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [sellerId, searchQuery, statusFilter, dateFilter, returnStatusFilter, dateRange, currentPage, toast]);
 
   const getStatusBadgeVariant = (status: string): "default" | "secondary" | "destructive" | "outline" => {
     switch (status.toLowerCase()) {
