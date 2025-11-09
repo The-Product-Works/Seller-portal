@@ -51,7 +51,7 @@ export function FilterDialog({
   const [filters, setFilters] = useState<FilterValues>(initialFilters);
   const [open, setOpen] = useState(false);
 
-  const handleFilterChange = (key: keyof FilterValues, value: string | number) => {
+  const handleFilterChange = (key: keyof FilterValues, value: any) => {
     setFilters(prev => ({ ...prev, [key]: value }));
   };
 

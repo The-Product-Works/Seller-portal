@@ -123,51 +123,6 @@ export interface OrderSummary {
   customer_email: string | null;
 }
 
-// Raw order data from database with joins
-export interface RawOrderDataFromDB {
-  order_id: string;
-  buyer_id: string;
-  seller_id: string;
-  status: string;
-  total_amount: number;
-  shipping_cost: number | null;
-  discount_amount: number | null;
-  final_amount: number | null;
-  payment_status: string | null;
-  created_at: string;
-  updated_at: string | null;
-  order_items?: Array<{
-    quantity: number;
-    price: number;
-    seller_product_listings?: {
-      seller_title: string;
-      listing_id: string;
-    };
-    listing_variants?: {
-      variant_name: string;
-      sku: string;
-    };
-  }>;
-  users?: {
-    email: string;
-    full_name?: string;
-  };
-  addresses?: {
-    name: string;
-    phone: string;
-    line1: string;
-    line2?: string;
-    city: string;
-    state: string;
-    postal_code: string;
-    country: string;
-  };
-  order_returns?: Array<{
-    status: string;
-    created_at: string;
-  }>;
-}
-
 // Order search and filter params
 export interface OrderFilters {
   search: string;

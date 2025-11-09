@@ -3,26 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-interface Order {
-  order_id: string;
-  status: string;
-  total_amount: number;
-}
-
-interface Seller {
-  id: string;
-  business_name: string | null;
-}
-
-interface User {
-  id: string;
-  email: string;
-}
-
 export default function DatabaseTest() {
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [sellers, setSellers] = useState<Seller[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
+  const [sellers, setSellers] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
@@ -48,55 +48,12 @@ import {
   Package2, FileText, RefreshCw 
 } from "lucide-react";
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
-import { testOrdersAccess, createTestOrders } from "@/lib/test-orders";
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 import type { Database } from "@/integrations/supabase/database.types";
 
 // Database type aliases
 type OrderRow = Database['public']['Tables']['orders']['Row'];
 type OrderReturnRow = Database['public']['Tables']['order_returns']['Row'];
-
-interface RawOrderData {
-  order_id: string;
-  buyer_id: string;
-  seller_id: string;
-  status: string;
-  total_amount: number;
-  shipping_cost: number | null;
-  discount_amount: number | null;
-  final_amount: number | null;
-  payment_status: string | null;
-  created_at: string;
-  updated_at: string | null;
-  order_items?: Array<{
-    quantity: number;
-    seller_product_listings?: {
-      seller_title: string;
-      listing_id: string;
-    };
-    listing_variants?: {
-      variant_name: string;
-      sku: string;
-    };
-  }>;
-  users?: {
-    email: string;
-  };
-  addresses?: {
-    name: string;
-    phone: string;
-    line1: string;
-    line2?: string;
-    city: string;
-    state: string;
-    postal_code: string;
-    country: string;
-  };
-  order_returns?: Array<{
-    status: string;
-    created_at: string;
-  }>;
-}
 
 interface OrderWithDetails {
   order_id: string;
@@ -115,11 +72,12 @@ interface OrderWithDetails {
   quantity: number;
   batch_code: string;
   return_status: string;
-  // Customer details
-  customer_name?: string;
-  customer_email?: string;
-  customer_phone?: string;
-  shipping_address?: {
+  // Relations
+  users?: {
+    email: string;
+    phone: string | null;
+  };
+  addresses?: {
     name: string;
     phone: string;
     line1: string;
@@ -129,6 +87,10 @@ interface OrderWithDetails {
     postal_code: string;
     landmark?: string;
   };
+  order_returns?: Array<{
+    return_id: string;
+    status: string;
+  }>;
 }
 
 interface CourierDetails {
@@ -193,15 +155,15 @@ export default function Orders() {
 
   useEffect(() => {
     initializeData();
-  }, [initializeData]);
+  }, []);
 
   useEffect(() => {
     if (sellerId) {
       loadOrders();
     }
-  }, [sellerId, searchQuery, statusFilter, dateFilter, returnStatusFilter, dateRange, currentPage, loadOrders]);
+  }, [sellerId, searchQuery, statusFilter, dateFilter, returnStatusFilter, dateRange, currentPage]);
 
-  const initializeData = useCallback(async () => {
+  const initializeData = async () => {
     console.log("🔑 Initializing seller authentication...");
     try {
       const seller_id = await getAuthenticatedSellerId();
@@ -220,9 +182,9 @@ export default function Orders() {
         variant: "destructive",
       });
     }
-  }, [navigate, toast]);
+  };
 
-  const loadOrders = useCallback(async () => {
+  const loadOrders = async () => {
     if (!sellerId) return;
     
     console.log("🔍 Loading orders for seller:", sellerId);
@@ -286,7 +248,7 @@ export default function Orders() {
             email,
             phone
           ),
-          addresses (
+          addresses!orders_address_id_fkey (
             name,
             phone,
             line1,
@@ -324,12 +286,11 @@ export default function Orders() {
             startDate = startOfMonth(now);
             endDate = endOfMonth(now);
             break;
-          case "last_month": {
+          case "last_month":
             const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
             startDate = startOfMonth(lastMonth);
             endDate = endOfMonth(lastMonth);
             break;
-          }
           default:
             startDate = startOfDay(now);
         }
@@ -382,7 +343,7 @@ export default function Orders() {
       }
 
       // Transform the data to include return status
-      const transformedOrders: OrderWithDetails[] = (ordersData || []).map((order: RawOrderData) => {
+      const transformedOrders: OrderWithDetails[] = (ordersData || []).map((order: any) => {
         const firstItem = order.order_items?.[0];
         const productName = firstItem?.seller_product_listings?.seller_title || "Unknown Product";
         const variantName = firstItem?.listing_variants?.variant_name || "";
@@ -392,7 +353,7 @@ export default function Orders() {
         // Extract customer details
         const customerName = order.addresses?.name || "Unknown Customer";
         const customerEmail = order.users?.email || "";
-        const customerPhone = order.addresses?.phone || "";
+        const customerPhone = order.addresses?.phone || order.users?.phone || "";
         
         // Extract shipping address
         const shippingAddress = order.addresses ? {
@@ -455,10 +416,10 @@ export default function Orders() {
           quantity: quantity,
           batch_code: sku,
           return_status: returnStatus,
-          customer_name: customerName,
-          customer_email: customerEmail,
-          customer_phone: customerPhone,
-          shipping_address: shippingAddress,
+          // Relations
+          users: order.users,
+          addresses: order.addresses,
+          order_returns: order.order_returns,
         };
       });
 
@@ -486,7 +447,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [sellerId, searchQuery, statusFilter, dateFilter, returnStatusFilter, dateRange, currentPage, toast]);
+  };
 
   const getStatusBadgeVariant = (status: string): "default" | "secondary" | "destructive" | "outline" => {
     switch (status.toLowerCase()) {
@@ -674,11 +635,10 @@ export default function Orders() {
         .from("order_tracking")
         .insert({
           order_id: selectedOrder.order_id,
-          tracking_id: courierDetails.consignment_number,
           url: courierDetails.tracking_url || "",
           status: newStatus === "packed" ? "ready_for_pickup" : "in_transit",
           location: "Seller Location",
-          notes: `Courier: ${courierDetails.courier_partner}. ${courierDetails.additional_notes}`,
+          notes: `Courier: ${courierDetails.courier_partner}. Consignment: ${courierDetails.consignment_number}. ${courierDetails.additional_notes}`,
         });
 
       if (trackingError) throw trackingError;
@@ -915,29 +875,6 @@ export default function Orders() {
               >
                 Reload Orders
               </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => {
-                  console.log("🧪 Running database test");
-                  testOrdersAccess();
-                }}
-              >
-                Test Database
-              </Button>
-              <Button 
-                variant="outline" 
-                size="sm"
-                onClick={() => {
-                  console.log("🏗️ Creating test order");
-                  createTestOrders().then(() => {
-                    console.log("✅ Test order created, reloading...");
-                    loadOrders();
-                  });
-                }}
-              >
-                Create Test Order
-              </Button>
             </div>
           </div>
         </CardContent>
@@ -1123,13 +1060,13 @@ export default function Orders() {
                         <div className="space-y-1">
                           <div className="flex items-center gap-1">
                             <User className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-sm font-medium">{order.customer_name}</span>
+                            <span className="text-sm font-medium">{order.addresses?.name || "Unknown Customer"}</span>
                           </div>
-                          {order.customer_phone && (
+                          {(order.addresses?.phone || order.users?.phone) && (
                             <div className="flex items-center gap-1">
                               <Phone className="h-3 w-3 text-muted-foreground" />
                               <span className="text-xs text-muted-foreground">
-                                {order.customer_phone.replace(/(\d{3})(\d{3})(\d{4})/, '$1-***-$3')}
+                                {(order.addresses?.phone || order.users?.phone || "").replace(/(\d{3})(\d{3})(\d{4})/, '$1-***-$3')}
                               </span>
                             </div>
                           )}
@@ -1158,38 +1095,38 @@ export default function Orders() {
                                   <div className="space-y-2 text-sm">
                                     <div className="flex items-center gap-2">
                                       <User className="h-4 w-4 text-muted-foreground" />
-                                      <span>{order.customer_name}</span>
+                                      <span>{order.addresses?.name || "Unknown Customer"}</span>
                                     </div>
-                                    {order.customer_email && (
+                                    {order.users?.email && (
                                       <div className="flex items-center gap-2">
                                         <Mail className="h-4 w-4 text-muted-foreground" />
-                                        <span>{order.customer_email}</span>
+                                        <span>{order.users.email}</span>
                                       </div>
                                     )}
-                                    {order.customer_phone && (
+                                    {(order.addresses?.phone || order.users?.phone) && (
                                       <div className="flex items-center gap-2">
                                         <Phone className="h-4 w-4 text-muted-foreground" />
-                                        <span>{order.customer_phone}</span>
+                                        <span>{order.addresses?.phone || order.users?.phone}</span>
                                       </div>
                                     )}
                                   </div>
                                 </div>
                                 
-                                {order.shipping_address && (
+                                {order.addresses && (
                                   <div>
                                     <h3 className="font-medium mb-2">Shipping Address</h3>
                                     <div className="text-sm space-y-1 p-3 bg-muted rounded-lg">
-                                      <div className="font-medium">{order.shipping_address.name}</div>
-                                      <div>{order.shipping_address.line1}</div>
-                                      {order.shipping_address.line2 && <div>{order.shipping_address.line2}</div>}
-                                      <div>{order.shipping_address.city}, {order.shipping_address.state}</div>
-                                      <div>{order.shipping_address.postal_code}</div>
-                                      {order.shipping_address.landmark && (
-                                        <div className="text-muted-foreground">Near: {order.shipping_address.landmark}</div>
+                                      <div className="font-medium">{order.addresses.name}</div>
+                                      <div>{order.addresses.line1}</div>
+                                      {order.addresses.line2 && <div>{order.addresses.line2}</div>}
+                                      <div>{order.addresses.city}, {order.addresses.state}</div>
+                                      <div>{order.addresses.postal_code}</div>
+                                      {order.addresses.landmark && (
+                                        <div className="text-muted-foreground">Near: {order.addresses.landmark}</div>
                                       )}
                                       <div className="flex items-center gap-1 mt-2">
                                         <Phone className="h-3 w-3" />
-                                        <span>{order.shipping_address.phone}</span>
+                                        <span>{order.addresses.phone}</span>
                                       </div>
                                     </div>
                                   </div>

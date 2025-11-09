@@ -45,7 +45,11 @@ interface Buyer {
   id: string;
   email?: string;
   phone?: string;
-  name?: string;  // Fixed: changed from full_name to name
+  name?: string;
+  full_name?: string;
+  user_profiles?: {
+    full_name?: string;
+  };
 }
 
 interface Address {
@@ -64,32 +68,6 @@ interface ExtendedOrderItem extends OrderItem {
   seller_title?: string;
   sku?: string;
   variant_name?: string;
-}
-
-interface OrderItemWithRelations {
-  order_item_id: string;
-  order_id: string;
-  listing_variant_id: string;
-  quantity: number;
-  price: number;
-  seller_product_listings?: {
-    seller_title: string;
-  };
-  listing_variants?: {
-    sku: string;
-    variant_name: string;
-  };
-}
-
-interface OrderUpdateData {
-  status: string;
-  updated_at: string;
-  tracking_number?: string;
-  courier_name?: string;
-  estimated_delivery?: string;
-  pickup_date?: string;
-  delivery_instructions?: string;
-  notes?: string;
 }
 
 export default function OrderDetails() {
@@ -128,7 +106,6 @@ export default function OrderDetails() {
     trackingUrl: "",
     courierPartner: "",
     courierPhone: "",
-    courierEmail: "",
     estimatedDelivery: "",
     courierAddress: "",
     pickupDate: "",
@@ -148,7 +125,7 @@ export default function OrderDetails() {
     if (orderId) {
       loadOrderDetails();
     }
-  }, [orderId, loadOrderDetails]);
+  }, [orderId]);
 
   const loadOrderDetails = async () => {
     try {
@@ -195,7 +172,8 @@ export default function OrderDetails() {
       // Fetch all related data in parallel - Fixed: removed full_name column
       const [
         buyerRes,
-        addressRes, 
+        addressRes,
+        userProfileRes,
         itemsRes,
         returnsRes,
         trackingRes,
@@ -205,8 +183,9 @@ export default function OrderDetails() {
         returnTrackingRes,
         returnQCRes
       ] = await Promise.all([
-        supabase.from("users").select("id,email,phone").eq("id", orderData.buyer_id).single(),
+        supabase.from("users").select("id, email, phone").eq("id", orderData.buyer_id).maybeSingle(),
         orderData.address_id ? supabase.from("addresses").select("*").eq("address_id", orderData.address_id).single() : Promise.resolve({ data: null, error: null }),
+        supabase.from("user_profiles").select("full_name, user_id").eq("user_id", orderData.buyer_id).maybeSingle(),
         supabase.from("order_items").select(`*, seller_product_listings ( seller_title ), listing_variants ( variant_name, sku )`).eq("order_id", orderData.order_id),
         supabase.from("order_returns").select("*").eq("order_id", orderData.order_id),
         supabase.from("order_tracking").select("*").eq("order_id", orderData.order_id).order("updated_at", { ascending: false }),
@@ -218,10 +197,53 @@ export default function OrderDetails() {
       ]);
 
       // Set all the data with proper error handling
-      if (buyerRes?.data && !buyerRes.error) setBuyer(buyerRes.data as Buyer);
-      if (addressRes?.data && !addressRes.error) setShippingAddress(addressRes.data as Address);
+      // Set shipping address first
+      if (addressRes?.data && !addressRes.error) {
+        setShippingAddress(addressRes.data as Address);
+      }
+      
+      if (buyerRes?.data && !buyerRes.error) {
+        // Merge buyer data with profile data
+        const buyerData: Buyer = {
+          ...buyerRes.data,
+          user_profiles: userProfileRes?.data ? { full_name: userProfileRes.data.full_name } : undefined
+        };
+        setBuyer(buyerData as Buyer);
+      } else {
+        console.warn("⚠️ No buyer found in users table, using fallback data");
+        
+        // Try fetching user from address's user_id as fallback
+        if (addressRes?.data && addressRes.data.user_id) {
+          const { data: userFromAddress, error: userError } = await supabase
+            .from("users")
+            .select(`
+              id,
+              email,
+              phone,
+              user_profiles (
+                full_name
+              )
+            `)
+            .eq("id", addressRes.data.user_id)
+            .maybeSingle();
+          
+          if (userFromAddress && !userError) {
+            setBuyer(userFromAddress as Buyer);
+          } else {
+            // User doesn't exist in public.users table - use address data as final fallback
+            setBuyer({
+              id: addressRes.data.user_id,
+              phone: addressRes.data.phone,
+              email: undefined, // Not available from address
+              user_profiles: {
+                full_name: addressRes.data.name
+              }
+            } as Buyer);
+          }
+        }
+      }
       if (itemsRes?.data && !itemsRes.error) {
-        const mappedItems: ExtendedOrderItem[] = itemsRes.data.map((item: OrderItemWithRelations) => ({
+        const mappedItems: ExtendedOrderItem[] = itemsRes.data.map((item: any) => ({
           ...item,
           seller_title: item.seller_product_listings?.seller_title,
           sku: item.listing_variants?.sku,
@@ -265,7 +287,6 @@ export default function OrderDetails() {
       trackingUrl: "",
       courierPartner: "",
       courierPhone: "",
-      courierEmail: "",
       estimatedDelivery: "",
       courierAddress: "",
       pickupDate: "",
@@ -274,15 +295,14 @@ export default function OrderDetails() {
     });
   };
 
-  const updateOrderStatus = async (newStatus: string, additionalData?: Partial<OrderUpdateData>) => {
+  const updateOrderStatus = async (newStatus: string, additionalData?: any) => {
     try {
       setUpdating(true);
       const sellerId = await getAuthenticatedSellerId();
 
-      const updateData: OrderUpdateData = { 
+      const updateData: any = { 
         status: newStatus,
-        updated_at: new Date().toISOString(),
-        ...additionalData
+        updated_at: new Date().toISOString()
       };
 
       if (additionalData) {
@@ -368,7 +388,6 @@ export default function OrderDetails() {
         courier_partner: courierDetails.courierPartner,
         tracking_number: courierDetails.consignmentNumber,
         courier_phone: courierDetails.courierPhone,
-        courier_email: courierDetails.courierEmail,
         estimated_delivery: courierDetails.estimatedDelivery || null,
         pickup_date: courierDetails.pickupDate || null,
         notes: courierDetails.notes,
@@ -731,9 +750,114 @@ export default function OrderDetails() {
           </div>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          {/* Left Column - Tabbed Content */}
-          <div className="lg:col-span-2">
+        {/* Customer, Shipping & Summary - Full Width Grid */}
+        <div className="grid gap-6 md:grid-cols-3 mb-6">
+          {/* Customer Details */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <User className="h-5 w-5" />
+                Customer Details
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <div className="text-sm space-y-2">
+                <div>
+                  <span className="font-medium text-gray-700">Customer:</span>
+                  <p className="text-sm">
+                    {buyer?.user_profiles?.full_name || 
+                     buyer?.full_name || 
+                     buyer?.name || 
+                     buyer?.email?.split('@')[0] || 
+                     shippingAddress?.name ||
+                     "Customer Name"}
+                  </p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Email:</span>
+                  <p className="break-words text-xs text-gray-500">{buyer?.email || "Not provided"}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Phone:</span>
+                  <p className="text-sm">{buyer?.phone ? buyer.phone : "Not available"}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Customer ID:</span>
+                  <p className="text-xs text-gray-600 break-all">{order.buyer_id}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Shipping Address */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <MapPin className="h-5 w-5" />
+                Shipping Address
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="space-y-2">
+                <div>
+                  <span className="font-medium text-gray-700">Deliver To:</span>
+                  <p className="font-medium text-sm">{shippingAddress?.name || buyer?.name || "Customer"}</p>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Address:</span>
+                  <div className="text-xs">
+                    <p>{shippingAddress?.line1 || "Address not available"}</p>
+                    {shippingAddress?.line2 && <p>{shippingAddress.line2}</p>}
+                    <p>{shippingAddress?.city || "City"}, {shippingAddress?.state || "State"} {shippingAddress?.postal_code || "PIN"}</p>
+                    <p>{shippingAddress?.country || "India"}</p>
+                  </div>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-700">Contact:</span>
+                  <p className="text-sm">{shippingAddress?.phone ? maskPhone(shippingAddress.phone) : buyer?.phone ? maskPhone(buyer.phone) : "Phone not available"}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Order Summary */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Order Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span>Item Total:</span>
+                <span className="font-medium">₹{order.total_amount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Shipping:</span>
+                <span className="font-medium">{order.shipping_cost ? `₹${order.shipping_cost.toFixed(2)}` : '₹0'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Discount:</span>
+                <span className="font-medium">-₹{order.discount_amount?.toFixed(2) || '0.00'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Marketplace Fee:</span>
+                <span className="font-medium">₹{computeMarketplaceFee(order.total_amount).toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between font-bold border-t pt-2">
+                <span>Final Amount:</span>
+                <span className="text-green-600">₹{order.final_amount?.toFixed(2) || order.total_amount.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-green-700 font-semibold text-xs">
+                <span>Seller Earnings:</span>
+                <span>₹{(order.total_amount - computeMarketplaceFee(order.total_amount)).toFixed(2)}</span>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main Content Area */}
+        <div className="grid gap-6 lg:grid-cols-4">
+          {/* Tabbed Content - Takes 3 columns */}
+          <div className="lg:col-span-3">
             <Tabs defaultValue="overview" className="w-full">
               <TabsList className="grid w-full grid-cols-5">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -1008,108 +1132,13 @@ export default function OrderDetails() {
             </Tabs>
           </div>
 
-          {/* Right Column - Customer & Action Details */}
-          <div className="space-y-6">
-            {/* Customer Details */}
-            <Card>
+          {/* Order Actions - Takes 1 column */}
+          <div className="lg:col-span-1">
+            <Card className="sticky top-4">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <User className="h-5 w-5" />
-                  Customer Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="text-sm space-y-2">
-                  <div>
-                    <span className="font-medium text-gray-700">Customer:</span>
-                    <p>{buyer?.name || buyer?.email || "Customer Name"}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-700">Email:</span>
-                    <p className="break-words">{buyer?.email || "Email not available"}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-700">Phone:</span>
-                    <p>{buyer?.phone ? maskPhone(buyer.phone) : "Phone not available"}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-700">Customer ID:</span>
-                    <p className="text-xs text-gray-600">{order.buyer_id}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Shipping Address */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <MapPin className="h-5 w-5" />
-                  Shipping Address
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="space-y-2">
-                  <div>
-                    <span className="font-medium text-gray-700">Deliver To:</span>
-                    <p className="font-medium">{shippingAddress?.name || buyer?.name || "Customer"}</p>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-700">Address:</span>
-                    <div className="text-sm">
-                      <p>{shippingAddress?.line1 || "Address not available"}</p>
-                      {shippingAddress?.line2 && <p>{shippingAddress.line2}</p>}
-                      <p>{shippingAddress?.city || "City"}, {shippingAddress?.state || "State"} {shippingAddress?.postal_code || "PIN"}</p>
-                      <p>{shippingAddress?.country || "India"}</p>
-                    </div>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-700">Contact:</span>
-                    <p>{shippingAddress?.phone ? maskPhone(shippingAddress.phone) : buyer?.phone ? maskPhone(buyer.phone) : "Phone not available"}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Order Summary */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Order Summary</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span>Item Total:</span>
-                  <span>₹{order.total_amount.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Shipping:</span>
-                  <span>{order.shipping_cost ? `₹${order.shipping_cost.toFixed(2)}` : '₹0 (Free)'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Discount:</span>
-                  <span>-₹{order.discount_amount?.toFixed(2) || '0.00'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Marketplace Fee:</span>
-                  <span>₹{computeMarketplaceFee(order.total_amount).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between font-semibold border-t pt-2">
-                  <span>Final Amount:</span>
-                  <span>₹{order.final_amount?.toFixed(2) || order.total_amount.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-green-700 font-medium">
-                  <span>Seller Earnings:</span>
-                  <span>₹{(order.total_amount - computeMarketplaceFee(order.total_amount)).toFixed(2)}</span>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Order Actions */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Order Actions</CardTitle>
-                <p className="text-sm text-muted-foreground">
-                  Current Status: <strong className="text-lg">{order.status}</strong>
+                <CardTitle className="text-base">Order Actions</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Status: <Badge className={getStatusColor(order.status)}>{order.status}</Badge>
                 </p>
               </CardHeader>
               <CardContent className="space-y-3">
@@ -1173,15 +1202,6 @@ export default function OrderDetails() {
                             value={courierDetails.courierPhone}
                             onChange={(e) => setCourierDetails({...courierDetails, courierPhone: e.target.value})}
                             placeholder="Courier contact number"
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="courierEmail">Courier Email</Label>
-                          <Input
-                            id="courierEmail"
-                            value={courierDetails.courierEmail}
-                            onChange={(e) => setCourierDetails({...courierDetails, courierEmail: e.target.value})}
-                            placeholder="courier@company.com"
                           />
                         </div>
                         <div>
@@ -1339,28 +1359,6 @@ export default function OrderDetails() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Payment Details */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <CreditCard className="h-5 w-5" />
-                  Payment Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex justify-between">
-                  <span className="text-gray-600">Payment Status:</span>
-                  <Badge variant={order.payment_status === "paid" ? "default" : "secondary"}>
-                    {order.payment_status || "pending"}
-                  </Badge>
-                </div>
-                <div className="flex justify-between font-medium">
-                  <span>Final Amount:</span>
-                  <span>₹{order.final_amount?.toFixed(2) || order.total_amount?.toFixed(2) || '0.00'}</span>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         </div>
 
@@ -1457,15 +1455,6 @@ export default function OrderDetails() {
                   value={courierDetails.courierPhone}
                   onChange={(e) => setCourierDetails({...courierDetails, courierPhone: e.target.value})}
                   placeholder={sellerDetails?.phone || "Courier contact for pickup"}
-                />
-              </div>
-              <div>
-                <Label htmlFor="returnCourierEmail">Courier Email</Label>
-                <Input
-                  id="returnCourierEmail"
-                  value={courierDetails.courierEmail}
-                  onChange={(e) => setCourierDetails({...courierDetails, courierEmail: e.target.value})}
-                  placeholder={sellerDetails?.email || "courier@company.com"}
                 />
               </div>
               {sellerDetails && (
