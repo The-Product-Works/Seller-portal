@@ -15,7 +15,6 @@ interface OrderItemWithRelations {
     base_price: number;
     total_stock_quantity: number;
     seller_id: string;
-    category: string;
   };
   orders: {
     status: string;
@@ -85,8 +84,7 @@ export function BestWorstSelling({ sellerId }: BestWorstSellingProps) {
             seller_title,
             base_price,
             total_stock_quantity,
-            seller_id,
-            category
+            seller_id
           ),
           orders!inner (
             status,
