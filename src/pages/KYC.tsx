@@ -146,20 +146,38 @@ export default function KYC() {
           });
 
           // Load previously uploaded documents
-          const { data: docs } = await supabase
+          const { data: docs, error: docsError } = await supabase
             .from("seller_documents")
             .select("*")
             .eq("seller_id", s.id);
+
+          console.log("Loading seller documents for seller:", s.id);
+          console.log("Documents query error:", docsError);
+          console.log("Documents found:", docs);
+          console.log("Number of documents:", docs?.length);
 
           if (docs && docs.length > 0) {
             const docMap: { selfie?: string; aadhaar?: string; pan?: string } =
               {};
             docs.forEach((doc) => {
-              if (doc.doc_type === "selfie") docMap.selfie = doc.storage_path;
-              if (doc.doc_type === "aadhaar") docMap.aadhaar = doc.storage_path;
-              if (doc.doc_type === "pan") docMap.pan = doc.storage_path;
+              console.log("Processing document:", doc.doc_type, "storage_path:", doc.storage_path);
+              if (doc.doc_type === "selfie") {
+                console.log("Mapping selfie");
+                docMap.selfie = doc.storage_path;
+              }
+              if (doc.doc_type === "aadhaar") {
+                console.log("Mapping aadhaar");
+                docMap.aadhaar = doc.storage_path;
+              }
+              if (doc.doc_type === "pan") {
+                console.log("Mapping pan");
+                docMap.pan = doc.storage_path;
+              }
             });
+            console.log("Final docMap:", docMap);
             setUploadedDocuments(docMap);
+          } else {
+            console.log("No documents found or docs is null/empty");
           }
 
           const { data: notifs } = await supabase
@@ -467,6 +485,8 @@ export default function KYC() {
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                       <Camera className="w-5 h-5" /> Upload Documents
                     </h3>
+                    {console.log("uploadedDocuments state:", uploadedDocuments)}
+                    {console.log("selfiePhoto state:", selfiePhoto)}
                     <div className="grid md:grid-cols-3 gap-6">
                       {/* Selfie */}
                       <div className="space-y-2">
