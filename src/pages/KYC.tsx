@@ -17,6 +17,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/database.types";
 import { Camera, CheckCircle, Loader2 } from "lucide-react";
 import { z } from "zod";
+import { useDocumentUpload } from "@/hooks/useDocumentUpload";
 
 // ✅ Validation schema
 const kycSchema = z.object({
@@ -61,11 +62,13 @@ export default function KYC() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  type Seller = Database["public"]["Tables"]["sellers"]["Row"];
-  type Notification = Database["public"]["Tables"]["notifications"]["Row"];
+  const { uploadDocument } = useDocumentUpload();
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  type Seller = Database["public"]["Tables"]["sellers"]["Row"];
+  type Notification = Database["public"]["Tables"]["notifications"]["Row"];
+
   const [seller, setSeller] = useState<Seller | null>(null);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -265,6 +268,31 @@ export default function KYC() {
 
         if (error) throw error;
 
+        // Upload provided photos (this also inserts rows into seller_documents via hook)
+        try {
+          if (selfiePhoto) {
+            const r = await uploadDocument(newSeller.id, selfiePhoto, "selfie");
+            if (!r.success) console.error("Selfie upload failed:", r.error);
+          }
+          if (aadhaarPhoto) {
+            const r = await uploadDocument(newSeller.id, aadhaarPhoto, "aadhaar");
+            if (!r.success) console.error("Aadhaar upload failed:", r.error);
+          }
+          if (panPhoto) {
+            const r = await uploadDocument(newSeller.id, panPhoto, "pan");
+            if (!r.success) console.error("PAN upload failed:", r.error);
+          }
+        } catch (upErr: unknown) {
+          const error = upErr instanceof Error ? upErr : new Error(String(upErr));
+          console.error("Error uploading KYC documents:", error);
+          // non-fatal - we still proceed to verification page but notify user
+          toast({
+            title: "Upload error",
+            description: error?.message || "Failed to upload some documents",
+            variant: "destructive",
+          });
+        }
+
         toast({
           title: "KYC submitted",
           description: "Documents are under review",
@@ -292,6 +320,30 @@ export default function KYC() {
         .eq("id", seller.id);
 
       if (updErr) throw updErr;
+
+      // If user provided any new photos during resubmission, upload them
+      try {
+        if (selfiePhoto) {
+          const r = await uploadDocument(seller.id, selfiePhoto, "selfie");
+          if (!r.success) console.error("Selfie upload failed:", r.error);
+        }
+        if (aadhaarPhoto) {
+          const r = await uploadDocument(seller.id, aadhaarPhoto, "aadhaar");
+          if (!r.success) console.error("Aadhaar upload failed:", r.error);
+        }
+        if (panPhoto) {
+          const r = await uploadDocument(seller.id, panPhoto, "pan");
+          if (!r.success) console.error("PAN upload failed:", r.error);
+        }
+      } catch (upErr: unknown) {
+        const error = upErr instanceof Error ? upErr : new Error(String(upErr));
+        console.error("Error uploading KYC documents:", error);
+        toast({
+          title: "Upload error",
+          description: error?.message || "Failed to upload some documents",
+          variant: "destructive",
+        });
+      }
 
       toast({ title: "Resubmitted", description: "Your KYC was resubmitted" });
       navigate("/seller-verification");
@@ -457,6 +509,7 @@ export default function KYC() {
                     <div>
                       <Label>Business Type</Label>
                       <select
+                        aria-label="Business Type"
                         className="w-full border border-input rounded-md p-2 bg-background"
                         value={formData.businessType}
                         onChange={(e) =>

@@ -36,14 +36,14 @@ export const useDocumentUpload = () => {
 
       // Upload file to storage
       // Bucket: seller_details
-      // Path inside bucket: seller_details/{sellerId}/{docType}/{timestamp}_{filename}
-      const filePath = `seller_details/${sellerId}/${docType}/${Date.now()}_${file.name}`;
+      // Path inside bucket: {sellerId}/{docType}/{timestamp}_{filename}
+      const internalPath = `${sellerId}/${docType}/${Date.now()}_${file.name}`;
 
-      console.log("Uploading to bucket 'seller_details', path:", filePath);
+      console.log("Uploading to bucket 'seller_details', path:", internalPath);
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("seller_details")
-        .upload(filePath, file, {
+        .upload(internalPath, file, {
           cacheControl: "3600",
           upsert: false,
         });
@@ -55,13 +55,15 @@ export const useDocumentUpload = () => {
       // Get signed URL (valid for 100 years - effectively permanent)
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from("seller_details")
-        .createSignedUrl(filePath, 60 * 60 * 24 * 365 * 100);
+        .createSignedUrl(internalPath, 60 * 60 * 24 * 365 * 100);
 
       if (signedUrlError) {
         throw new Error(`Signed URL generation failed: ${signedUrlError.message}`);
       }
 
       // Save document metadata to seller_documents table
+      // Store the signed URL in storage_path so client can use it directly as an <img src>
+      const signedUrl = signedUrlData?.signedUrl ?? null;
       const { data: docData, error: docError } = await supabase
         .from("seller_documents")
         .insert({
@@ -70,7 +72,7 @@ export const useDocumentUpload = () => {
           file_name: file.name,
           file_size: file.size,
           mime_type: file.type,
-          storage_path: filePath,
+          storage_path: signedUrl,
           uploaded_at: new Date().toISOString(),
         })
         .select()
@@ -78,7 +80,7 @@ export const useDocumentUpload = () => {
 
       if (docError) {
         // If metadata save fails, try to delete the uploaded file
-        await supabase.storage.from("seller_details").remove([filePath]);
+        await supabase.storage.from("seller_details").remove([internalPath]);
         throw new Error(`Failed to save document metadata: ${docError.message}`);
       }
 
@@ -88,7 +90,8 @@ export const useDocumentUpload = () => {
         fileName: file.name,
         fileSize: file.size,
         mimeType: file.type,
-        storagePath: filePath,
+        // store internal path in DB so we can create signed URLs on demand and allow deletions
+        storagePath: internalPath,
         uploadedAt: docData.uploaded_at,
       };
 

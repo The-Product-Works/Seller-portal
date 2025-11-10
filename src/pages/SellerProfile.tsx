@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import type { Database } from "@/integrations/supabase/database.types";
+import type { Database, Json } from "@/integrations/supabase/database.types";
 import { Loader2, Save, PlusCircle, Send } from "lucide-react";
 
 type Seller = Database["public"]["Tables"]["sellers"]["Row"];
@@ -23,7 +23,8 @@ export default function SellerProfile() {
   const [seller, setSeller] = useState<Seller | null>(null);
   const [allowedFields, setAllowedFields] = useState<string[]>([]);
   const [adminMessage, setAdminMessage] = useState<string | null>(null);
-  const [docs, setDocs] = useState<SellerDocument[]>([]);
+  type SellerDocPartial = Pick<SellerDocument, "doc_type" | "storage_path">;
+  const [docs, setDocs] = useState<SellerDocPartial[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submittingRequest, setSubmittingRequest] = useState(false);
@@ -89,7 +90,34 @@ export default function SellerProfile() {
         .from("seller_documents")
         .select("doc_type, storage_path")
         .eq("seller_id", s.id);
-      setDocs(documents || []);
+
+      // convert internal storage paths to signed URLs for display
+  const docsWithUrls: SellerDocPartial[] = [];
+      if (documents && Array.isArray(documents)) {
+        for (const d of documents) {
+          const path = (d as SellerDocument).storage_path as string | null | undefined;
+          if (!path) {
+            docsWithUrls.push(d);
+            continue;
+          }
+          try {
+            const { data: urlData, error: urlErr } = await supabase.storage
+              .from("seller_details")
+              .createSignedUrl(path, 60 * 60 * 24 * 7);
+            if (urlErr) {
+              console.error("Failed to create signed URL for", path, urlErr);
+              docsWithUrls.push(d as SellerDocPartial);
+            } else {
+              docsWithUrls.push({ ...(d as SellerDocPartial), storage_path: urlData?.signedUrl });
+            }
+          } catch (e) {
+            console.error("Signed URL generation error", e);
+            docsWithUrls.push(d);
+          }
+        }
+      }
+
+      setDocs(docsWithUrls || []);
 
       setFormData({
         businessName: s.business_name || "",
@@ -129,7 +157,7 @@ export default function SellerProfile() {
   async function handleSave() {
     setSaving(true);
     try {
-      const editableNow: Record<string, unknown> = {};
+  const editableNow: Record<string, string> = {};
 
       for (const key of Object.keys(formData)) {
         const newVal = formData[key];
@@ -210,11 +238,12 @@ export default function SellerProfile() {
         }
       }
 
+      const detailsObj: Json = JSON.parse(JSON.stringify({ requested_changes: restrictedChanges, reason }));
       await supabase.from("seller_verifications").insert({
         seller_id: seller.id,
         step: "edit_request",
         status: "pending",
-        details: { requested_changes: restrictedChanges, reason } as unknown,
+        details: detailsObj,
         verified_at: new Date().toISOString(),
       });
 

@@ -12,6 +12,7 @@ type Seller = Database["public"]["Tables"]["sellers"]["Row"];
 type Notification = Database["public"]["Tables"]["notifications"]["Row"];
 type EditFeedback = Record<string, unknown>;
 type SellerDocument = Database["public"]["Tables"]["seller_documents"]["Row"];
+type SellerDocPartial = Pick<SellerDocument, "doc_type" | "storage_path">;
 
 export default function SellerVerification() {
   const { toast } = useToast();
@@ -24,7 +25,7 @@ export default function SellerVerification() {
   const [allowedFields, setAllowedFields] = useState<string[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [editFeedback, setEditFeedback] = useState<EditFeedback[]>([]);
-  const [docs, setDocs] = useState<Record<string, unknown>[]>([]);
+  const [docs, setDocs] = useState<SellerDocPartial[]>([]);
   const [refreshToken, setRefreshToken] = useState(0);
 
   useEffect(() => {
@@ -60,7 +61,34 @@ export default function SellerVerification() {
         .from("seller_documents")
         .select("doc_type, storage_path")
         .eq("seller_id", sellerData.id);
-      setDocs(sellerDocs || []);
+
+      // Convert internal storage paths to signed URLs for display
+      const docsWithUrls: SellerDocPartial[] = [];
+      if (sellerDocs && Array.isArray(sellerDocs)) {
+        for (const d of sellerDocs) {
+          const path = (d as SellerDocPartial).storage_path as string | null | undefined;
+          if (!path) {
+            docsWithUrls.push(d as SellerDocPartial);
+            continue;
+          }
+          try {
+            const { data: urlData, error: urlErr } = await supabase.storage
+              .from("seller_details")
+              .createSignedUrl(path, 60 * 60 * 24 * 7);
+            if (urlErr) {
+              console.error("Failed to create signed URL for", path, urlErr);
+              docsWithUrls.push(d);
+            } else {
+              docsWithUrls.push({ ...(d as SellerDocPartial), storage_path: urlData?.signedUrl });
+            }
+          } catch (e) {
+            console.error("Signed URL generation error", e);
+            docsWithUrls.push(d);
+          }
+        }
+      }
+
+      setDocs(docsWithUrls || []);
 
       // load edit request feedback
       const { data: feedback } = await supabase
