@@ -39,31 +39,59 @@ export const useDocumentUpload = () => {
       // Path inside bucket: {sellerId}/{docType}/{timestamp}_{filename}
       const internalPath = `${sellerId}/${docType}/${Date.now()}_${file.name}`;
 
-      console.log("Uploading to bucket 'seller_details', path:", internalPath);
+      console.log("=== UPLOAD DEBUG START ===");
+      console.log("Uploading to bucket 'seller_details'");
+      console.log("Seller ID:", sellerId);
+      console.log("Doc Type:", docType);
+      console.log("File Name:", file.name);
+      console.log("File Size:", file.size);
+      console.log("File Type:", file.type);
+      console.log("Internal Path:", internalPath);
+      console.log("Auth User:", (await supabase.auth.getUser()).data.user?.id);
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("seller_details")
         .upload(internalPath, file, {
           cacheControl: "3600",
-          upsert: false,
+          upsert: true,
         });
 
+      console.log("Upload response - data:", uploadData);
+      console.log("Upload response - error:", uploadError);
+      console.log("=== UPLOAD DEBUG END ===");
+
       if (uploadError) {
+        console.error("UPLOAD FAILED - ERROR DETAILS:", {
+          message: uploadError.message,
+          name: uploadError.name,
+          statusCode: (uploadError as unknown as Record<string, unknown>).statusCode,
+          fullError: uploadError
+        });
         throw new Error(`Upload failed: ${uploadError.message}`);
       }
 
       // Get signed URL (valid for 100 years - effectively permanent)
+      console.log("Generating signed URL for path:", internalPath);
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from("seller_details")
         .createSignedUrl(internalPath, 60 * 60 * 24 * 365 * 100);
 
+      console.log("Signed URL response - data:", signedUrlData);
+      console.log("Signed URL response - error:", signedUrlError);
+
       if (signedUrlError) {
+        console.error("SIGNED URL FAILED - ERROR DETAILS:", {
+          message: signedUrlError.message,
+          name: signedUrlError.name,
+          fullError: signedUrlError
+        });
         throw new Error(`Signed URL generation failed: ${signedUrlError.message}`);
       }
 
       // Save document metadata to seller_documents table
       // Store the signed URL in storage_path so client can use it directly as an <img src>
       const signedUrl = signedUrlData?.signedUrl ?? null;
+      console.log("Inserting into seller_documents - Seller ID:", sellerId, "Doc Type:", docType, "Signed URL exists:", !!signedUrl);
       const { data: docData, error: docError } = await supabase
         .from("seller_documents")
         .insert({
@@ -78,7 +106,17 @@ export const useDocumentUpload = () => {
         .select()
         .single();
 
+      console.log("Database insert response - data:", docData);
+      console.log("Database insert response - error:", docError);
+
       if (docError) {
+        console.error("DATABASE INSERT FAILED - ERROR DETAILS:", {
+          message: docError.message,
+          code: (docError as unknown as Record<string, unknown>).code,
+          details: (docError as unknown as Record<string, unknown>).details,
+          hint: (docError as unknown as Record<string, unknown>).hint,
+          fullError: docError
+        });
         // If metadata save fails, try to delete the uploaded file
         await supabase.storage.from("seller_details").remove([internalPath]);
         throw new Error(`Failed to save document metadata: ${docError.message}`);
