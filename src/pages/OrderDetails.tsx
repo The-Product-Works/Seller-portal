@@ -325,35 +325,71 @@ export default function OrderDetails() {
       setUpdating(true);
       const sellerId = await getAuthenticatedSellerId();
 
-      const updateData: Record<string, unknown> = { 
-        status: newStatus,
-      };
-
-      if (additionalData) {
-        Object.assign(updateData, additionalData);
-      }
-
-      // Update order_item status
+      // Only update status in order_items table (no courier fields exist there)
       const { error: orderError } = await supabase
         .from("order_items")
-        .update(updateData)
+        .update({ status: newStatus })
         .eq("order_item_id", orderItemId);
 
       if (orderError) throw orderError;
 
-      // Add to status history - with error handling
+      // Add to status history with all additional details in remarks
       try {
+        // Fetch user_id from sellers table
+        let userId = null;
+        if (sellerId) {
+          const { data: sellerData } = await supabase
+            .from("sellers")
+            .select("user_id")
+            .eq("id", sellerId)
+            .single();
+          
+          userId = sellerData?.user_id || null;
+        }
+
+        // Build comprehensive remarks from additional data
+        let remarks = `Status changed to ${newStatus}`;
+        
+        if (additionalData) {
+          const detailParts: string[] = [];
+          
+          if (additionalData.courier_partner) detailParts.push(`Courier: ${additionalData.courier_partner}`);
+          if (additionalData.tracking_number) detailParts.push(`Tracking: ${additionalData.tracking_number}`);
+          if (additionalData.courier_phone) detailParts.push(`Phone: ${additionalData.courier_phone}`);
+          if (additionalData.estimated_delivery) detailParts.push(`Est. Delivery: ${additionalData.estimated_delivery}`);
+          if (additionalData.pickup_date) detailParts.push(`Pickup: ${additionalData.pickup_date}`);
+          if (additionalData.notes) detailParts.push(`Notes: ${additionalData.notes}`);
+          if (additionalData.cancel_reason) detailParts.push(`Reason: ${additionalData.cancel_reason}`);
+          
+          if (detailParts.length > 0) {
+            remarks += `. ${detailParts.join(', ')}`;
+          }
+        }
+
         const { error: historyError } = await supabase
           .from("order_status_history")
           .insert({
             order_item_id: orderItemId!,
-            changed_by: sellerId || "",
+            changed_by: userId, // Use user_id from sellers table
             old_status: orderItem?.status || "",
             new_status: newStatus,
-            remarks: (additionalData?.notes as string | undefined) || `Status changed to ${newStatus}`,
+            remarks: remarks,
           });
 
-        if (historyError) console.warn("Could not add status history:", historyError);
+        if (historyError) {
+          console.warn("Could not add status history:", historyError);
+          // Log the full error for debugging
+          console.error("Status history error details:", {
+            error: historyError,
+            data: {
+              order_item_id: orderItemId,
+              changed_by: userId,
+              old_status: orderItem?.status,
+              new_status: newStatus,
+              remarks: remarks
+            }
+          });
+        }
       } catch (historyError) {
         console.warn("Status history table may not exist:", historyError);
       }
@@ -379,46 +415,12 @@ export default function OrderDetails() {
   };
 
   const handleMarkAsPacked = async () => {
-    if (!courierDetails.consignmentNumber.trim()) {
-      toast({
-        title: "Missing Information",
-        description: "Please enter a consignment number.",
-        variant: "destructive",
-      });
-      return;
-    }
-
     try {
-      // Insert comprehensive tracking record - with error handling
-      try {
-        const { error: trackingError } = await supabase
-          .from("order_tracking")
-          .insert({
-            order_item_id: orderItemId!,
-            status: "packed",
-            url: courierDetails.trackingUrl || `https://track.courier.com/${courierDetails.consignmentNumber}`,
-            location: sellerDetails?.city || "Warehouse",
-            notes: `Packed by seller. Courier: ${courierDetails.courierPartner}. Phone: ${courierDetails.courierPhone}. Consignment: ${courierDetails.consignmentNumber}. Instructions: ${courierDetails.deliveryInstructions}`,
-          });
-
-        if (trackingError) {
-          console.warn("Could not create tracking record:", trackingError);
-        }
-      } catch (trackingError) {
-        console.warn("Tracking table may not exist:", trackingError);
-      }
-
-      await updateOrderStatus("packed", {
-        courier_partner: courierDetails.courierPartner,
-        tracking_number: courierDetails.consignmentNumber,
-        courier_phone: courierDetails.courierPhone,
-        estimated_delivery: courierDetails.estimatedDelivery || null,
-        pickup_date: courierDetails.pickupDate || null,
-        notes: courierDetails.notes,
-      });
+      // Simply update status to packed without courier details
+      await updateOrderStatus("packed");
 
     } catch (error) {
-      console.error("Error in packing process:", error);
+      console.error("Error marking as packed:", error);
       toast({
         title: "Error",
         description: "Failed to mark as packed. Please try again.",
@@ -428,16 +430,47 @@ export default function OrderDetails() {
   };
 
   const handleMarkAsShipped = async () => {
+    // Validation for courier details
+    if (!courierDetails.consignmentNumber.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please enter a consignment number.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!courierDetails.courierPartner.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please select a courier partner.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
+      // Build comprehensive tracking notes with all courier details
+      const trackingNotes = [
+        `Courier Partner: ${courierDetails.courierPartner}`,
+        `Consignment Number: ${courierDetails.consignmentNumber}`,
+        courierDetails.courierPhone ? `Courier Phone: ${courierDetails.courierPhone}` : null,
+        courierDetails.estimatedDelivery ? `Est. Delivery: ${courierDetails.estimatedDelivery}` : null,
+        courierDetails.pickupDate ? `Pickup Date: ${courierDetails.pickupDate}` : null,
+        courierDetails.deliveryInstructions ? `Instructions: ${courierDetails.deliveryInstructions}` : null,
+        courierDetails.notes ? `Additional Notes: ${courierDetails.notes}` : null,
+      ].filter(Boolean).join('. ');
+
+      // Insert tracking record with all courier details
       try {
         const { error: trackingError } = await supabase
           .from("order_tracking")
           .insert({
             order_item_id: orderItemId!,
             status: "shipped",
-            url: orderTracking[0]?.url || `https://track.courier.com/tracking`,
+            url: courierDetails.trackingUrl || `https://track.courier.com/${courierDetails.consignmentNumber}`,
             location: "In Transit",
-            notes: "Order item has been shipped and is on the way to customer",
+            notes: trackingNotes,
           });
 
         if (trackingError) console.warn("Could not create tracking record:", trackingError);
@@ -445,7 +478,15 @@ export default function OrderDetails() {
         console.warn("Tracking table may not exist:", trackingError);
       }
 
-      await updateOrderStatus("shipped");
+      // Update status with courier details
+      await updateOrderStatus("shipped", {
+        courier_partner: courierDetails.courierPartner,
+        tracking_number: courierDetails.consignmentNumber,
+        courier_phone: courierDetails.courierPhone,
+        estimated_delivery: courierDetails.estimatedDelivery || null,
+        pickup_date: courierDetails.pickupDate || null,
+        notes: courierDetails.notes,
+      });
     } catch (error) {
       console.error("Error shipping order item:", error);
     }
@@ -453,22 +494,7 @@ export default function OrderDetails() {
 
   const handleMarkAsDelivered = async () => {
     try {
-      try {
-        const { error: trackingError } = await supabase
-          .from("order_tracking")
-          .insert({
-            order_item_id: orderItemId!,
-            status: "delivered",
-            url: orderTracking[0]?.url || `https://track.courier.com/tracking`,
-            location: shippingAddress?.city || "Customer Location",
-            notes: "Order item has been successfully delivered to customer",
-          });
-
-        if (trackingError) console.warn("Could not create tracking record:", trackingError);
-      } catch (trackingError) {
-        console.warn("Tracking table may not exist:", trackingError);
-      }
-
+      // Simply update status to delivered - tracking entry was already created when shipped
       await updateOrderStatus("delivered");
     } catch (error) {
       console.error("Error marking as delivered:", error);
@@ -1198,40 +1224,50 @@ export default function OrderDetails() {
               </CardHeader>
               <CardContent className="space-y-3">
                 {(orderItem?.status === "confirmed" || orderItem?.status === "pending") && (
-                  <Dialog open={packingDialogOpen} onOpenChange={setPackingDialogOpen}>
+                  <Button 
+                    onClick={handleMarkAsPacked} 
+                    disabled={updating}
+                    className="w-full bg-green-600 hover:bg-green-700"
+                  >
+                    📦 Mark as Packed
+                  </Button>
+                )}
+
+                {orderItem?.status === "packed" && (
+                  <Dialog open={shippingDialogOpen} onOpenChange={setShippingDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button className="w-full bg-green-600 hover:bg-green-700">
-                        📦 Mark as Packed & Assign Courier
+                      <Button className="w-full bg-blue-600 hover:bg-blue-700">
+                        🚚 Mark as Shipped & Assign Courier
                       </Button>
                     </DialogTrigger>
                     <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
                       <DialogHeader>
-                        <DialogTitle>Mark as Packed - Assign Courier</DialogTitle>
+                        <DialogTitle>Mark as Shipped - Assign Courier</DialogTitle>
                         <DialogDescription>
                           Enter comprehensive courier details for order tracking
                         </DialogDescription>
                       </DialogHeader>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <Label htmlFor="consignment">Consignment Number *</Label>
+                          <Label htmlFor="ship-consignment">Consignment Number *</Label>
                           <Input
-                            id="consignment"
+                            id="ship-consignment"
                             value={courierDetails.consignmentNumber}
                             onChange={(e) => setCourierDetails({...courierDetails, consignmentNumber: e.target.value})}
                             placeholder="Enter consignment number"
                           />
                         </div>
                         <div>
-                          <Label htmlFor="trackingUrl">Tracking URL</Label>
+                          <Label htmlFor="ship-trackingUrl">Tracking URL</Label>
                           <Input
-                            id="trackingUrl"
+                            id="ship-trackingUrl"
                             value={courierDetails.trackingUrl}
                             onChange={(e) => setCourierDetails({...courierDetails, trackingUrl: e.target.value})}
                             placeholder="https://track.courier.com/..."
                           />
                         </div>
                         <div>
-                          <Label htmlFor="courierPartner">Courier Partner *</Label>
+                          <Label htmlFor="ship-courierPartner">Courier Partner *</Label>
                           <Select 
                             value={courierDetails.courierPartner} 
                             onValueChange={(value) => setCourierDetails({...courierDetails, courierPartner: value})}
@@ -1251,54 +1287,45 @@ export default function OrderDetails() {
                           </Select>
                         </div>
                         <div>
-                          <Label htmlFor="courierPhone">Courier Phone *</Label>
+                          <Label htmlFor="ship-courierPhone">Courier Phone *</Label>
                           <Input
-                            id="courierPhone"
+                            id="ship-courierPhone"
                             value={courierDetails.courierPhone}
                             onChange={(e) => setCourierDetails({...courierDetails, courierPhone: e.target.value})}
                             placeholder="Courier contact number"
                           />
                         </div>
                         <div>
-                          <Label htmlFor="estimatedDelivery">Estimated Delivery</Label>
+                          <Label htmlFor="ship-estimatedDelivery">Estimated Delivery</Label>
                           <Input
-                            id="estimatedDelivery"
+                            id="ship-estimatedDelivery"
                             type="datetime-local"
                             value={courierDetails.estimatedDelivery}
                             onChange={(e) => setCourierDetails({...courierDetails, estimatedDelivery: e.target.value})}
                           />
                         </div>
-                        <div className="col-span-2">
-                          <Label htmlFor="courierAddress">Courier Address</Label>
-                          <Input
-                            id="courierAddress"
-                            value={courierDetails.courierAddress}
-                            onChange={(e) => setCourierDetails({...courierDetails, courierAddress: e.target.value})}
-                            placeholder="Courier hub/office address"
-                          />
-                        </div>
                         <div>
-                          <Label htmlFor="pickupDate">Pickup Date</Label>
+                          <Label htmlFor="ship-pickupDate">Pickup Date</Label>
                           <Input
-                            id="pickupDate"
+                            id="ship-pickupDate"
                             type="date"
                             value={courierDetails.pickupDate}
                             onChange={(e) => setCourierDetails({...courierDetails, pickupDate: e.target.value})}
                           />
                         </div>
-                        <div>
-                          <Label htmlFor="deliveryInstructions">Delivery Instructions</Label>
+                        <div className="col-span-2">
+                          <Label htmlFor="ship-deliveryInstructions">Delivery Instructions</Label>
                           <Input
-                            id="deliveryInstructions"
+                            id="ship-deliveryInstructions"
                             value={courierDetails.deliveryInstructions}
                             onChange={(e) => setCourierDetails({...courierDetails, deliveryInstructions: e.target.value})}
                             placeholder="Special delivery notes"
                           />
                         </div>
                         <div className="col-span-2">
-                          <Label htmlFor="notes">Additional Notes</Label>
+                          <Label htmlFor="ship-notes">Additional Notes</Label>
                           <Textarea
-                            id="notes"
+                            id="ship-notes"
                             value={courierDetails.notes}
                             onChange={(e) => setCourierDetails({...courierDetails, notes: e.target.value})}
                             placeholder="Any additional notes for tracking..."
@@ -1306,25 +1333,15 @@ export default function OrderDetails() {
                         </div>
                       </div>
                       <DialogFooter>
-                        <Button variant="outline" onClick={() => setPackingDialogOpen(false)}>
+                        <Button variant="outline" onClick={() => setShippingDialogOpen(false)}>
                           Cancel
                         </Button>
-                        <Button onClick={handleMarkAsPacked} disabled={updating}>
-                          {updating ? "Processing..." : "Mark as Packed"}
+                        <Button onClick={handleMarkAsShipped} disabled={updating}>
+                          {updating ? "Processing..." : "Mark as Shipped"}
                         </Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
-                )}
-
-                {orderItem?.status === "packed" && (
-                  <Button 
-                    onClick={handleMarkAsShipped} 
-                    disabled={updating}
-                    className="w-full bg-blue-600 hover:bg-blue-700"
-                  >
-                    🚚 Mark as Shipped
-                  </Button>
                 )}
 
                 {orderItem?.status === "shipped" && (

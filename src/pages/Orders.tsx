@@ -551,7 +551,7 @@ export default function Orders() {
     switch (action) {
       case "pack":
         setNewStatus("packed");
-        setCourierDialogOpen(true);
+        setStatusChangeDialogOpen(true);
         break;
       case "ship":
         setNewStatus("shipped");
@@ -583,6 +583,18 @@ export default function Orders() {
     if (!selectedOrder) return;
 
     try {
+      // Fetch user_id from sellers table
+      let userId = null;
+      if (sellerId) {
+        const { data: sellerData } = await supabase
+          .from("sellers")
+          .select("user_id")
+          .eq("id", sellerId)
+          .single();
+        
+        userId = sellerData?.user_id || null;
+      }
+
       // Update order_item status
       const { error: statusError } = await supabase
         .from("order_items")
@@ -600,7 +612,7 @@ export default function Orders() {
           order_item_id: selectedOrder.order_item_id,
           old_status: selectedOrder.status,
           new_status: newStatus,
-          changed_by: sellerId,
+          changed_by: userId, // Use user_id from sellers table
           remarks: `Status changed to ${newStatus}`,
         });
 
@@ -637,25 +649,49 @@ export default function Orders() {
     }
 
     try {
-      // Update order_item status
+      // Fetch user_id from sellers table
+      let userId = null;
+      if (sellerId) {
+        const { data: sellerData } = await supabase
+          .from("sellers")
+          .select("user_id")
+          .eq("id", sellerId)
+          .single();
+        
+        userId = sellerData?.user_id || null;
+      }
+
+      // Update order_item status to shipped
       const { error: statusError } = await supabase
         .from("order_items")
         .update({ 
-          status: newStatus,
+          status: "shipped",
         })
         .eq("order_item_id", selectedOrder.order_item_id);
 
       if (statusError) throw statusError;
 
-      // Add tracking information
+      // Build comprehensive tracking notes with all courier details
+      const trackingNotes = [
+        `Courier Partner: ${courierDetails.courier_partner}`,
+        `Consignment Number: ${courierDetails.consignment_number}`,
+        courierDetails.courier_phone ? `Courier Phone: ${courierDetails.courier_phone}` : null,
+        courierDetails.courier_email ? `Courier Email: ${courierDetails.courier_email}` : null,
+        courierDetails.estimated_delivery ? `Est. Delivery: ${courierDetails.estimated_delivery}` : null,
+        courierDetails.pickup_date ? `Pickup Date: ${courierDetails.pickup_date}` : null,
+        courierDetails.delivery_instructions ? `Delivery Instructions: ${courierDetails.delivery_instructions}` : null,
+        courierDetails.additional_notes ? `Additional Notes: ${courierDetails.additional_notes}` : null,
+      ].filter(Boolean).join('. ');
+
+      // Add tracking information with all details in notes field
       const { error: trackingError } = await supabase
         .from("order_tracking")
         .insert({
           order_item_id: selectedOrder.order_item_id,
-          url: courierDetails.tracking_url || "",
-          status: newStatus === "packed" ? "ready_for_pickup" : "in_transit",
-          location: "Seller Location",
-          notes: `Courier: ${courierDetails.courier_partner}. Consignment: ${courierDetails.consignment_number}. ${courierDetails.additional_notes}`,
+          url: courierDetails.tracking_url || `https://track.courier.com/${courierDetails.consignment_number}`,
+          status: "in_transit",
+          location: "In Transit",
+          notes: trackingNotes,
         });
 
       if (trackingError) throw trackingError;
@@ -666,16 +702,16 @@ export default function Orders() {
         .insert({
           order_item_id: selectedOrder.order_item_id,
           old_status: selectedOrder.status,
-          new_status: newStatus,
-          changed_by: sellerId,
-          remarks: `${newStatus} with courier ${courierDetails.courier_partner}`,
+          new_status: "shipped",
+          changed_by: userId, // Use user_id from sellers table
+          remarks: `Shipped with courier ${courierDetails.courier_partner}. Tracking: ${courierDetails.consignment_number}`,
         });
 
       if (historyError) console.warn("Failed to log status history:", historyError);
 
       toast({
-        title: "Order Updated",
-        description: `Order item ${newStatus} and courier assigned successfully`,
+        title: "Order Shipped",
+        description: `Order item marked as shipped and courier assigned successfully`,
       });
 
       // Reset form and close dialog
@@ -1364,7 +1400,7 @@ export default function Orders() {
               Cancel
             </Button>
             <Button onClick={handleCourierAssignment}>
-              Assign Courier & {newStatus === "packed" ? "Mark as Packed" : "Mark as Shipped"}
+              Assign Courier & Mark as Shipped
             </Button>
           </DialogFooter>
         </DialogContent>
