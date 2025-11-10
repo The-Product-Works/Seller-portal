@@ -159,21 +159,39 @@ export default function KYC() {
           if (docs && docs.length > 0) {
             const docMap: { selfie?: string; aadhaar?: string; pan?: string } =
               {};
-            docs.forEach((doc) => {
+            
+            for (const doc of docs) {
               console.log("Processing document:", doc.doc_type, "storage_path:", doc.storage_path);
+              
+              // If storage_path is a full path (not a signed URL), generate signed URL
+              let finalPath = doc.storage_path;
+              if (doc.storage_path && !doc.storage_path.startsWith('http')) {
+                console.log("Generating signed URL for path:", doc.storage_path);
+                const { data: signedData, error: signedError } = await supabase.storage
+                  .from("seller_details")
+                  .createSignedUrl(doc.storage_path, 60 * 60 * 24 * 365 * 100);
+                
+                if (signedError) {
+                  console.error("Failed to create signed URL:", signedError);
+                } else {
+                  finalPath = signedData?.signedUrl || doc.storage_path;
+                  console.log("Signed URL created");
+                }
+              }
+              
               if (doc.doc_type === "selfie") {
                 console.log("Mapping selfie");
-                docMap.selfie = doc.storage_path;
+                docMap.selfie = finalPath;
               }
               if (doc.doc_type === "aadhaar") {
                 console.log("Mapping aadhaar");
-                docMap.aadhaar = doc.storage_path;
+                docMap.aadhaar = finalPath;
               }
               if (doc.doc_type === "pan") {
                 console.log("Mapping pan");
-                docMap.pan = doc.storage_path;
+                docMap.pan = finalPath;
               }
-            });
+            }
             console.log("Final docMap:", docMap);
             setUploadedDocuments(docMap);
           } else {
