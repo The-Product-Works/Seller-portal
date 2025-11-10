@@ -15,7 +15,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/database.types";
-import { Camera, CheckCircle, Loader2 } from "lucide-react";
+import { Camera, CheckCircle, Loader2, X } from "lucide-react";
 import { z } from "zod";
 import { useDocumentUpload } from "@/hooks/useDocumentUpload";
 
@@ -94,6 +94,13 @@ export default function KYC() {
   const [aadhaarPhoto, setAadhaarPhoto] = useState<File | null>(null);
   const [panPhoto, setPanPhoto] = useState<File | null>(null);
 
+  // Store uploaded documents URLs for display
+  const [uploadedDocuments, setUploadedDocuments] = useState<{
+    selfie?: string;
+    aadhaar?: string;
+    pan?: string;
+  }>({});
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -138,6 +145,23 @@ export default function KYC() {
             email: s.email ?? "",
           });
 
+          // Load previously uploaded documents
+          const { data: docs } = await supabase
+            .from("seller_documents")
+            .select("*")
+            .eq("seller_id", s.id);
+
+          if (docs && docs.length > 0) {
+            const docMap: { selfie?: string; aadhaar?: string; pan?: string } =
+              {};
+            docs.forEach((doc) => {
+              if (doc.doc_type === "selfie") docMap.selfie = doc.storage_path;
+              if (doc.doc_type === "aadhaar") docMap.aadhaar = doc.storage_path;
+              if (doc.doc_type === "pan") docMap.pan = doc.storage_path;
+            });
+            setUploadedDocuments(docMap);
+          }
+
           const { data: notifs } = await supabase
             .from("notifications")
             .select("*")
@@ -147,11 +171,17 @@ export default function KYC() {
           setNotifications(notifs ?? []);
         }
       } catch (err: unknown) {
-        const error = err instanceof Error ? err : new Error(String(err));
-        console.error("KYC load error", error);
+        let errorMessage = "Failed to load KYC";
+        if (err instanceof Error) {
+          errorMessage = err.message;
+        } else if (typeof err === "object" && err !== null) {
+          const errObj = err as Record<string, unknown>;
+          errorMessage = (errObj.message as string) || (errObj.details as string) || JSON.stringify(err);
+        }
+        console.error("KYC load error", err);
         toast({
           title: "Error",
-          description: error.message || "Failed to load KYC",
+          description: errorMessage,
           variant: "destructive",
         });
       } finally {
@@ -294,8 +324,8 @@ export default function KYC() {
         }
 
         toast({
-          title: "KYC submitted",
-          description: "Documents are under review",
+          title: "Welcome! 🎉",
+          description: "Your KYC has been submitted successfully. Documents are under review.",
         });
         navigate("/seller-verification");
         return;
@@ -319,7 +349,10 @@ export default function KYC() {
         })
         .eq("id", seller.id);
 
-      if (updErr) throw updErr;
+      if (updErr) {
+        console.error("Sellers update error details:", updErr);
+        throw updErr;
+      }
 
       // If user provided any new photos during resubmission, upload them
       try {
@@ -345,14 +378,21 @@ export default function KYC() {
         });
       }
 
-      toast({ title: "Resubmitted", description: "Your KYC was resubmitted" });
+      toast({ title: "Resubmitted", description: "Your KYC has been resubmitted for review. Thank you for updating your information." });
       navigate("/seller-verification");
     } catch (err: unknown) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      console.error("KYC submit error", error);
+      let errorMessage = "Failed to submit KYC";
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      } else if (typeof err === "object" && err !== null) {
+        // Handle Supabase error objects
+        const errObj = err as Record<string, unknown>;
+        errorMessage = (errObj.message as string) || (errObj.details as string) || JSON.stringify(err);
+      }
+      console.error("KYC submit error", err, errorMessage);
       toast({
         title: "Error",
-        description: error.message || "Failed to submit KYC",
+        description: errorMessage,
         variant: "destructive",
       });
     } finally {
@@ -403,36 +443,107 @@ export default function KYC() {
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                       <Camera className="w-5 h-5" /> Upload Documents
                     </h3>
-                    <div className="grid md:grid-cols-3 gap-4">
-                      <div>
+                    <div className="grid md:grid-cols-3 gap-6">
+                      {/* Selfie */}
+                      <div className="space-y-2">
                         <Label>Selfie Photo</Label>
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) =>
-                            setSelfiePhoto(e.target.files?.[0] || null)
-                          }
-                        />
+                        {uploadedDocuments.selfie || selfiePhoto ? (
+                          <div className="relative border-2 border-dashed rounded-lg p-2">
+                            <img
+                              src={
+                                selfiePhoto
+                                  ? URL.createObjectURL(selfiePhoto)
+                                  : uploadedDocuments.selfie
+                              }
+                              alt="Selfie preview"
+                              className="w-full h-40 object-cover rounded"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setSelfiePhoto(null)}
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                              aria-label="Remove selfie photo"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) =>
+                              setSelfiePhoto(e.target.files?.[0] || null)
+                            }
+                          />
+                        )}
                       </div>
-                      <div>
+
+                      {/* Aadhaar */}
+                      <div className="space-y-2">
                         <Label>Aadhaar Photo</Label>
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) =>
-                            setAadhaarPhoto(e.target.files?.[0] || null)
-                          }
-                        />
+                        {uploadedDocuments.aadhaar || aadhaarPhoto ? (
+                          <div className="relative border-2 border-dashed rounded-lg p-2">
+                            <img
+                              src={
+                                aadhaarPhoto
+                                  ? URL.createObjectURL(aadhaarPhoto)
+                                  : uploadedDocuments.aadhaar
+                              }
+                              alt="Aadhaar preview"
+                              className="w-full h-40 object-cover rounded"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setAadhaarPhoto(null)}
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                              aria-label="Remove aadhaar photo"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) =>
+                              setAadhaarPhoto(e.target.files?.[0] || null)
+                            }
+                          />
+                        )}
                       </div>
-                      <div>
+
+                      {/* PAN */}
+                      <div className="space-y-2">
                         <Label>PAN Photo</Label>
-                        <Input
-                          type="file"
-                          accept="image/*"
-                          onChange={(e) =>
-                            setPanPhoto(e.target.files?.[0] || null)
-                          }
-                        />
+                        {uploadedDocuments.pan || panPhoto ? (
+                          <div className="relative border-2 border-dashed rounded-lg p-2">
+                            <img
+                              src={
+                                panPhoto
+                                  ? URL.createObjectURL(panPhoto)
+                                  : uploadedDocuments.pan
+                              }
+                              alt="PAN preview"
+                              className="w-full h-40 object-cover rounded"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setPanPhoto(null)}
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                              aria-label="Remove PAN photo"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) =>
+                              setPanPhoto(e.target.files?.[0] || null)
+                            }
+                          />
+                        )}
                       </div>
                     </div>
                   </div>
