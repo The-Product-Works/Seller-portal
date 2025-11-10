@@ -867,7 +867,7 @@ export default function OrderDetails() {
                 </div>
                 <div>
                   <span className="font-medium text-gray-700">Contact:</span>
-                  <p className="text-sm">{shippingAddress?.phone ? maskPhone(shippingAddress.phone) : buyer?.phone ? maskPhone(buyer.phone) : "Phone not available"}</p>
+                  <p className="text-sm">{shippingAddress?.phone || buyer?.phone || "Phone not available"}</p>
                 </div>
               </div>
             </CardContent>
@@ -1354,7 +1354,7 @@ export default function OrderDetails() {
                   </Button>
                 )}
 
-                {!["delivered", "cancelled", "refunded"].includes(orderItem?.status || "") && (
+                {!["delivered", "cancelled", "refunded","returned"].includes(orderItem?.status || "") && (
                   <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>
                     <DialogTrigger asChild>
                       <Button variant="destructive" className="w-full">
@@ -1393,40 +1393,46 @@ export default function OrderDetails() {
 
                 {/* Manual Status Change for Testing */}
                 <div className="border-t pt-3">
-                  <p className="text-xs text-gray-500 mb-2">Quick Status Change:</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => updateOrderStatus("confirmed")}
+                  <div className="space-y-2">
+                    <Label htmlFor="quickStatus" className="text-xs text-gray-600 flex items-center gap-1">
+                      <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+                      Force Status Change (Advanced):
+                    </Label>
+                    <Select 
+                      value={orderItem?.status || "pending"} 
+                      onValueChange={(value) => {
+                        if (confirm(`⚠️ WARNING: This will directly change the status to "${value}" without validations. Are you sure?`)) {
+                          updateOrderStatus(value);
+                        }
+                      }}
                       disabled={updating}
                     >
-                      Confirm
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => updateOrderStatus("packed")}
-                      disabled={updating}
-                    >
-                      Packed
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => updateOrderStatus("shipped")}
-                      disabled={updating}
-                    >
-                      Shipped
-                    </Button>
-                    <Button 
-                      size="sm" 
-                      variant="outline"
-                      onClick={() => updateOrderStatus("delivered")}
-                      disabled={updating}
-                    >
-                      Delivered
-                    </Button>
+                      <SelectTrigger id="quickStatus" className="w-full">
+                        <SelectValue placeholder="Select status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="pending">⏳ Pending</SelectItem>
+                        <SelectItem value="confirmed">✅ Confirmed</SelectItem>
+                        <SelectItem value="packed">📦 Packed</SelectItem>
+                        <SelectItem value="shipped">🚚 Shipped</SelectItem>
+                        <SelectItem value="delivered">✓ Delivered</SelectItem>
+                        <SelectItem value="cancelled">❌ Cancelled</SelectItem>
+                        <SelectItem value="returned">↩️ Returned</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div className="bg-red-50 border border-red-200 rounded-md p-3 mt-3">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="h-4 w-4 text-red-600 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="text-xs font-semibold text-red-800">⚠️ DANGER: Advanced Quick Actions</p>
+                        <p className="text-xs text-red-700 mt-1">
+                          Changing status directly may skip important validations and courier information. 
+                          Use only if you know what you're doing. Prefer using the standard action buttons above.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </CardContent>

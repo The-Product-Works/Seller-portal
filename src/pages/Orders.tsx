@@ -545,40 +545,6 @@ export default function Orders() {
     navigate(`/order-item/${orderItemId}`);
   };
 
-  const handleOrderAction = (order: OrderItemWithDetails, action: string) => {
-    setSelectedOrder(order);
-    
-    switch (action) {
-      case "pack":
-        setNewStatus("packed");
-        setStatusChangeDialogOpen(true);
-        break;
-      case "ship":
-        setNewStatus("shipped");
-        setCourierDialogOpen(true);
-        break;
-      case "deliver":
-        setNewStatus("delivered");
-        setStatusChangeDialogOpen(true);
-        break;
-      case "cancel":
-        setNewStatus("cancelled");
-        setStatusChangeDialogOpen(true);
-        break;
-      case "return":
-        setReturnDialogOpen(true);
-        break;
-      case "refund":
-        setRefundDialogOpen(true);
-        break;
-      case "details":
-        setOrderDetailsOpen(true);
-        break;
-      default:
-        break;
-    }
-  };
-
   const handleStatusChange = async () => {
     if (!selectedOrder) return;
 
@@ -787,91 +753,7 @@ export default function Orders() {
     }
   };
 
-  const getActionButtons = (order: OrderItemWithDetails) => {
-    const buttons = [];
 
-    switch (order.status) {
-      case "confirmed":
-        buttons.push(
-          <Button
-            key="pack"
-            size="sm"
-            variant="outline"
-            onClick={() => handleOrderAction(order, "pack")}
-            className="h-8"
-          >
-            <Package className="h-3 w-3 mr-1" />
-            Pack
-          </Button>
-        );
-        break;
-      
-      case "packed":
-        buttons.push(
-          <Button
-            key="ship"
-            size="sm"
-            variant="outline"
-            onClick={() => handleOrderAction(order, "ship")}
-            className="h-8"
-          >
-            <Truck className="h-3 w-3 mr-1" />
-            Ship
-          </Button>
-        );
-        break;
-      
-      case "shipped":
-        buttons.push(
-          <Button
-            key="deliver"
-            size="sm"
-            variant="outline"
-            onClick={() => handleOrderAction(order, "deliver")}
-            className="h-8"
-          >
-            <CheckCircle className="h-3 w-3 mr-1" />
-            Delivered
-          </Button>
-        );
-        break;
-      
-      case "delivered":
-        if (order.return_status === "NA") {
-          buttons.push(
-            <Button
-              key="return"
-              size="sm"
-              variant="outline"
-              onClick={() => handleOrderAction(order, "return")}
-              className="h-8"
-            >
-              <RotateCcw className="h-3 w-3 mr-1" />
-              Return
-            </Button>
-          );
-        }
-        break;
-    }
-
-    // Cancel button for non-delivered orders
-    if (!["delivered", "cancelled", "returned"].includes(order.status)) {
-      buttons.push(
-        <Button
-          key="cancel"
-          size="sm"
-          variant="destructive"
-          onClick={() => handleOrderAction(order, "cancel")}
-          className="h-8"
-        >
-          <AlertCircle className="h-3 w-3 mr-1" />
-          Cancel
-        </Button>
-      );
-    }
-
-    return buttons;
-  };
 
   if (loading) {
     return (
@@ -1076,7 +958,7 @@ export default function Orders() {
                   <TableHead className="text-right">Value</TableHead>
                   <TableHead className="text-center">Status</TableHead>
                   <TableHead className="text-center">Return Status</TableHead>
-                  <TableHead className="text-center">Actions</TableHead>
+                  <TableHead className="text-center">Details & Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1213,7 +1095,7 @@ export default function Orders() {
                         </Badge>
                       </TableCell>
                       <TableCell className="text-center">
-                        <div className="flex flex-wrap gap-1 justify-center">
+                        <div className="flex justify-center">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1223,7 +1105,6 @@ export default function Orders() {
                             <Eye className="h-3 w-3 mr-1" />
                             View
                           </Button>
-                          {getActionButtons(order)}
                         </div>
                       </TableCell>
                     </TableRow>
