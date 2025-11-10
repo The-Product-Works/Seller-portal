@@ -300,18 +300,30 @@ export default function KYC() {
 
         // Upload provided photos (this also inserts rows into seller_documents via hook)
         try {
+          console.log("Starting document uploads for seller:", newSeller.id);
+          console.log("Selfie photo:", selfiePhoto?.name, selfiePhoto?.size);
+          console.log("Aadhaar photo:", aadhaarPhoto?.name, aadhaarPhoto?.size);
+          console.log("PAN photo:", panPhoto?.name, panPhoto?.size);
+          
           if (selfiePhoto) {
+            console.log("Uploading selfie...");
             const r = await uploadDocument(newSeller.id, selfiePhoto, "selfie");
+            console.log("Selfie upload result:", r);
             if (!r.success) console.error("Selfie upload failed:", r.error);
           }
           if (aadhaarPhoto) {
+            console.log("Uploading aadhaar...");
             const r = await uploadDocument(newSeller.id, aadhaarPhoto, "aadhaar");
+            console.log("Aadhaar upload result:", r);
             if (!r.success) console.error("Aadhaar upload failed:", r.error);
           }
           if (panPhoto) {
+            console.log("Uploading pan...");
             const r = await uploadDocument(newSeller.id, panPhoto, "pan");
+            console.log("PAN upload result:", r);
             if (!r.success) console.error("PAN upload failed:", r.error);
           }
+          console.log("All document uploads completed");
         } catch (upErr: unknown) {
           const error = upErr instanceof Error ? upErr : new Error(String(upErr));
           console.error("Error uploading KYC documents:", error);
@@ -356,18 +368,30 @@ export default function KYC() {
 
       // If user provided any new photos during resubmission, upload them
       try {
+        console.log("Starting document re-uploads for seller:", seller.id);
+        console.log("Selfie photo:", selfiePhoto?.name, selfiePhoto?.size);
+        console.log("Aadhaar photo:", aadhaarPhoto?.name, aadhaarPhoto?.size);
+        console.log("PAN photo:", panPhoto?.name, panPhoto?.size);
+        
         if (selfiePhoto) {
+          console.log("Uploading new selfie...");
           const r = await uploadDocument(seller.id, selfiePhoto, "selfie");
+          console.log("Selfie upload result:", r);
           if (!r.success) console.error("Selfie upload failed:", r.error);
         }
         if (aadhaarPhoto) {
+          console.log("Uploading new aadhaar...");
           const r = await uploadDocument(seller.id, aadhaarPhoto, "aadhaar");
+          console.log("Aadhaar upload result:", r);
           if (!r.success) console.error("Aadhaar upload failed:", r.error);
         }
         if (panPhoto) {
+          console.log("Uploading new pan...");
           const r = await uploadDocument(seller.id, panPhoto, "pan");
+          console.log("PAN upload result:", r);
           if (!r.success) console.error("PAN upload failed:", r.error);
         }
+        console.log("All document re-uploads completed");
       } catch (upErr: unknown) {
         const error = upErr instanceof Error ? upErr : new Error(String(upErr));
         console.error("Error uploading KYC documents:", error);
@@ -460,7 +484,10 @@ export default function KYC() {
                             />
                             <button
                               type="button"
-                              onClick={() => setSelfiePhoto(null)}
+                              onClick={() => {
+                                setSelfiePhoto(null);
+                                setUploadedDocuments({ ...uploadedDocuments, selfie: undefined });
+                              }}
                               className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
                               aria-label="Remove selfie photo"
                             >
@@ -494,7 +521,10 @@ export default function KYC() {
                             />
                             <button
                               type="button"
-                              onClick={() => setAadhaarPhoto(null)}
+                              onClick={() => {
+                                setAadhaarPhoto(null);
+                                setUploadedDocuments({ ...uploadedDocuments, aadhaar: undefined });
+                              }}
                               className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
                               aria-label="Remove aadhaar photo"
                             >
@@ -528,7 +558,10 @@ export default function KYC() {
                             />
                             <button
                               type="button"
-                              onClick={() => setPanPhoto(null)}
+                              onClick={() => {
+                                setPanPhoto(null);
+                                setUploadedDocuments({ ...uploadedDocuments, pan: undefined });
+                              }}
                               className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
                               aria-label="Remove PAN photo"
                             >
