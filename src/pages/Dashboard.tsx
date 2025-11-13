@@ -49,6 +49,16 @@ interface CategoryRevenue {
   orderCount: number;
 }
 
+interface ProductPerformanceMetric {
+  listing_id: string;
+  productName: string;
+  views: number; // Can be estimated or tracked separately
+  orders: number;
+  revenue: number;
+  averageRating: number;
+  reviewCount: number;
+}
+
 interface HealthScore {
   score: number;
   verified: {
@@ -104,6 +114,7 @@ export default function Dashboard() {
   const [stockFilter, setStockFilter] = useState<string>("all"); // New: all, instock, lowstock, outofstock
   const [categoryData, setCategoryData] = useState<CategoryRevenue[]>([]);
   const [listings, setListings] = useState<ListingWithDetails[]>([]);
+  const [performanceMetrics, setPerformanceMetrics] = useState<ProductPerformanceMetric[]>([]);
 
   const loadListings = useCallback(async (seller_id: string) => {
     const { data, error } = await supabase
@@ -302,8 +313,80 @@ export default function Dashboard() {
         status: seller?.verification_status || "pending",
       });
 
+      // Load performance metrics for each product BEFORE setting stats
+      const { data: productPerformance } = await supabase
+        .from("seller_product_listings")
+        .select(`
+          listing_id,
+          seller_title,
+          global_products(product_name)
+        `)
+        .eq("seller_id", authSellerId);
+
+      interface PerfMetric {
+        listing_id: string;
+        productName: string;
+        views: number;
+        orders: number;
+        revenue: number;
+        averageRating: number;
+        reviewCount: number;
+      }
+      
+      const metricsMap = new Map<string, PerfMetric>();
+      let totalProductRevenue = 0;
+      
+      // Get order data for each product
+      if (productPerformance) {
+        for (const product of productPerformance) {
+          const { count: orderCount } = await supabase
+            .from("order_items")
+            .select("*", { count: "exact", head: true })
+            .eq("listing_id", product.listing_id);
+
+          const { data: productOrders } = await supabase
+            .from("order_items")
+            .select("price_per_unit, quantity")
+            .eq("listing_id", product.listing_id);
+
+          const revenue = (productOrders || []).reduce((sum, item) => 
+            sum + ((item.price_per_unit || 0) * (item.quantity || 0)), 0);
+          
+          totalProductRevenue += revenue;
+
+          const { data: reviews } = await supabase
+            .from("product_reviews")
+            .select("rating")
+            .eq("listing_id", product.listing_id);
+
+          let avgProductRating = 0;
+          if (reviews && reviews.length > 0) {
+            const ratings = reviews.filter(r => r.rating).map(r => r.rating) as number[];
+            if (ratings.length > 0) {
+              avgProductRating = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+            }
+          }
+
+          metricsMap.set(product.listing_id, {
+            listing_id: product.listing_id,
+            productName: product.seller_title || product.global_products?.product_name || "Product",
+            views: (orderCount || 0) * 3, // Estimate: ~3 views per order
+            orders: orderCount || 0,
+            revenue,
+            averageRating: avgProductRating,
+            reviewCount: reviews?.length || 0
+          });
+        }
+      }
+
+      // Convert to array and sort by revenue
+      const performanceArray = Array.from(metricsMap.values())
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 10); // Top 10 products
+
+      // NOW set stats with actual product revenue sum
       setStats({
-        totalRevenue: currentRevenue,
+        totalRevenue: totalProductRevenue,
         totalOrders: totalOrdersCount || 0,
         totalProducts: totalProducts || 0,
         activeProducts: activeCount || 0,
@@ -312,6 +395,8 @@ export default function Dashboard() {
         averageRating: avgRating,
         lowStockCount: lowStock,
       });
+
+      setPerformanceMetrics(performanceArray);
     } catch (error) {
       console.error("Error loading dashboard data:", error);
     } finally {
@@ -345,7 +430,7 @@ export default function Dashboard() {
   }, [loadDashboardData]);
 
   const statCards = [
-    { title: "Total Revenue", value: `₹${stats.totalRevenue.toFixed(2)}`, icon: DollarSign, description: revenueChange !== null ? `${revenueChange > 0 ? '+' : ''}${revenueChange.toFixed(1)}%` : "This month", gradient: "from-green-500 to-emerald-600" },
+    { title: "Total Revenue", value: `₹${stats.totalRevenue.toFixed(2)}`, icon: DollarSign, description: revenueChange !== null ? `${revenueChange > 0 ? '+' : ''}${revenueChange.toFixed(1)}% vs last month` : "All time", gradient: "from-green-500 to-emerald-600" },
     { title: "Total Orders", value: stats.totalOrders.toString(), icon: ShoppingCart, description: `${stats.pendingOrders} pending`, gradient: "from-blue-500 to-cyan-600" },
     { title: "Total Products", value: stats.totalProducts.toString(), icon: Package, description: `${stats.activeProducts} active`, gradient: "from-purple-500 to-pink-600" },
     { title: "Pending Orders", value: stats.pendingOrders.toString(), icon: Clock, description: "Ready to process", gradient: "from-orange-500 to-red-600" },
@@ -538,6 +623,53 @@ export default function Dashboard() {
                       })}
                     </div>
                   ) : <p className="text-muted-foreground text-center py-4">No sales data available yet</p>}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-purple-600" />
+                    <CardTitle>Product Performance Metrics</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {performanceMetrics.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-3 px-2 font-semibold">Product Name</th>
+                            <th className="text-right py-3 px-2 font-semibold">Views</th>
+                            <th className="text-right py-3 px-2 font-semibold">Orders</th>
+                            <th className="text-right py-3 px-2 font-semibold">Revenue</th>
+                            <th className="text-center py-3 px-2 font-semibold">Rating</th>
+                            <th className="text-right py-3 px-2 font-semibold">Reviews</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {performanceMetrics.map((metric) => (
+                            <tr key={metric.listing_id} className="border-b hover:bg-gray-50">
+                              <td className="py-3 px-2 font-medium truncate">{metric.productName}</td>
+                              <td className="text-right py-3 px-2 text-gray-600">{metric.views}</td>
+                              <td className="text-right py-3 px-2 text-gray-600">{metric.orders}</td>
+                              <td className="text-right py-3 px-2 font-semibold text-green-600">₹{metric.revenue.toFixed(0)}</td>
+                              <td className="text-center py-3 px-2">
+                                {metric.averageRating > 0 ? (
+                                  <span className="text-yellow-600 font-medium">{metric.averageRating.toFixed(1)}★</span>
+                                ) : (
+                                  <span className="text-gray-400">—</span>
+                                )}
+                              </td>
+                              <td className="text-right py-3 px-2 text-gray-600">{metric.reviewCount}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-center py-8">No product performance data available yet</p>
+                  )}
                 </CardContent>
               </Card>
             </>

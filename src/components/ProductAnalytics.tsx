@@ -96,21 +96,33 @@ export function ProductAnalytics({ sellerId: propSellerId }: ProductAnalyticsPro
         .from("order_items")
         .select(`
           listing_id,
+          order_id,
           quantity,
           price_per_unit,
-          subtotal,
-          orders!inner(
-            seller_id,
-            status,
-            final_amount
-          )
+          subtotal
         `)
-        .eq("orders.seller_id", sellerId)
-        .neq("orders.status", "cancelled");
+        .eq("seller_id", sellerId);
 
       if (orderError) {
         console.error("Error fetching order items:", orderError);
       }
+
+      // Get non-cancelled orders to filter items
+      const { data: orders } = await supabase
+        .from("orders")
+        .select("order_id, status")
+        .eq("seller_id", sellerId)
+        .neq("status", "cancelled");
+
+      interface OrderItem {
+        listing_id: string;
+        order_id: string;
+        quantity: number;
+        price_per_unit: number;
+        subtotal: number | null;
+      }
+
+      const nonCancelledOrderIds = new Set((orders || []).map((o: {order_id: string; status: string}) => o.order_id));
 
       // Calculate analytics
       const totalProducts = products?.length || 0;
@@ -118,9 +130,11 @@ export function ProductAnalytics({ sellerId: propSellerId }: ProductAnalyticsPro
       const draftProducts = products?.filter(p => p.status === "draft").length || 0;
 
       // Calculate total revenue from non-cancelled orders
-      const totalRevenue = orderItems?.reduce((sum, item) => {
-        return sum + (item.subtotal || (item.quantity * item.price_per_unit));
-      }, 0) || 0;
+      const totalRevenue = (orderItems as OrderItem[] || [])
+        .filter((item: OrderItem) => nonCancelledOrderIds.has(item.order_id))
+        .reduce((sum, item: OrderItem) => {
+          return sum + (item.subtotal || (item.quantity * item.price_per_unit));
+        }, 0) || 0;
 
       // Calculate average price
       const allPrices = products?.map(p => p.base_price).filter(price => price > 0) || [];
@@ -161,13 +175,15 @@ export function ProductAnalytics({ sellerId: propSellerId }: ProductAnalyticsPro
         .slice(0, 5);
 
       // Revenue by status
-      const activeRevenue = orderItems?.reduce((sum, item) => {
-        const product = products?.find(p => p.listing_id === item.listing_id);
-        if (product?.status === "active") {
-          return sum + (item.subtotal || (item.quantity * item.price_per_unit));
-        }
-        return sum;
-      }, 0) || 0;
+      const activeRevenue = (orderItems as OrderItem[] || [])
+        .filter((item: OrderItem) => nonCancelledOrderIds.has(item.order_id))
+        .reduce((sum, item: OrderItem) => {
+          const product = products?.find(p => p.listing_id === item.listing_id);
+          if (product?.status === "active") {
+            return sum + (item.subtotal || (item.quantity * item.price_per_unit));
+          }
+          return sum;
+        }, 0) || 0;
 
       const draftRevenue = totalRevenue - activeRevenue;
 
