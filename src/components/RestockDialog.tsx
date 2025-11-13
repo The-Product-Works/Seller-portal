@@ -55,6 +55,7 @@ interface RestockDialogProps {
   onOpenChange: (open: boolean) => void;
   sellerId: string | null;
   onSuccess?: () => void;
+  preSelectedListingId?: string;
 }
 
 export default function RestockDialog({
@@ -62,14 +63,16 @@ export default function RestockDialog({
   onOpenChange,
   sellerId,
   onSuccess,
+  preSelectedListingId,
 }: RestockDialogProps) {
   const [products, setProducts] = useState<Product[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
-  const [selectedProduct, setSelectedProduct] = useState<string>("");
+  const [selectedProduct, setSelectedProduct] = useState<string>(preSelectedListingId || "");
   const [selectedVariant, setSelectedVariant] = useState<string>("");
   const [quantity, setQuantity] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [isSimpleMode, setIsSimpleMode] = useState(!!preSelectedListingId);
   const { toast } = useToast();
 
   const loadProducts = useCallback(async () => {
@@ -114,8 +117,15 @@ export default function RestockDialog({
   useEffect(() => {
     if (open && sellerId) {
       loadProducts();
+      if (preSelectedListingId) {
+        setSelectedProduct(preSelectedListingId);
+        setIsSimpleMode(true);
+      } else {
+        setSelectedProduct("");
+        setIsSimpleMode(false);
+      }
     }
-  }, [open, sellerId, loadProducts]);
+  }, [open, sellerId, loadProducts, preSelectedListingId]);
 
   useEffect(() => {
     if (selectedProduct) {
@@ -236,27 +246,38 @@ export default function RestockDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Product Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="product">Product</Label>
-            <Select value={selectedProduct} onValueChange={setSelectedProduct}>
-              <SelectTrigger id="product" disabled={loading}>
-                <SelectValue
-                  placeholder={loading ? "Loading products..." : "Select a product"}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {products.map((product) => (
-                  <SelectItem key={product.listing_id} value={product.listing_id}>
-                    {product.product_name} (Stock: {product.stock_quantity})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Product Selection - Only if not pre-selected */}
+          {!isSimpleMode && (
+            <div className="space-y-2">
+              <Label htmlFor="product">Product</Label>
+              <Select value={selectedProduct} onValueChange={setSelectedProduct}>
+                <SelectTrigger id="product" disabled={loading}>
+                  <SelectValue
+                    placeholder={loading ? "Loading products..." : "Select a product"}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {products.map((product) => (
+                    <SelectItem key={product.listing_id} value={product.listing_id}>
+                      {product.product_name} (Stock: {product.stock_quantity})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Show current product name in simple mode */}
+          {isSimpleMode && selectedProduct && (
+            <div className="bg-gray-50 p-3 rounded border">
+              <p className="text-sm text-muted-foreground">Product</p>
+              <p className="font-medium">{products.find(p => p.listing_id === selectedProduct)?.product_name}</p>
+              <p className="text-xs text-muted-foreground">Current Stock: {products.find(p => p.listing_id === selectedProduct)?.stock_quantity}</p>
+            </div>
+          )}
 
           {/* Variant Selection */}
-          {variants.length > 0 && selectedProduct && (
+          {!isSimpleMode && variants.length > 0 && selectedProduct && (
             <div className="space-y-2">
               <Label htmlFor="variant">Variant</Label>
               <Select value={selectedVariant} onValueChange={setSelectedVariant}>

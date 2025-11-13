@@ -47,9 +47,10 @@ export function SellerGraph({ sellerId }: SellerGraphProps) {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - daysBack);
 
-      const { data: orders, error } = await supabase
-        .from("orders")
-        .select("total_amount, created_at")
+      // Query order_items instead of orders (orders table doesn't have seller_id)
+      const { data: orderItems, error } = await supabase
+        .from("order_items")
+        .select("price_per_unit, quantity, created_at")
         .eq("seller_id", sellerId)
         .gte("created_at", startDate.toISOString())
         .order("created_at");
@@ -58,9 +59,10 @@ export function SellerGraph({ sellerId }: SellerGraphProps) {
 
       // Group by date
       const groupedData: Record<string, number> = {};
-      (orders || []).forEach((order: OrderRecord) => {
-        const date = new Date(order.created_at).toLocaleDateString();
-        groupedData[date] = (groupedData[date] || 0) + (order.total_amount || 0);
+      (orderItems || []).forEach((item: { created_at: string; price_per_unit: number; quantity: number }) => {
+        const date = new Date(item.created_at).toLocaleDateString();
+        const sales = (item.price_per_unit || 0) * (item.quantity || 0);
+        groupedData[date] = (groupedData[date] || 0) + sales;
       });
 
       // Calculate profit (assume 20% profit margin for demo)

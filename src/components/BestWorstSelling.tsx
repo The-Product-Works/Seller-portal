@@ -73,30 +73,25 @@ export function BestWorstSelling({ sellerId }: BestWorstSellingProps) {
       }
 
       // Get sales data from order_items joined with seller_product_listings
+      // Note: seller_id is in order_items, not in orders table
       const { data: salesData, error } = await supabase
         .from("order_items")
         .select(`
           listing_id,
           quantity,
           price_per_unit,
+          created_at,
           seller_product_listings!inner (
             listing_id,
             seller_title,
             base_price,
             total_stock_quantity,
             seller_id
-          ),
-          orders!inner (
-            status,
-            seller_id,
-            created_at
           )
         `)
-        .eq("seller_product_listings.seller_id", sellerId)
-        .eq("orders.seller_id", sellerId)
-        .neq("orders.status", "cancelled")
-        .neq("orders.status", "refunded")
-        .gte("orders.created_at", startDate.toISOString());
+        .eq("seller_id", sellerId)
+        .neq("status", "cancelled")
+        .gte("created_at", startDate.toISOString());
 
       if (error) {
         console.error("Error fetching sales data:", error);
@@ -152,8 +147,10 @@ export function BestWorstSelling({ sellerId }: BestWorstSellingProps) {
         .slice(0, 5);
         
       // Sort by performance score for worst sellers (but only products with sales)
+      // Filter out products already in best sellers to avoid duplicates
+      const bestSellerIds = new Set(sortedBest.map(p => p.listing_id));
       const sortedWorst = [...scoredProducts]
-        .filter(item => item.total_sold > 0)
+        .filter(item => item.total_sold > 0 && !bestSellerIds.has(item.listing_id))
         .sort((a, b) => a.performance_score - b.performance_score)
         .slice(0, 5);
 

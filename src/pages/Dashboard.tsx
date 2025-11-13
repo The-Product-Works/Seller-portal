@@ -1,46 +1,70 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import { SellerGraph } from "@/components/SellerGraph";
-import { DashboardProductStock } from "@/components/DashboardProductStock";
 import { SellerOrders } from "@/components/SellerOrders";
 import { BestWorstSelling } from "@/components/BestWorstSelling";
-import { AdvancedHealthScoreDashboard } from "@/components/AdvancedHealthScoreDashboard";
 import { ProductAnalytics } from "@/components/ProductAnalytics";
 import { ProductGalleryGrid } from "@/components/ProductGalleryGrid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { 
-  DollarSign, Package, ShoppingCart, TrendingUp, AlertCircle, Clock, 
-  RefreshCw, Plus, Filter, BarChart3, Heart, Award, Activity
-} from "lucide-react";
+import { DollarSign, Package, ShoppingCart, Clock, AlertCircle, RefreshCw, Star, Shield, TrendingUp } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
 import { Button } from "@/components/ui/button";
-import { 
-  Select, 
-  SelectContent, 
-  SelectItem, 
-  SelectTrigger, 
-  SelectValue 
-} from "@/components/ui/select";
-import RestockDialog from "@/components/RestockDialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { SimpleRestockDialog } from "@/components/SimpleRestockDialog";
+
+interface ListingWithDetails {
+  listing_id: string;
+  seller_id: string;
+  seller_title: string;
+  total_stock_quantity: number;
+  base_price: number;
+  status: string;
+  created_at: string;
+  global_products?: {
+    product_name: string;
+    category_name: string;
+  };
+  listing_images?: Array<{ image_url: string; is_primary: boolean }>;
+}
 
 interface Stats {
   totalRevenue: number;
   totalOrders: number;
   totalProducts: number;
   activeProducts: number;
-  draftProducts: number;
+  outOfStockProducts: number;
   pendingOrders: number;
+  averageRating: number;
+  lowStockCount: number;
 }
 
-interface OrderRecord {
-  total_amount: number;
+interface CategoryRevenue {
+  category: string;
+  revenue: number;
+  orderCount: number;
 }
 
-interface Seller {
-  id: string;
-  verification_status: string;
+interface HealthScore {
+  score: number;
+  verified: {
+    gstin: boolean;
+    pan: boolean;
+    aadhaar: boolean;
+  };
+  certification: {
+    hasTransparency: number;
+    hasCertificates: boolean;
+  };
+  feedback: {
+    averageRating: number;
+    totalReviews: number;
+  };
+  status: string;
 }
 
 export default function Dashboard() {
@@ -49,119 +73,251 @@ export default function Dashboard() {
     totalOrders: 0,
     totalProducts: 0,
     activeProducts: 0,
-    draftProducts: 0,
+    outOfStockProducts: 0,
     pendingOrders: 0,
+    averageRating: 0,
+    lowStockCount: 0,
+  });
+  const [healthScore, setHealthScore] = useState<HealthScore>({
+    score: 0,
+    verified: { gstin: false, pan: false, aadhaar: false },
+    certification: { hasTransparency: 0, hasCertificates: false },
+    feedback: { averageRating: 0, totalReviews: 0 },
+    status: "new",
   });
   const [loading, setLoading] = useState(true);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [sellerId, setSellerId] = useState<string | null>(null);
   const [revenueChange, setRevenueChange] = useState<number | null>(null);
   const [showRestockDialog, setShowRestockDialog] = useState(false);
+  const [selectedListing, setSelectedListing] = useState<ListingWithDetails | null>(null);
+  const [restockTarget, setRestockTarget] = useState<{
+    productId: string;
+    productName: string;
+    currentStock: number;
+  } | null>(null);
   const [orderFilter, setOrderFilter] = useState<string>("all");
   const [refreshing, setRefreshing] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [priceRange, setPriceRange] = useState<[number, number]>([0, 100000]);
+  const [timeFilter, setTimeFilter] = useState<string>("monthly");
+  const [stockFilter, setStockFilter] = useState<string>("all"); // New: all, instock, lowstock, outofstock
+  const [categoryData, setCategoryData] = useState<CategoryRevenue[]>([]);
+  const [listings, setListings] = useState<ListingWithDetails[]>([]);
 
-  useEffect(() => {
-    loadDashboardData();
+  const loadListings = useCallback(async (seller_id: string) => {
+    const { data, error } = await supabase
+      .from("seller_product_listings")
+      .select(
+        `
+        listing_id,
+        seller_id,
+        seller_title,
+        total_stock_quantity,
+        base_price,
+        status,
+        created_at,
+        global_products(product_name),
+        listing_images(image_url, is_primary)
+      `
+      )
+      .eq("seller_id", seller_id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error loading listings:", error);
+      return;
+    }
+
+    setListings((data as ListingWithDetails[]) || []);
   }, []);
 
-  const loadDashboardData = async () => {
+  const loadDashboardData = useCallback(async () => {
     setLoading(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
     try {
-      const { data: seller } = await supabase
-        .from("sellers")
-        .select("id, verification_status")
-        .eq("user_id", user.id)
-        .single();
-
-      if (!seller) {
+      const authSellerId = await getAuthenticatedSellerId();
+      if (!authSellerId) {
+        console.error("No seller ID found");
         setLoading(false);
         return;
       }
 
-      const sellerData = seller as Seller;
-      setKycStatus(sellerData.verification_status);
-      setSellerId(sellerData.id);
+      setSellerId(authSellerId);
+      await loadListings(authSellerId);
 
-      // Calculate current month revenue (from orders table, excluding cancelled/refunded)
+      // Get seller basic info and KYC details
+      const { data: seller } = await supabase
+        .from("sellers")
+        .select("verification_status, gstin_verified, pan_verified, aadhaar_verified")
+        .eq("id", authSellerId)
+        .single();
+
+      if (seller) {
+        setKycStatus(seller.verification_status);
+      }
+
+      // Current month revenue - query order_items for this seller
       const now = new Date();
-      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString();
+      const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0).toISOString();
 
-      const { data: currentMonthOrders } = await supabase
-        .from("orders")
-        .select("total_amount, final_amount")
-        .eq("seller_id", sellerData.id)
-        .neq("status", "cancelled")
-        .neq("status", "refunded")
-        .gte("created_at", startOfMonth.toISOString());
+      const { data: currentMonthItems } = await supabase
+        .from("order_items")
+        .select("price_per_unit, quantity")
+        .eq("seller_id", authSellerId)
+        .gte("created_at", startOfMonth);
 
-      const { data: lastMonthOrders } = await supabase
-        .from("orders")
-        .select("total_amount, final_amount")
-        .eq("seller_id", sellerData.id)
-        .neq("status", "cancelled")
-        .neq("status", "refunded")
-        .gte("created_at", startOfLastMonth.toISOString())
-        .lte("created_at", endOfLastMonth.toISOString());
+      const { data: lastMonthItems } = await supabase
+        .from("order_items")
+        .select("price_per_unit, quantity")
+        .eq("seller_id", authSellerId)
+        .gte("created_at", startOfLastMonth)
+        .lte("created_at", endOfLastMonth);
 
-      // Calculate current month revenue
-      const currentRevenue = currentMonthOrders?.reduce((sum, order) => 
-        sum + (order.final_amount || order.total_amount), 0) || 0;
+      const currentRevenue = (currentMonthItems || []).reduce((sum, item) => 
+        sum + ((item.price_per_unit || 0) * (item.quantity || 0)), 0);
       
-      // Calculate last month revenue  
-      const lastMonthRevenue = lastMonthOrders?.reduce((sum, order) => 
-        sum + (order.final_amount || order.total_amount), 0) || 0;
+      const lastMonthRevenue = (lastMonthItems || []).reduce((sum, item) => 
+        sum + ((item.price_per_unit || 0) * (item.quantity || 0)), 0);
 
-      // Calculate percentage change
       const revenueChangePercent = lastMonthRevenue === 0 
         ? (currentRevenue > 0 ? 100 : 0)
         : ((currentRevenue - lastMonthRevenue) / lastMonthRevenue) * 100;
 
       setRevenueChange(Number(revenueChangePercent.toFixed(1)));
 
-      // Get product counts using seller_id from sellers table
-      const { count: activeCount } = await supabase
+      // Get products
+      const { data: activeProducts, count: activeCount } = await supabase
         .from("seller_product_listings")
-        .select("listing_id", { count: "exact" })
-        .eq("seller_id", sellerData.id)
+        .select("listing_id, total_stock_quantity", { count: "exact" })
+        .eq("seller_id", authSellerId)
         .eq("status", "active");
 
-      const { count: draftCount } = await supabase
+      const { count: totalProducts } = await supabase
         .from("seller_product_listings")
         .select("listing_id", { count: "exact" })
-        .eq("seller_id", sellerData.id)
-        .eq("status", "draft");
+        .eq("seller_id", authSellerId);
 
-      // Get order counts using seller_id
+      const outOfStock = (activeProducts || []).filter(p => p.total_stock_quantity === 0).length;
+      const lowStock = (activeProducts || []).filter(p => p.total_stock_quantity > 0 && p.total_stock_quantity <= 10).length;
+
+      // Get order counts from order_items
       const { count: totalOrdersCount } = await supabase
-        .from("orders")
+        .from("order_items")
         .select("order_id", { count: "exact" })
-        .eq("seller_id", sellerData.id);
+        .eq("seller_id", authSellerId);
 
       const { count: pendingOrdersCount } = await supabase
-        .from("orders")
+        .from("order_items")
         .select("order_id", { count: "exact" })
-        .eq("seller_id", sellerData.id)
+        .eq("seller_id", authSellerId)
         .eq("status", "pending");
+
+      // Get category revenue
+      const { data: allItems } = await supabase
+        .from("order_items")
+        .select(`
+          quantity,
+          price_per_unit,
+          seller_product_listings(global_products(product_name))
+        `)
+        .eq("seller_id", authSellerId);
+
+      const categoryMap = new Map<string, CategoryRevenue>();
+      interface OrderItemWithListing {
+        quantity: number;
+        price_per_unit: number;
+        seller_product_listings?: { global_products?: { product_name: string } };
+      }
+      (allItems || []).forEach((item: OrderItemWithListing) => {
+        const revenue = (item.price_per_unit || 0) * (item.quantity || 0);
+        // For now, group by product_name; category will be added later
+        const category = item.seller_product_listings?.global_products?.product_name || "Uncategorized";
+        
+        if (!categoryMap.has(category)) {
+          categoryMap.set(category, { category, revenue: 0, orderCount: 0 });
+        }
+        const cat = categoryMap.get(category)!;
+        cat.revenue += revenue;
+        cat.orderCount += 1;
+      });
+
+      const topCategoryData = Array.from(categoryMap.values())
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 5);
+
+      setCategoryData(topCategoryData);
+
+      // Get customer reviews for rating and feedback
+      let avgRating = 0;
+      let totalReviews = 0;
+      const { data: sellerReviews } = await supabase
+        .from("product_reviews")
+        .select("rating, listing_id")
+        .in("listing_id", (activeProducts || []).map(p => p.listing_id));
+
+      if (sellerReviews && sellerReviews.length > 0) {
+        totalReviews = sellerReviews.length;
+        const ratings = sellerReviews.filter(r => r.rating).map(r => r.rating) as number[];
+        if (ratings.length > 0) {
+          avgRating = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+        }
+      }
+
+      // Get product transparency/certification count
+      const { data: transparencies, count: transparencyCount } = await supabase
+        .from("product_transparency")
+        .select("transparency_id", { count: "exact" })
+        .in("listing_id", (activeProducts || []).map(p => p.listing_id) || []);
+
+      // Calculate health score
+      const verificationScore = (
+        (seller?.gstin_verified ? 1 : 0) +
+        (seller?.pan_verified ? 1 : 0) +
+        (seller?.aadhaar_verified ? 1 : 0)
+      ) * 25;
+
+      const certificationScore = transparencyCount && transparencyCount > 0 ? 20 : 0;
+      const feedbackScore = totalReviews > 0 ? Math.min(20, (totalReviews / 10) * 20) : 0;
+      const completenessScore = activeProducts?.length ? 20 : 0;
+
+      const totalHealthScore = verificationScore + certificationScore + feedbackScore + completenessScore;
+
+      setHealthScore({
+        score: Math.min(100, totalHealthScore),
+        verified: {
+          gstin: seller?.gstin_verified || false,
+          pan: seller?.pan_verified || false,
+          aadhaar: seller?.aadhaar_verified || false,
+        },
+        certification: {
+          hasTransparency: transparencyCount || 0,
+          hasCertificates: (transparencyCount || 0) > 0,
+        },
+        feedback: {
+          averageRating: avgRating,
+          totalReviews,
+        },
+        status: seller?.verification_status || "pending",
+      });
 
       setStats({
         totalRevenue: currentRevenue,
         totalOrders: totalOrdersCount || 0,
-        totalProducts: (activeCount || 0) + (draftCount || 0),
+        totalProducts: totalProducts || 0,
         activeProducts: activeCount || 0,
-        draftProducts: draftCount || 0,
+        outOfStockProducts: outOfStock,
         pendingOrders: pendingOrdersCount || 0,
+        averageRating: avgRating,
+        lowStockCount: lowStock,
       });
     } catch (error) {
       console.error("Error loading dashboard data:", error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [loadListings]);
 
   const handleRefresh = async () => {
     setRefreshing(true);
@@ -169,35 +325,32 @@ export default function Dashboard() {
     setRefreshing(false);
   };
 
+  const getHealthScoreColor = (score: number) => {
+    if (score >= 80) return "text-green-600";
+    if (score >= 60) return "text-yellow-600";
+    if (score >= 40) return "text-orange-600";
+    return "text-red-600";
+  };
+
+  const getHealthScoreBg = (score: number) => {
+    if (score >= 80) return "bg-green-50 border-green-200";
+    if (score >= 60) return "bg-yellow-50 border-yellow-200";
+    if (score >= 40) return "bg-orange-50 border-orange-200";
+    return "bg-red-50 border-red-200";
+  };
+
+  // Load dashboard data on component mount
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
+
   const statCards = [
-    {
-      title: "Total Revenue",
-      value: `₹${stats.totalRevenue.toFixed(2)}`,
-      icon: DollarSign,
-      description: revenueChange !== null ? `${revenueChange > 0 ? '+' : ''}${revenueChange.toFixed(1)}% from last month` : "This month earnings",
-      gradient: "from-green-500 to-emerald-600",
-    },
-    {
-      title: "Total Orders",
-      value: stats.totalOrders.toString(),
-      icon: ShoppingCart,
-      description: `${stats.pendingOrders} pending`,
-      gradient: "from-blue-500 to-cyan-600",
-    },
-    {
-      title: "All Products",
-      value: stats.totalProducts.toString(),
-      icon: Package,
-      description: `${stats.activeProducts} active, ${stats.draftProducts} draft`,
-      gradient: "from-purple-500 to-pink-600",
-    },
-    {
-      title: "Pending Orders",
-      value: stats.pendingOrders.toString(),
-      icon: Clock,
-      description: "Awaiting processing",
-      gradient: "from-orange-500 to-red-600",
-    },
+    { title: "Total Revenue", value: `₹${stats.totalRevenue.toFixed(2)}`, icon: DollarSign, description: revenueChange !== null ? `${revenueChange > 0 ? '+' : ''}${revenueChange.toFixed(1)}%` : "This month", gradient: "from-green-500 to-emerald-600" },
+    { title: "Total Orders", value: stats.totalOrders.toString(), icon: ShoppingCart, description: `${stats.pendingOrders} pending`, gradient: "from-blue-500 to-cyan-600" },
+    { title: "Total Products", value: stats.totalProducts.toString(), icon: Package, description: `${stats.activeProducts} active`, gradient: "from-purple-500 to-pink-600" },
+    { title: "Pending Orders", value: stats.pendingOrders.toString(), icon: Clock, description: "Ready to process", gradient: "from-orange-500 to-red-600" },
+    { title: "Out of Stock", value: stats.outOfStockProducts.toString(), icon: AlertCircle, description: `${stats.lowStockCount} low`, gradient: "from-red-500 to-pink-600" },
+    { title: "Avg Rating", value: `${stats.averageRating.toFixed(1)}★`, icon: Star, description: "Seller rating", gradient: "from-yellow-500 to-orange-600" },
   ];
 
   if (loading && !sellerId) {
@@ -213,46 +366,36 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header with Refresh Button */}
       <div className="flex justify-between items-center">
         <h1 className="text-4xl font-bold">Seller Dashboard</h1>
-        <Button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          size="lg"
-          variant="outline"
-          className="gap-2"
-        >
+        <Button onClick={handleRefresh} disabled={refreshing} size="lg" variant="outline" className="gap-2">
           <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
           Refresh
         </Button>
       </div>
 
-      {/* KYC Alert */}
       {kycStatus !== "verified" && (
         <Alert className="border-yellow-200 bg-yellow-50">
           <AlertCircle className="h-4 w-4 text-yellow-600" />
           <AlertTitle className="text-yellow-800">KYC Verification Pending</AlertTitle>
-          <AlertDescription className="text-yellow-700">
-            Complete your KYC verification to unlock all seller features
-          </AlertDescription>
+          <AlertDescription className="text-yellow-700">Complete your KYC verification to unlock all features</AlertDescription>
         </Alert>
       )}
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {statCards.map((card, index) => {
+      {/* Stat Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        {statCards.map((card, i) => {
           const Icon = card.icon;
           return (
-            <Card key={index} className="hover:shadow-lg transition-shadow">
+            <Card key={i} className="hover:shadow-lg transition-shadow">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{card.title}</CardTitle>
+                <CardTitle className="text-xs font-medium">{card.title}</CardTitle>
                 <div className={`bg-gradient-to-br ${card.gradient} p-2 rounded-lg`}>
-                  <Icon className="h-4 w-4 text-white" />
+                  <Icon className="h-3 w-3 text-white" />
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{card.value}</div>
+                <div className="text-lg font-bold">{card.value}</div>
                 <p className="text-xs text-muted-foreground mt-1">{card.description}</p>
               </CardContent>
             </Card>
@@ -260,171 +403,297 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Main Content Tabs */}
+      {/* Health Score Card */}
+      <Card className={`border ${getHealthScoreBg(healthScore.score)}`}>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Shield className={`h-6 w-6 ${getHealthScoreColor(healthScore.score)}`} />
+              <CardTitle>Seller Health Score</CardTitle>
+            </div>
+            <div className="text-3xl font-bold">{healthScore.score.toFixed(0)}/100</div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
+            <div 
+              className={`h-3 rounded-full transition-all ${
+                healthScore.score >= 80 ? 'bg-green-600' : 
+                healthScore.score >= 60 ? 'bg-yellow-600' : 
+                healthScore.score >= 40 ? 'bg-orange-600' : 
+                'bg-red-600'
+              }`}
+              style={{ width: `${Math.min(100, healthScore.score)}%` }}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+              <p className="text-sm font-medium text-gray-600">Verification</p>
+              <div className="mt-2 space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${healthScore.verified.gstin ? 'bg-green-600' : 'bg-gray-300'}`} />
+                  <span className="text-xs">GSTIN</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${healthScore.verified.pan ? 'bg-green-600' : 'bg-gray-300'}`} />
+                  <span className="text-xs">PAN</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${healthScore.verified.aadhaar ? 'bg-green-600' : 'bg-gray-300'}`} />
+                  <span className="text-xs">Aadhaar</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-600">Certification</p>
+              <p className="text-2xl font-bold mt-2">{healthScore.certification.hasTransparency}</p>
+              <p className="text-xs text-gray-500">Products certified</p>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-600">Customer Feedback</p>
+              <p className="text-2xl font-bold mt-2">{healthScore.feedback.averageRating.toFixed(1)}★</p>
+              <p className="text-xs text-gray-500">{healthScore.feedback.totalReviews} reviews</p>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-gray-600">Status</p>
+              <Badge className="mt-2">{healthScore.status}</Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabs */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview" className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4" />
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="flex items-center gap-2">
-            <BarChart3 className="h-4 w-4" />
-            Analytics
-          </TabsTrigger>
-          <TabsTrigger value="products" className="flex items-center gap-2">
-            <Package className="h-4 w-4" />
-            Products
-          </TabsTrigger>
-          <TabsTrigger value="orders" className="flex items-center gap-2">
-            <ShoppingCart className="h-4 w-4" />
-            Orders
-          </TabsTrigger>
-          <TabsTrigger value="health" className="flex items-center gap-2">
-            <Heart className="h-4 w-4" />
-            Health Score
-          </TabsTrigger>
+        <TabsList className="grid w-full grid-cols-4">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="products">Products</TabsTrigger>
+          <TabsTrigger value="orders">Orders</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
         <TabsContent value="overview" className="space-y-6">
-          {!sellerId ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">Loading dashboard data...</p>
-            </div>
-          ) : (
+          {!sellerId ? <div className="text-center py-8"><p className="text-muted-foreground">Loading...</p></div> : (
             <>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card>
-                  <CardHeader>
-                    <CardTitle>Sales Trend</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <SellerGraph sellerId={sellerId} />
-                  </CardContent>
+                  <CardHeader><CardTitle>Sales & Profit Trend</CardTitle></CardHeader>
+                  <CardContent><SellerGraph sellerId={sellerId} /></CardContent>
                 </Card>
-
                 <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <TrendingUp className="h-5 w-5" />
-                      Performance Analytics
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <BestWorstSelling sellerId={sellerId} />
-                  </CardContent>
+                  <CardHeader><CardTitle>Top & Bottom Sellers</CardTitle></CardHeader>
+                  <CardContent><BestWorstSelling sellerId={sellerId} /></CardContent>
                 </Card>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <AlertCircle className="h-5 w-5 text-orange-600" />
-                      Low Stock Alerts
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <LowStockNotifications />
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Activity className="h-5 w-5" />
-                      Quick Stats
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="text-center p-3 bg-green-50 rounded-lg">
-                        <p className="text-2xl font-bold text-green-600">{stats.activeProducts}</p>
-                        <p className="text-sm text-green-700">Active Products</p>
-                      </div>
-                      <div className="text-center p-3 bg-blue-50 rounded-lg">
-                        <p className="text-2xl font-bold text-blue-600">{stats.draftProducts}</p>
-                        <p className="text-sm text-blue-700">Draft Products</p>
-                      </div>
-                      <div className="text-center p-3 bg-purple-50 rounded-lg">
-                        <p className="text-2xl font-bold text-purple-600">₹{stats.totalRevenue.toFixed(0)}</p>
-                        <p className="text-sm text-purple-700">Total Revenue</p>
-                      </div>
-                      <div className="text-center p-3 bg-orange-50 rounded-lg">
-                        <p className="text-2xl font-bold text-orange-600">{stats.pendingOrders}</p>
-                        <p className="text-sm text-orange-700">Pending Orders</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+              <Card>
+                <CardHeader><CardTitle className="flex items-center gap-2"><AlertCircle className="h-5 w-5 text-orange-600" />Low Stock Alerts ({stats.lowStockCount})</CardTitle></CardHeader>
+                <CardContent><LowStockNotifications showRestockButton={false} /></CardContent>
+              </Card>
             </>
           )}
         </TabsContent>
 
         {/* Analytics Tab */}
         <TabsContent value="analytics" className="space-y-6">
-          {!sellerId ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">Loading analytics...</p>
-            </div>
-          ) : (
-            <ProductAnalytics sellerId={sellerId} />
+          {!sellerId ? <div className="text-center py-8"><p className="text-muted-foreground">Loading...</p></div> : (
+            <>
+              <ProductAnalytics sellerId={sellerId} />
+
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp className="h-5 w-5 text-blue-600" />
+                    <CardTitle>Revenue by Category</CardTitle>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {categoryData.length > 0 ? (
+                    <div className="space-y-4">
+                      {categoryData.map((cat, idx) => {
+                        const total = categoryData.reduce((s, c) => s + c.revenue, 0);
+                        const pct = total > 0 ? (cat.revenue / total) * 100 : 0;
+                        return (
+                          <div key={idx}>
+                            <div className="flex justify-between items-center mb-2">
+                              <div>
+                                <p className="font-medium">{cat.category}</p>
+                                <p className="text-xs text-gray-500">{cat.orderCount} orders</p>
+                              </div>
+                              <span className="text-sm font-bold">₹{cat.revenue.toFixed(0)}</span>
+                            </div>
+                            <div className="w-full bg-gray-200 rounded h-2 overflow-hidden">
+                              <div 
+                                className="bg-blue-600 h-2 rounded transition-all"
+                                style={{ width: `${pct}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">{pct.toFixed(1)}% of total</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : <p className="text-muted-foreground text-center py-4">No sales data available yet</p>}
+                </CardContent>
+              </Card>
+            </>
           )}
         </TabsContent>
 
         {/* Products Tab */}
         <TabsContent value="products" className="space-y-6">
-          <div className="flex justify-between items-center">
-            <h2 className="text-xl font-semibold">All Products & Bundles</h2>
-          </div>
+          {!sellerId ? <div className="text-center py-8"><p className="text-muted-foreground">Loading...</p></div> : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Category</label>
+                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Categories</SelectItem>
+                      {categoryData.map((cat) => (
+                        <SelectItem key={cat.category} value={cat.category}>{cat.category}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-          {!sellerId ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">Loading products...</p>
-            </div>
-          ) : (
-            <ProductGalleryGrid sellerId={sellerId} limit={50} showOnlyOutOfStock={true} />
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Price Range</label>
+                  <div className="flex gap-2">
+                    <Input type="number" placeholder="Min" value={priceRange[0]} onChange={(e) => setPriceRange([Number(e.target.value), priceRange[1]])} className="w-1/2" />
+                    <Input type="number" placeholder="Max" value={priceRange[1]} onChange={(e) => setPriceRange([priceRange[0], Number(e.target.value)])} className="w-1/2" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-sm font-medium mb-2 block">Stock Status</label>
+                  <Select value={stockFilter} onValueChange={setStockFilter}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Products</SelectItem>
+                      <SelectItem value="instock">In Stock</SelectItem>
+                      <SelectItem value="lowstock">Low Stock (≤10)</SelectItem>
+                      <SelectItem value="outofstock">Out of Stock</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Total</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold">{stats.totalProducts}</p></CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Active</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold text-green-600">{stats.activeProducts}</p></CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Out of Stock</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold text-red-600">{stats.outOfStockProducts}</p></CardContent></Card>
+                <Card><CardHeader className="pb-2"><CardTitle className="text-sm">Low Stock</CardTitle></CardHeader><CardContent><p className="text-2xl font-bold text-orange-600">{stats.lowStockCount}</p></CardContent></Card>
+              </div>
+
+              {/* Product Grid with Restock */}
+              <Card>
+                <CardHeader><CardTitle>My Products</CardTitle></CardHeader>
+                <CardContent>
+                  {listings.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">No products found</p>
+                  ) : (
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {listings
+                        .filter(l => l.status === "active")
+                        .filter(l => {
+                          // Price filter
+                          if (l.base_price < priceRange[0] || l.base_price > priceRange[1]) return false;
+                          
+                          // Stock filter
+                          if (stockFilter === "instock" && l.total_stock_quantity === 0) return false;
+                          if (stockFilter === "lowstock" && (l.total_stock_quantity === 0 || l.total_stock_quantity > 10)) return false;
+                          if (stockFilter === "outofstock" && l.total_stock_quantity !== 0) return false;
+                          
+                          return true;
+                        })
+                        .map((listing: ListingWithDetails) => (
+                        <div key={listing.listing_id} className="border rounded-lg overflow-hidden hover:shadow-lg transition">
+                          {/* Product Image */}
+                          <div className="bg-gray-100 aspect-square flex items-center justify-center">
+                            {listing.listing_images?.[0]?.image_url ? (
+                              <img 
+                                src={listing.listing_images[0].image_url} 
+                                alt={listing.seller_title}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Package className="h-8 w-8 text-gray-400" />
+                            )}
+                          </div>
+                          {/* Product Info */}
+                          <div className="p-3">
+                            <h3 className="font-medium text-sm truncate">{listing.seller_title}</h3>
+                            <p className="text-xs text-muted-foreground mb-2">
+                              {listing.global_products?.product_name}
+                            </p>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="font-bold text-green-600">₹{listing.base_price}</span>
+                              <span className={`text-xs font-medium ${listing.total_stock_quantity === 0 ? 'text-red-600' : listing.total_stock_quantity <= 10 ? 'text-orange-600' : 'text-green-600'}`}>
+                                {listing.total_stock_quantity} stock
+                              </span>
+                            </div>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              className="w-full text-xs"
+                              onClick={() => {
+                                setRestockTarget({
+                                  productId: listing.listing_id,
+                                  productName: listing.seller_title || listing.global_products?.product_name,
+                                  currentStock: listing.total_stock_quantity,
+                                });
+                              }}
+                            >
+                              <RefreshCw className="h-3 w-3 mr-1" />Restock
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              <SimpleRestockDialog
+                open={!!restockTarget}
+                onOpenChange={(open) => !open && setRestockTarget(null)}
+                productId={restockTarget?.productId || ""}
+                productName={restockTarget?.productName || ""}
+                currentStock={restockTarget?.currentStock || 0}
+                isVariant={false}
+                sellerId={sellerId}
+                onSuccess={() => {
+                  if (sellerId) loadDashboardData();
+                  setRestockTarget(null);
+                }}
+              />
+            </>
           )}
         </TabsContent>
 
         {/* Orders Tab */}
         <TabsContent value="orders" className="space-y-6">
           <div className="flex gap-4 items-center">
-            <div className="flex-1 max-w-xs">
-              <Select value={orderFilter} onValueChange={setOrderFilter}>
-                <SelectTrigger>
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Filter orders" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Orders</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="processing">Processing</SelectItem>
-                  <SelectItem value="shipped">Shipped</SelectItem>
-                  <SelectItem value="delivered">Delivered</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
-                  <SelectItem value="return_requested">Return Requested</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Showing {orderFilter === 'all' ? 'all' : orderFilter} orders
-            </p>
+            <Select value={orderFilter} onValueChange={setOrderFilter}>
+              <SelectTrigger className="max-w-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Orders</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="processing">Processing</SelectItem>
+                <SelectItem value="shipped">Shipped</SelectItem>
+                <SelectItem value="delivered">Delivered</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          <SellerOrders sellerId={sellerId} limit={50} statusFilter={orderFilter} />
-        </TabsContent>
-
-        {/* Health Tab */}
-        <TabsContent value="health">
-          {!sellerId ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">Loading health metrics...</p>
-            </div>
-          ) : (
-            <AdvancedHealthScoreDashboard sellerId={sellerId} />
-          )}
+          {!sellerId ? <div className="text-center py-8"><p className="text-muted-foreground">Loading...</p></div> : <SellerOrders sellerId={sellerId} limit={50} statusFilter={orderFilter} />}
         </TabsContent>
       </Tabs>
     </div>

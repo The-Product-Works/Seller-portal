@@ -69,9 +69,19 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
     if (!sellerId) return;
     setLoading(true);
     try {
+      // Query order_items instead of orders (orders table doesn't have seller_id)
       let query = supabase
-        .from("orders")
-        .select("*")
+        .from("order_items")
+        .select(`
+          order_item_id,
+          order_id,
+          quantity,
+          price_per_unit,
+          status,
+          created_at,
+          orders!inner(total_amount),
+          seller_product_listings(seller_title)
+        `)
         .eq("seller_id", sellerId);
 
       if (statusFilter && statusFilter !== "all") {
@@ -93,7 +103,24 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
         });
         setOrders([]);
       } else {
-        setOrders(data || []);
+        // Transform order_items to SellerOrder format
+        interface OrderItemRecord {
+          order_item_id: string;
+          quantity: number;
+          price_per_unit: number;
+          status: string;
+          created_at: string;
+          seller_product_listings?: { seller_title: string };
+        }
+        const transformedOrders = (data || []).map((item: OrderItemRecord) => ({
+          id: item.order_item_id,
+          quantity: item.quantity,
+          total_amount: (item.price_per_unit || 0) * (item.quantity || 0),
+          status: item.status,
+          created_at: item.created_at,
+          product_title: item.seller_product_listings?.seller_title || "Product"
+        }));
+        setOrders(transformedOrders);
       }
     } catch (error) {
       console.error("Exception loading orders:", error);
