@@ -42,6 +42,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ImageGalleryManager, type ImageFile } from "@/components/ImageGalleryManager";
 import { ProductPreviewModal } from "@/components/ProductPreviewModal";
 import { ImageManager } from "@/components/ImageManager";
+import { CommissionWarning } from "@/components/CommissionWarning";
 
 // Type alias for Json type
 type Json = Database["public"]["Tables"]["seller_product_listings"]["Row"]["seller_certifications"];
@@ -1042,6 +1043,18 @@ export default function AddProductDialog({
 
           {/* Variants Tab */}
           <TabsContent value="variants" className="space-y-4">
+            {/* Commission Warning at Top */}
+            <CommissionWarning 
+              mrp={variants[0]?.price || 0}
+              onMrpChange={(price) => {
+                if (variants[0]) {
+                  updateVariant(0, "price", price);
+                }
+              }}
+              showInlineCalculator={true}
+              variant="warning"
+            />
+
             <div className="flex justify-between items-center">
               <Label>Product Variants *</Label>
               <Button size="sm" onClick={addVariant}>

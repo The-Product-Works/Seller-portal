@@ -8,7 +8,7 @@ import { ProductAnalytics } from "@/components/ProductAnalytics";
 import { ProductGalleryGrid } from "@/components/ProductGalleryGrid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DollarSign, Package, ShoppingCart, Clock, AlertCircle, RefreshCw, Star, Shield, TrendingUp } from "lucide-react";
+import { DollarSign, Package, ShoppingCart, Clock, AlertCircle, RefreshCw, Star, Shield, TrendingUp, Flag } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { SimpleRestockDialog } from "@/components/SimpleRestockDialog";
+import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
 
 interface ListingWithDetails {
   listing_id: string;
@@ -115,6 +116,7 @@ export default function Dashboard() {
   const [categoryData, setCategoryData] = useState<CategoryRevenue[]>([]);
   const [listings, setListings] = useState<ListingWithDetails[]>([]);
   const [performanceMetrics, setPerformanceMetrics] = useState<ProductPerformanceMetric[]>([]);
+  const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
 
   const loadListings = useCallback(async (seller_id: string) => {
     const { data, error } = await supabase
@@ -450,14 +452,33 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6 p-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-4xl font-bold">Seller Dashboard</h1>
-        <Button onClick={handleRefresh} disabled={refreshing} size="lg" variant="outline" className="gap-2">
-          <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
+    <>
+      <SellerRaiseDispute
+        isOpen={raiseDisputeOpen}
+        onClose={() => setRaiseDisputeOpen(false)}
+        sellerId={sellerId || ""}
+        context={{
+          type: "platform",
+        }}
+      />
+      <div className="space-y-6 p-6">
+        <div className="flex justify-between items-center">
+          <h1 className="text-4xl font-bold">Seller Dashboard</h1>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => setRaiseDisputeOpen(true)}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <Flag className="h-4 w-4" />
+              Raise Dispute
+            </Button>
+            <Button onClick={handleRefresh} disabled={refreshing} size="lg" variant="outline" className="gap-2">
+              <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        </div>
 
       {kycStatus !== "verified" && (
         <Alert className="border-yellow-200 bg-yellow-50">
@@ -828,6 +849,7 @@ export default function Dashboard() {
           {!sellerId ? <div className="text-center py-8"><p className="text-muted-foreground">Loading...</p></div> : <SellerOrders sellerId={sellerId} limit={50} statusFilter={orderFilter} />}
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </>
   );
 }

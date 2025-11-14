@@ -6,9 +6,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { 
-  Wallet, DollarSign, CreditCard, Bank, 
+  Wallet, DollarSign, CreditCard, Building, 
   TrendingUp, Calendar, CheckCircle, 
-  AlertCircle, Download, Eye 
+  AlertCircle, Download, Eye, Flag
 } from "lucide-react";
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import { useToast } from "@/hooks/use-toast";
@@ -28,21 +28,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
 
 interface BankDetails {
-  account_holder_name: string;
-  account_number: string;
-  bank_name: string;
-  ifsc_code: string;
-  branch_name: string;
-  account_type: 'savings' | 'current';
+  account_holder_name: string | null;
+  account_number: string | null;
+  bank_name: string | null;
+  ifsc_code: string | null;
+  account_type: string | null;
+  account_verified: boolean | null;
 }
 
 interface EarningsData {
   totalEarnings: number;
   availableBalance: number;
   pendingBalance: number;
+  weeklyEarnings: { day: string; amount: number }[];
   monthlyEarnings: { month: string; amount: number }[];
+  yearlyEarnings: { month: string; amount: number }[];
   recentTransactions: {
     id: string;
     type: 'sale' | 'commission' | 'bonus' | 'redemption';
@@ -50,6 +53,20 @@ interface EarningsData {
     description: string;
     date: string;
     status: 'completed' | 'pending' | 'failed';
+    grossAmount?: number;
+    commission?: number;
+    gst?: number;
+  }[];
+  allTransactions?: {
+    id: string;
+    type: 'sale' | 'commission' | 'bonus' | 'redemption';
+    amount: number;
+    description: string;
+    date: string;
+    status: 'completed' | 'pending' | 'failed';
+    grossAmount?: number;
+    commission?: number;
+    gst?: number;
   }[];
 }
 
@@ -63,165 +80,208 @@ interface RedemptionRequest {
 
 export default function Redeem() {
   const [bankDetails, setBankDetails] = useState<BankDetails>({
-    account_holder_name: "",
-    account_number: "",
-    bank_name: "",
-    ifsc_code: "",
-    branch_name: "",
-    account_type: "savings",
+    account_holder_name: null,
+    account_number: null,
+    bank_name: null,
+    ifsc_code: null,
+    account_type: null,
+    account_verified: null,
   });
   const [earningsData, setEarningsData] = useState<EarningsData>({
     totalEarnings: 0,
     availableBalance: 0,
     pendingBalance: 0,
+    weeklyEarnings: [],
     monthlyEarnings: [],
+    yearlyEarnings: [],
     recentTransactions: [],
+    allTransactions: [],
   });
   const [redeemAmount, setRedeemAmount] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
   const [showBankForm, setShowBankForm] = useState(false);
+  const [showDispute, setShowDispute] = useState(false);
   const [recentRedemptions, setRecentRedemptions] = useState<RedemptionRequest[]>([]);
+  const [graphView, setGraphView] = useState<'week' | 'month' | 'year'>('month');
+  const [showLedger, setShowLedger] = useState(false);
+  const [sellerId, setSellerId] = useState<string>("");
   const { toast } = useToast();
 
   useEffect(() => {
-    loadRedeemData();
-  }, [loadRedeemData]);
+    const initLoad = async () => {
+      const id = await getAuthenticatedSellerId();
+      if (id) {
+        setSellerId(id);
+        await loadRedeemData(id);
+      }
+    };
+    initLoad();
+  }, []);
 
-  const loadRedeemData = useCallback(async () => {
+  const loadRedeemData = useCallback(async (id: string) => {
     setLoading(true);
     try {
-      const sellerId = await getAuthenticatedSellerId();
-      if (!sellerId) {
-        toast({
-          title: "Authentication Error",
-          description: "Please log in to access redeem options",
-          variant: "destructive",
-        });
-        return;
+      // Load seller bank details from sellers table
+      const { data: seller, error: sellerError } = await supabase
+        .from("sellers")
+        .select(`
+          account_holder_name,
+          account_number,
+          bank_name,
+          ifsc_code,
+          account_type,
+          account_verified
+        `)
+        .eq("id", id)
+        .single();
+
+      if (sellerError) {
+        console.error("Error fetching seller:", sellerError);
+      } else if (seller) {
+        setBankDetails(seller as BankDetails);
       }
 
-      // Load seller bank details (simulated - you'd create a seller_bank_details table)
-      // const { data: bankData } = await supabase
-      //   .from("seller_bank_details")
-      //   .select("*")
-      //   .eq("seller_id", sellerId)
-      //   .single();
-
-      // Simulate bank details
-      const mockBankDetails = {
-        account_holder_name: "John Doe",
-        account_number: "1234567890",
-        bank_name: "State Bank of India",
-        ifsc_code: "SBIN0001234",
-        branch_name: "Main Branch",
-        account_type: "savings" as const,
-      };
-      setBankDetails(mockBankDetails);
-
-      // Calculate earnings from orders
-      const { data: orderData, error: orderError } = await supabase
+      // Calculate earnings from order_items
+      const { data: orderItems, error: orderError } = await supabase
         .from("order_items")
         .select(`
           quantity,
           price_per_unit,
-          subtotal,
-          orders!inner(
-            status,
-            created_at,
-            seller_id
-          )
+          created_at,
+          orders!inner(status, created_at)
         `)
-        .eq("orders.seller_id", sellerId)
-        .eq("orders.status", "delivered");
+        .eq("seller_id", id)
+        .in("orders.status", ["completed", "delivered"]);
 
       if (orderError) {
         console.error("Error fetching earnings:", orderError);
       }
 
+      // Calculate earnings with 2% commission - 18% GST
       const currentDate = new Date();
-      const totalEarnings = (orderData || []).reduce((sum, item) => 
-        sum + (item.subtotal || (item.quantity * item.price_per_unit)), 0
-      );
+      let totalRevenue = 0;
+      const dayEarnings: { [key: string]: number } = {};
+      const monthEarnings: { [key: string]: number } = {};
+      const yearEarnings: { [key: string]: number } = {};
 
-      // Simulate commission (10% platform fee)
-      const netEarnings = totalEarnings * 0.9;
-      const availableBalance = netEarnings * 0.8; // 80% available for redemption
-      const pendingBalance = netEarnings * 0.2; // 20% pending
+      (orderItems || []).forEach((item) => {
+        const itemTotal = item.quantity * item.price_per_unit;
+        const commission = itemTotal * 0.02;
+        const gst = commission * 0.18;
+        const sellerEarning = itemTotal - commission - gst;
+        
+        totalRevenue += sellerEarning;
 
-      // Generate monthly earnings
-      const monthlyEarnings = [];
-      for (let i = 5; i >= 0; i--) {
-        const date = new Date(currentDate);
-        date.setMonth(date.getMonth() - i);
-        const monthName = date.toLocaleDateString('en', { month: 'short', year: 'numeric' });
-        const amount = Math.random() * 5000 + 1000; // Random amount for demo
-        monthlyEarnings.push({ month: monthName, amount });
-      }
+        // Group by date
+        const itemDate = new Date(item.created_at);
+        const dayKey = itemDate.toISOString().split('T')[0];
+        const monthKey = itemDate.toLocaleDateString('en', { month: 'short' });
+        const yearMonthKey = itemDate.toLocaleDateString('en', { 
+          year: '2-digit', 
+          month: 'short' 
+        });
 
-      // Generate recent transactions
-      const recentTransactions = [
-        {
-          id: "1",
-          type: "sale" as const,
-          amount: 850,
-          description: "Product sale commission",
-          date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          status: "completed" as const,
-        },
-        {
-          id: "2",
-          type: "sale" as const,
-          amount: 1200,
-          description: "Product sale commission",
-          date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-          status: "completed" as const,
-        },
-        {
-          id: "3",
-          type: "bonus" as const,
-          amount: 500,
-          description: "Performance bonus",
-          date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          status: "completed" as const,
-        },
-        {
-          id: "4",
-          type: "redemption" as const,
-          amount: -2000,
-          description: "Bank transfer redemption",
-          date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-          status: "completed" as const,
-        },
-      ];
-
-      setEarningsData({
-        totalEarnings: netEarnings,
-        availableBalance,
-        pendingBalance,
-        monthlyEarnings,
-        recentTransactions,
+        dayEarnings[dayKey] = (dayEarnings[dayKey] || 0) + sellerEarning;
+        monthEarnings[monthKey] = (monthEarnings[monthKey] || 0) + sellerEarning;
+        yearEarnings[yearMonthKey] = (yearEarnings[yearMonthKey] || 0) + sellerEarning;
       });
 
-      // Load recent redemptions
-      const mockRedemptions: RedemptionRequest[] = [
-        {
-          amount: 2000,
-          bank_details: mockBankDetails,
-          requested_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-          status: "completed",
-          transaction_id: "TXN123456789",
-        },
-        {
-          amount: 1500,
-          bank_details: mockBankDetails,
-          requested_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(),
-          status: "completed",
-          transaction_id: "TXN123456788",
-        },
-      ];
-      setRecentRedemptions(mockRedemptions);
+      // Generate week data (last 7 days)
+      const weekData = [];
+      for (let i = 6; i >= 0; i--) {
+        const date = new Date(currentDate);
+        date.setDate(date.getDate() - i);
+        const dayKey = date.toISOString().split('T')[0];
+        const dayName = date.toLocaleDateString('en', { weekday: 'short' });
+        weekData.push({
+          day: dayName,
+          amount: dayEarnings[dayKey] || 0,
+        });
+      }
+
+      // Generate month data (last 12 months)
+      const monthData = [];
+      for (let i = 11; i >= 0; i--) {
+        const date = new Date(currentDate);
+        date.setMonth(date.getMonth() - i);
+        const monthKey = date.toLocaleDateString('en', { month: 'short' });
+        monthData.push({
+          month: monthKey,
+          amount: monthEarnings[monthKey] || 0,
+        });
+      }
+
+      // Generate year data (last 12 months with year)
+      const yearData = [];
+      for (let i = 11; i >= 0; i--) {
+        const date = new Date(currentDate);
+        date.setMonth(date.getMonth() - i);
+        const yearMonthKey = date.toLocaleDateString('en', { 
+          year: '2-digit', 
+          month: 'short' 
+        });
+        yearData.push({
+          month: yearMonthKey,
+          amount: yearEarnings[yearMonthKey] || 0,
+        });
+      }
+
+      // Available (80%) vs Pending (20%)
+      const availableBalance = totalRevenue * 0.8;
+      const pendingBalance = totalRevenue * 0.2;
+
+      // Generate ALL transactions for ledger (not just recent 4)
+      const allTransactions = (orderItems || [])
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .map((item, idx) => {
+          const itemTotal = item.quantity * item.price_per_unit;
+          const commission = itemTotal * 0.02;
+          const gst = commission * 0.18;
+          const sellerEarning = itemTotal - commission - gst;
+          
+          return {
+            id: `trans-${idx}`,
+            type: "sale" as const,
+            amount: sellerEarning,
+            description: `Product sale (${item.quantity} units @ ₹${item.price_per_unit})`,
+            date: item.created_at,
+            status: "completed" as const,
+            grossAmount: itemTotal,
+            commission: commission,
+            gst: gst,
+          };
+        });
+      
+      // Recent transactions (last 4 for overview)
+      const recentTransactions = allTransactions.slice(0, 4);
+
+      // Console logs for debugging and seller reference
+      console.log('=== SELLER REDEEM PAGE - EARNINGS SUMMARY ===');
+      console.log('Seller ID:', id);
+      console.log('Total Orders Processed:', allTransactions.length);
+      console.log('Total Revenue (Gross):', totalRevenue + (allTransactions.reduce((sum, t) => sum + (t.commission || 0) + (t.gst || 0), 0)));
+      console.log('Total After Commission & GST (Net):', totalRevenue);
+      console.log('Available for Redeem (80%):', availableBalance);
+      console.log('Pending Admin Approval (20%):', pendingBalance);
+      console.log('---');
+      console.log('Transaction Breakdown:');
+      allTransactions.forEach((trans, idx) => {
+        console.log(`${idx + 1}. Date: ${new Date(trans.date).toLocaleDateString()}, Gross: ₹${trans.grossAmount}, Commission: ₹${trans.commission?.toFixed(2)}, GST: ₹${trans.gst?.toFixed(2)}, Net: ₹${trans.amount.toFixed(2)}`);
+      });
+      console.log('===========================================');
+
+      setEarningsData({
+        totalEarnings: totalRevenue,
+        availableBalance,
+        pendingBalance,
+        weeklyEarnings: weekData,
+        monthlyEarnings: monthData,
+        yearlyEarnings: yearData,
+        recentTransactions,
+        allTransactions,
+      });
 
     } catch (error) {
       console.error("Error loading redeem data:", error);
@@ -236,12 +296,33 @@ export default function Redeem() {
   }, [toast]);
 
   const saveBankDetails = async () => {
+    if (!bankDetails.account_holder_name || !bankDetails.account_number || 
+        !bankDetails.bank_name || !bankDetails.ifsc_code) {
+      toast({
+        title: "Missing Fields",
+        description: "Please fill in all bank details",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSaving(true);
     try {
-      // In real implementation, save to seller_bank_details table
-      // const { error } = await supabase
-      //   .from("seller_bank_details")
-      //   .upsert([{ ...bankDetails, seller_id: sellerId }]);
+      // Update sellers table with KYC bank details
+      const { error } = await supabase
+        .from("sellers")
+        .update({
+          account_holder_name: bankDetails.account_holder_name,
+          account_number: bankDetails.account_number,
+          bank_name: bankDetails.bank_name,
+          ifsc_code: bankDetails.ifsc_code,
+          account_type: bankDetails.account_type,
+        })
+        .eq("id", sellerId);
+
+      if (error) {
+        throw error;
+      }
 
       toast({
         title: "Bank Details Saved",
@@ -360,309 +441,493 @@ export default function Redeem() {
     );
   }
 
+  const getGraphData = () => {
+    switch (graphView) {
+      case 'week':
+        return earningsData.weeklyEarnings;
+      case 'year':
+        return earningsData.yearlyEarnings;
+      case 'month':
+      default:
+        return earningsData.monthlyEarnings;
+    }
+  };
+
+  const graphLabel = graphView === 'week' ? 'Day' : (graphView === 'year' ? 'Month-Year' : 'Month');
+
   return (
     <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Redeem Earnings</h1>
-        <Button
-          variant="outline"
-          onClick={() => setShowBankForm(true)}
-          className="flex items-center gap-2"
-        >
-          <Bank className="w-4 h-4" />
-          Bank Details
-        </Button>
-      </div>
+      <>
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold">Redeem Earnings</h1>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowDispute(true)}
+              className="flex items-center gap-2"
+            >
+              <Flag className="w-4 h-4" />
+              Raise Dispute
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setShowBankForm(true)}
+              className="flex items-center gap-2"
+            >
+              <Building className="w-4 h-4" />
+              Bank Details
+            </Button>
+          </div>
+        </div>
 
-      {/* Earnings Overview */}
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Earnings</CardTitle>
-            <TrendingUp className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-600">
-              {formatCurrency(earningsData.totalEarnings)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Lifetime earnings
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Available Balance</CardTitle>
-            <Wallet className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-blue-600">
-              {formatCurrency(earningsData.availableBalance)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Ready for redemption
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Pending Balance</CardTitle>
-            <AlertCircle className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-orange-600">
-              {formatCurrency(earningsData.pendingBalance)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Processing/Locked
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Redemption Form */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <DollarSign className="w-5 h-5" />
-            Request Redemption
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <Label htmlFor="amount">Amount to Redeem</Label>
-              <Input
-                id="amount"
-                type="number"
-                value={redeemAmount}
-                onChange={(e) => setRedeemAmount(e.target.value)}
-                placeholder="Enter amount"
-                max={earningsData.availableBalance}
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Maximum available: {formatCurrency(earningsData.availableBalance)}
-              </p>
-            </div>
-            <div className="flex flex-col justify-end">
-              <Button
-                onClick={requestRedemption}
-                disabled={redeeming || !redeemAmount}
-                className="flex items-center gap-2"
-              >
-                {redeeming ? (
-                  <>Loading...</>
-                ) : (
-                  <>
-                    <Wallet className="w-4 h-4" />
-                    Redeem
-                  </>
+        {/* Bank Details Status */}
+        {bankDetails.account_number ? (
+          <Card className="border-green-200 bg-green-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-green-900">Bank Details Verified</p>
+                  <p className="text-sm text-green-700">
+                    {bankDetails.account_holder_name} - {bankDetails.bank_name}
+                    <br />
+                    Account: ****{bankDetails.account_number.slice(-4)} ({bankDetails.account_type})
+                  </p>
+                </div>
+                {bankDetails.account_verified && (
+                  <CheckCircle className="w-6 h-6 text-green-600" />
                 )}
-              </Button>
-            </div>
-          </div>
-
-          {bankDetails.account_number && (
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <p className="text-sm font-medium mb-2">Bank Details on File:</p>
-              <p className="text-sm text-gray-600">
-                {bankDetails.account_holder_name} - {bankDetails.bank_name}
-                <br />
-                Account: ****{bankDetails.account_number.slice(-4)}
-              </p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Monthly Earnings Chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Monthly Earnings</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {earningsData.monthlyEarnings.map((month, index) => {
-              const maxAmount = Math.max(...earningsData.monthlyEarnings.map(m => m.amount));
-              const percentage = (month.amount / maxAmount) * 100;
-              return (
-                <div key={index} className="flex items-center gap-4">
-                  <div className="w-16 text-sm font-medium">{month.month}</div>
-                  <div className="flex-1 bg-gray-200 rounded-full h-2">
-                    <div 
-                      className="bg-blue-500 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${percentage}%` }}
-                    ></div>
-                  </div>
-                  <div className="w-24 text-sm text-right">
-                    {formatCurrency(month.amount)}
-                  </div>
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-amber-900">No Bank Details Added</p>
+                  <p className="text-sm text-amber-700">Add your bank details to enable redemptions</p>
                 </div>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                <Button
+                  size="sm"
+                  onClick={() => setShowBankForm(true)}
+                >
+                  Add Now
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-      {/* Recent Transactions */}
-      <div className="grid gap-6 md:grid-cols-2">
+        {/* Earnings Overview */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Earnings</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">
+                {formatCurrency(earningsData.totalEarnings)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                After 2% commission + 18% GST
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Available Balance</CardTitle>
+              <Wallet className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-blue-600">
+                {formatCurrency(earningsData.availableBalance)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Ready for redemption
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Pending Balance</CardTitle>
+              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-orange-600">
+                {formatCurrency(earningsData.pendingBalance)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Awaiting admin approval
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Redemption Form */}
         <Card>
           <CardHeader>
-            <CardTitle>Recent Transactions</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <DollarSign className="w-5 h-5" />
+              Request Redemption
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex gap-4">
+              <div className="flex-1">
+                <Label htmlFor="amount">Amount to Redeem</Label>
+                <Input
+                  id="amount"
+                  type="number"
+                  value={redeemAmount}
+                  onChange={(e) => setRedeemAmount(e.target.value)}
+                  placeholder="Enter amount"
+                  max={earningsData.availableBalance}
+                  disabled={!bankDetails.account_number}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Maximum available: {formatCurrency(earningsData.availableBalance)}
+                </p>
+              </div>
+              <div className="flex flex-col justify-end">
+                <Button
+                  onClick={requestRedemption}
+                  disabled={redeeming || !redeemAmount || !bankDetails.account_number}
+                  className="flex items-center gap-2"
+                >
+                  {redeeming ? (
+                    <>Loading...</>
+                  ) : (
+                    <>
+                      <Wallet className="w-4 h-4" />
+                      Request Redemption
+                    </>
+                  )}
+                </Button>
+              </div>
+            </div>
+
+            {redeemAmount && !isNaN(parseFloat(redeemAmount)) && (
+              <div className="bg-blue-50 border border-blue-200 p-3 rounded text-sm">
+                <p className="font-medium text-blue-900 mb-2">Redemption Breakdown:</p>
+                <div className="space-y-1 text-blue-800 text-xs">
+                  <p>Amount to Redeem: <span className="float-right font-medium">{formatCurrency(parseFloat(redeemAmount))}</span></p>
+                  <p className="text-blue-700">Direct transfer to your bank account</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Earnings Charts */}
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle>Earnings Overview</CardTitle>
+              <Select value={graphView} onValueChange={(v: 'week' | 'month' | 'year') => setGraphView(v)}>
+                <SelectTrigger className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="week">This Week</SelectItem>
+                  <SelectItem value="month">This Month</SelectItem>
+                  <SelectItem value="year">This Year</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {earningsData.recentTransactions.map((transaction) => (
-                <div key={transaction.id} className="flex justify-between items-center">
-                  <div>
-                    <p className="font-medium">{transaction.description}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {formatDate(transaction.date)}
-                    </p>
+              {getGraphData().map((data, index) => {
+                const maxAmount = Math.max(...getGraphData().map(d => d.amount), 1);
+                const percentage = Math.round((data.amount / maxAmount) * 100);
+                const label = graphView === 'week' ? data.day : data.month;
+                
+                // Create width class based on percentage
+                let widthClass = 'w-0';
+                if (percentage > 90) widthClass = 'w-full';
+                else if (percentage > 80) widthClass = 'w-11/12';
+                else if (percentage > 70) widthClass = 'w-10/12';
+                else if (percentage > 60) widthClass = 'w-9/12';
+                else if (percentage > 50) widthClass = 'w-8/12';
+                else if (percentage > 40) widthClass = 'w-7/12';
+                else if (percentage > 30) widthClass = 'w-6/12';
+                else if (percentage > 20) widthClass = 'w-5/12';
+                else if (percentage > 10) widthClass = 'w-4/12';
+                else if (percentage > 0) widthClass = 'w-1/12';
+                
+                return (
+                  <div key={index} className="flex items-center gap-4">
+                    <div className="w-16 text-sm font-medium">{label}</div>
+                    <div className="flex-1 bg-gray-200 rounded-full h-2">
+                      <div 
+                        className={`${widthClass} bg-blue-500 h-2 rounded-full transition-all duration-300`}
+                      />
+                    </div>
+                    <div className="w-24 text-sm text-right">
+                      {formatCurrency(data.amount)}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <p className={`font-medium ${
-                      transaction.amount > 0 ? 'text-green-600' : 'text-red-600'
-                    }`}>
-                      {transaction.amount > 0 ? '+' : ''}{formatCurrency(transaction.amount)}
-                    </p>
-                    <Badge variant={getStatusBadge(transaction.status)}>
-                      {transaction.status}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Redemptions</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
+        {/* Recent Transactions */}
+        <div className="grid gap-6 md:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Transactions</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {earningsData.recentTransactions.length === 0 ? (
+                <p className="text-center text-muted-foreground py-4">
+                  No transactions yet
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {earningsData.recentTransactions.map((transaction) => (
+                    <div key={transaction.id} className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium text-sm">{transaction.description}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDate(transaction.date)}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium text-green-600 text-sm">
+                          +{formatCurrency(transaction.amount)}
+                        </p>
+                        <Badge variant="default" className="text-xs">
+                          {transaction.status}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Recent Redemptions</CardTitle>
+            </CardHeader>
+            <CardContent>
               {recentRedemptions.length === 0 ? (
                 <p className="text-center text-muted-foreground py-4">
                   No redemptions yet
                 </p>
               ) : (
-                recentRedemptions.map((redemption, index) => (
-                  <div key={index} className="flex justify-between items-center">
-                    <div>
-                      <p className="font-medium">Bank Transfer</p>
-                      <p className="text-sm text-muted-foreground">
-                        {formatDate(redemption.requested_at)}
-                      </p>
-                      {redemption.transaction_id && (
+                <div className="space-y-4">
+                  {recentRedemptions.map((redemption, index) => (
+                    <div key={index} className="flex justify-between items-center">
+                      <div>
+                        <p className="font-medium text-sm">Bank Transfer</p>
                         <p className="text-xs text-muted-foreground">
-                          TXN: {redemption.transaction_id}
+                          {formatDate(redemption.requested_at)}
                         </p>
-                      )}
+                        {redemption.transaction_id && (
+                          <p className="text-xs text-muted-foreground">
+                            {redemption.transaction_id}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium text-sm">{formatCurrency(redemption.amount)}</p>
+                        <Badge variant={getStatusBadge(redemption.status)} className="text-xs">
+                          {redemption.status}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-medium">{formatCurrency(redemption.amount)}</p>
-                      <Badge variant={getStatusBadge(redemption.status)}>
-                        {redemption.status}
-                      </Badge>
-                    </div>
-                  </div>
-                ))
+                  ))}
+                </div>
               )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Full Transaction Ledger */}
+        <Card>
+          <CardHeader>
+            <div className="flex justify-between items-center">
+              <CardTitle>Complete Transaction Ledger</CardTitle>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLedger(!showLedger)}
+              >
+                {showLedger ? "Hide" : "Show"} All ({earningsData.allTransactions?.length || 0})
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {showLedger && (
+              <div className="overflow-x-auto mb-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left py-2 px-2">Date</th>
+                      <th className="text-right py-2 px-2">Gross Amount</th>
+                      <th className="text-right py-2 px-2">Commission (2%)</th>
+                      <th className="text-right py-2 px-2">GST (18%)</th>
+                      <th className="text-right py-2 px-2">Net Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(earningsData.allTransactions || []).map((transaction) => (
+                      <tr key={transaction.id} className="border-b hover:bg-gray-50">
+                        <td className="py-2 px-2">{formatDate(transaction.date)}</td>
+                        <td className="text-right py-2 px-2 font-medium">
+                          {formatCurrency(transaction.grossAmount || 0)}
+                        </td>
+                        <td className="text-right py-2 px-2 text-orange-600">
+                          -{formatCurrency(transaction.commission || 0)}
+                        </td>
+                        <td className="text-right py-2 px-2 text-orange-600">
+                          -{formatCurrency(transaction.gst || 0)}
+                        </td>
+                        <td className="text-right py-2 px-2 font-bold text-green-600">
+                          {formatCurrency(transaction.amount)}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="border-t-2 font-bold bg-gray-50">
+                      <td colSpan={2} className="py-3 px-2">TOTAL</td>
+                      <td className="text-right py-3 px-2 text-orange-600">
+                        -{formatCurrency(
+                          (earningsData.allTransactions || []).reduce((sum, t) => sum + (t.commission || 0), 0)
+                        )}
+                      </td>
+                      <td className="text-right py-3 px-2 text-orange-600">
+                        -{formatCurrency(
+                          (earningsData.allTransactions || []).reduce((sum, t) => sum + (t.gst || 0), 0)
+                        )}
+                      </td>
+                      <td className="text-right py-3 px-2 text-green-600">
+                        {formatCurrency(earningsData.totalEarnings)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+            <div className="p-4 bg-blue-50 rounded border border-blue-200">
+              <p className="text-sm text-blue-900"><strong>Current Summary:</strong></p>
+              <div className="grid grid-cols-3 gap-4 mt-2 text-sm">
+                <div>
+                  <p className="text-blue-700">Available Now (80%)</p>
+                  <p className="font-bold text-lg text-blue-600">{formatCurrency(earningsData.availableBalance)}</p>
+                </div>
+                <div>
+                  <p className="text-orange-700">Pending Approval (20%)</p>
+                  <p className="font-bold text-lg text-orange-600">{formatCurrency(earningsData.pendingBalance)}</p>
+                </div>
+                <div>
+                  <p className="text-green-700">Total Net Earnings</p>
+                  <p className="font-bold text-lg text-green-600">{formatCurrency(earningsData.totalEarnings)}</p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>
-      </div>
 
-      {/* Bank Details Dialog */}
-      <Dialog open={showBankForm} onOpenChange={setShowBankForm}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Bank Details</DialogTitle>
-            <DialogDescription>
-              Add or update your bank details for redemptions
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="account_holder">Account Holder Name</Label>
-              <Input
-                id="account_holder"
-                value={bankDetails.account_holder_name}
-                onChange={(e) => setBankDetails(prev => ({ 
-                  ...prev, account_holder_name: e.target.value 
-                }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="account_number">Account Number</Label>
-              <Input
-                id="account_number"
-                value={bankDetails.account_number}
-                onChange={(e) => setBankDetails(prev => ({ 
-                  ...prev, account_number: e.target.value 
-                }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="bank_name">Bank Name</Label>
-              <Input
-                id="bank_name"
-                value={bankDetails.bank_name}
-                onChange={(e) => setBankDetails(prev => ({ 
-                  ...prev, bank_name: e.target.value 
-                }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="ifsc">IFSC Code</Label>
-              <Input
-                id="ifsc"
-                value={bankDetails.ifsc_code}
-                onChange={(e) => setBankDetails(prev => ({ 
-                  ...prev, ifsc_code: e.target.value 
-                }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="branch">Branch Name</Label>
-              <Input
-                id="branch"
-                value={bankDetails.branch_name}
-                onChange={(e) => setBankDetails(prev => ({ 
-                  ...prev, branch_name: e.target.value 
-                }))}
-              />
-            </div>
-            <div>
-              <Label htmlFor="account_type">Account Type</Label>
-              <Select
-                value={bankDetails.account_type}
-                onValueChange={(value: 'savings' | 'current') => 
-                  setBankDetails(prev => ({ ...prev, account_type: value }))
-                }
+        {/* Raise Dispute Modal */}
+        <Dialog open={showDispute} onOpenChange={setShowDispute}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <SellerRaiseDispute
+              type="earnings"
+              context={{
+                earnedAmount: earningsData.totalEarnings,
+                availableAmount: earningsData.availableBalance,
+                pendingAmount: earningsData.pendingBalance,
+              }}
+              onClose={() => setShowDispute(false)}
+            />
+          </DialogContent>
+        </Dialog>
+
+        {/* Bank Details Dialog */}
+        <Dialog open={showBankForm} onOpenChange={setShowBankForm}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Bank Details</DialogTitle>
+              <DialogDescription>
+                Add or update your bank details for redemptions (from KYC)
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="account_holder">Account Holder Name</Label>
+                <Input
+                  id="account_holder"
+                  value={bankDetails.account_holder_name || ""}
+                  onChange={(e) => setBankDetails(prev => ({ 
+                    ...prev, account_holder_name: e.target.value 
+                  }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="account_number">Account Number</Label>
+                <Input
+                  id="account_number"
+                  value={bankDetails.account_number || ""}
+                  onChange={(e) => setBankDetails(prev => ({ 
+                    ...prev, account_number: e.target.value 
+                  }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="bank_name">Bank Name</Label>
+                <Input
+                  id="bank_name"
+                  value={bankDetails.bank_name || ""}
+                  onChange={(e) => setBankDetails(prev => ({ 
+                    ...prev, bank_name: e.target.value 
+                  }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="ifsc">IFSC Code</Label>
+                <Input
+                  id="ifsc"
+                  value={bankDetails.ifsc_code || ""}
+                  onChange={(e) => setBankDetails(prev => ({ 
+                    ...prev, ifsc_code: e.target.value 
+                  }))}
+                />
+              </div>
+              <div>
+                <Label htmlFor="account_type">Account Type</Label>
+                <Select
+                  value={bankDetails.account_type || "savings"}
+                  onValueChange={(value: string) => 
+                    setBankDetails(prev => ({ ...prev, account_type: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="savings">Savings</SelectItem>
+                    <SelectItem value="current">Current</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                onClick={saveBankDetails}
+                disabled={saving}
+                className="w-full"
               >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="savings">Savings</SelectItem>
-                  <SelectItem value="current">Current</SelectItem>
-                </SelectContent>
-              </Select>
+                {saving ? "Saving..." : "Save Bank Details"}
+              </Button>
             </div>
-            <Button
-              onClick={saveBankDetails}
-              disabled={saving}
-              className="w-full"
-            >
-              {saving ? "Saving..." : "Save Bank Details"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      </>
     </div>
   );
 }

@@ -42,14 +42,16 @@ import {
 } from "@/components/ui/sheet";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { 
   Package, Search, Filter, CalendarIcon, Eye, Truck, CheckCircle, 
   Clock, AlertCircle, MapPin, Phone, Mail, User, RotateCcw, 
-  Package2, FileText, RefreshCw 
+  Package2, FileText, RefreshCw, Flag 
 } from "lucide-react";
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 import type { Database } from "@/integrations/supabase/database.types";
+import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
 
 // Database type aliases
 type OrderRow = Database['public']['Tables']['orders']['Row'];
@@ -145,6 +147,7 @@ export default function Orders() {
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [statusChangeDialogOpen, setStatusChangeDialogOpen] = useState(false);
   const [newStatus, setNewStatus] = useState("");
+  const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
   
   // Form states
   const [courierDetails, setCourierDetails] = useState<CourierDetails>({
@@ -344,7 +347,7 @@ export default function Orders() {
 
       // For each order_item, we need to fetch buyer, address, and return details
       const orderItemsWithDetails = await Promise.all(
-        orderItemsData.map(async (item: any) => {
+        orderItemsData.map(async (item: OrderItemRow & { orders?: Partial<OrderRow> }) => {
           const order = item.orders;
           
           // Fetch buyer details
@@ -456,11 +459,12 @@ export default function Orders() {
       console.log("✅ Final filtered order items:", filteredOrders);
       setOrders(filteredOrders);
 
-    } catch (error: any) {
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error("💥 Error loading order items:", error);
       toast({
         title: "Error",
-        description: `Failed to load orders: ${error.message || 'Unknown error'}`,
+        description: `Failed to load orders: ${errorMessage}`,
         variant: "destructive",
       });
     } finally {
@@ -767,12 +771,32 @@ export default function Orders() {
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-7xl">
-      {/* Header */}
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Orders Management</h1>
-        <p className="text-gray-600 mt-2">Manage your orders, track shipments, and handle returns</p>
-      </div>
+    <>
+      <SellerRaiseDispute
+        isOpen={raiseDisputeOpen}
+        onClose={() => setRaiseDisputeOpen(false)}
+        sellerId={sellerId || ""}
+        context={{
+          type: "order",
+          orderId: selectedOrder?.order_id,
+        }}
+      />
+      <div className="container mx-auto p-6 max-w-7xl">
+        {/* Header */}
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">Orders Management</h1>
+            <p className="text-gray-600 mt-2">Manage your orders, track shipments, and handle returns</p>
+          </div>
+          <Button
+            onClick={() => setRaiseDisputeOpen(true)}
+            className="flex items-center gap-2"
+            variant="outline"
+          >
+            <Flag className="h-4 w-4" />
+            Raise Dispute
+          </Button>
+        </div>
 
       {/* Test Button for Debugging */}
       <Card className="mb-6 bg-yellow-50 border-yellow-200">
@@ -1296,6 +1320,16 @@ export default function Orders() {
               Are you sure you want to mark order {selectedOrder?.order_id.slice(0, 8).toUpperCase()} as {newStatus}?
             </DialogDescription>
           </DialogHeader>
+          
+          {newStatus === "cancelled" && (
+            <Alert className="bg-yellow-50 border-yellow-200">
+              <AlertCircle className="h-4 w-4 text-yellow-600" />
+              <AlertDescription className="text-yellow-800">
+                <strong>Important:</strong> When you cancel this order, the quantity ({selectedOrder?.quantity} units) will be returned to your stock. Please verify that your current stock levels are correct before confirming cancellation.
+              </AlertDescription>
+            </Alert>
+          )}
+          
           <DialogFooter>
             <Button variant="outline" onClick={() => setStatusChangeDialogOpen(false)}>
               Cancel
@@ -1388,6 +1422,7 @@ export default function Orders() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </>
   );
 }

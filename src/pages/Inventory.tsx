@@ -26,7 +26,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Edit, Trash2, Plus, Filter, Search, Package, X, Images, ChevronLeft, ChevronRight } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Edit, Trash2, Plus, Filter, Search, Package, X, Images, ChevronLeft, ChevronRight, Flag, AlertTriangle } from "lucide-react";
 import { BundleCreation } from "@/components/BundleCreation";
 import { FilterOptions, ListingWithDetails, VariantForm, BundleWithDetails } from "@/types/inventory.types";
 import AddProductDialog from "@/components/AddProductDialog";
@@ -36,6 +37,8 @@ import { SimpleRestockDialog } from "@/components/SimpleRestockDialog";
 import BundleRestockDialog from "@/components/BundleRestockDialog";
 import { ProductDetailModal } from "@/components/ProductDetailModal";
 import { ProductImageGalleryCard } from "@/components/ProductImageGalleryCard";
+import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
+import { PricingBreakdown } from "@/components/PricingBreakdown";
 import {
   Sheet,
   SheetContent,
@@ -146,6 +149,7 @@ export default function Inventory() {
   const [imageManagerOpen, setImageManagerOpen] = useState(false);
   const [bundleDialogOpen, setBundleDialogOpen] = useState(false);
   const [editingBundle, setEditingBundle] = useState<Record<string, unknown> | null>(null);
+  const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -922,7 +926,16 @@ export default function Inventory() {
   ].filter(Boolean).length;
 
   return (
-    <div className="p-6 space-y-6">
+    <>
+      <SellerRaiseDispute
+        isOpen={raiseDisputeOpen}
+        onClose={() => setRaiseDisputeOpen(false)}
+        sellerId={sellerId || ""}
+        context={{
+          type: "product",
+        }}
+      />
+      <div className="p-6 space-y-6">
       {/* Low Stock Notifications at Top */}
       <LowStockNotifications
         onProductClick={(productId) => {
@@ -937,6 +950,39 @@ export default function Inventory() {
         }}
       />
 
+      {/* Commission & GST Information Card */}
+      <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-blue-900">
+            <AlertTriangle className="h-5 w-5" />
+            Important: Transaction Charges Apply
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-blue-800">
+            When you receive orders, payments, refunds, or cancellations, Razorpay automatically deducts:
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-white p-3 rounded border border-blue-100">
+              <p className="text-sm font-semibold text-blue-900">Platform Commission</p>
+              <p className="text-2xl font-bold text-red-600">2%</p>
+              <p className="text-xs text-gray-600">On every transaction</p>
+            </div>
+            <div className="bg-white p-3 rounded border border-blue-100">
+              <p className="text-sm font-semibold text-blue-900">GST on Commission</p>
+              <p className="text-2xl font-bold text-orange-600">18%</p>
+              <p className="text-xs text-gray-600">On the 2% commission</p>
+            </div>
+          </div>
+          <p className="text-xs text-blue-700 font-medium">
+            Example: ₹100 sale = ₹100 - ₹2 (commission) - ₹0.36 (18% GST) = ₹97.64 you receive
+          </p>
+          <p className="text-xs text-blue-700">
+            Please adjust your product MRP accordingly to ensure your desired profit margin.
+          </p>
+        </CardContent>
+      </Card>
+
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -946,6 +992,14 @@ export default function Inventory() {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setRaiseDisputeOpen(true)}
+            className="flex items-center gap-2"
+          >
+            <Flag className="h-4 w-4" />
+            Raise Dispute
+          </Button>
           <Button variant="outline" onClick={() => setImageManagerOpen(true)}>
             <Images className="h-4 w-4 mr-2" />
             Manage Images
@@ -1535,6 +1589,7 @@ export default function Inventory() {
         productId={detailModalProductId}
         bundleId={detailModalBundleId}
       />
-    </div>
+      </div>
+    </>
   );
 }
