@@ -40,9 +40,11 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
       // Note: related_seller_id in notifications table stores sellers.id (not auth.users.id)
       const sellerId = await getAuthenticatedSellerId();
       console.log("=== LowStockNotifications DEBUG ===");
-      console.log("loadNotifications called with sellerId:", sellerId);
+      console.log("loadNotifications called");
+      console.log("sellerId:", sellerId);
+      
       if (!sellerId) {
-        console.log("No seller ID found");
+        console.error("ERROR: No seller ID found - cannot load notifications");
         setLoading(false);
         return;
       }
@@ -59,24 +61,24 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
         .order("created_at", { ascending: false })
         .limit(10);
 
-      console.log("Query response - Data:", data);
-      console.log("Query response - Error:", error);
+      console.log("Query complete");
+      console.log("Data rows returned:", data?.length || 0);
+      console.log("Data:", data);
+      console.log("Error:", error);
       console.log("=== END DEBUG ===");
 
       if (error) {
-        console.error("Error loading notifications:", error);
-        console.error("Error details:", error);
+        console.error("Query error:", error);
         toast({
           title: "Error",
           description: "Failed to load low stock notifications: " + error.message,
           variant: "destructive",
         });
       } else {
-        console.log("Loaded notifications:", data);
         setNotifications(data || []);
       }
     } catch (error) {
-      console.error("Error in loadNotifications:", error);
+      console.error("Exception in loadNotifications:", error);
       toast({
         title: "Error",
         description: "Exception in loadNotifications: " + (error instanceof Error ? error.message : String(error)),
