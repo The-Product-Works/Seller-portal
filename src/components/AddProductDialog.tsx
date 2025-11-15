@@ -879,12 +879,13 @@ export default function AddProductDialog({
                   variant="outline" 
                   size="icon"
                   onClick={() => {
-                    const newBrandName = prompt("Enter new brand name:");
+                    const newBrandName = prompt("Brand name:");
                     if (newBrandName) {
                       setBrandSearch(newBrandName);
                       handleCreateBrand();
                     }
                   }}
+                  title="Create a new brand"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
@@ -908,7 +909,7 @@ export default function AddProductDialog({
                   }}
                 >
                   <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="Select a product (optional)" />
+                    <SelectValue placeholder="Select a product" />
                   </SelectTrigger>
                   <SelectContent>
                     {globalProducts
@@ -924,12 +925,13 @@ export default function AddProductDialog({
                   variant="outline" 
                   size="icon"
                   onClick={() => {
-                    const newProductName = prompt("Enter new product name:");
+                    const newProductName = prompt("Product name:");
                     if (newProductName) {
                       setGlobalProductSearch(newProductName);
                       handleCreateGlobalProduct();
                     }
                   }}
+                  title="Create a new product"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
