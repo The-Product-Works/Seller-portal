@@ -1070,6 +1070,14 @@ export default function AddProductDialog({
                 </p>
               </div>
             </div>
+
+            {/* Commission Info in Basic Tab */}
+            <CommissionWarning 
+              mrp={100}
+              showInlineCalculator={false}
+              variant="info"
+              sellerCommission={sellerCommission}
+            />
           </TabsContent>
 
           {/* Variants Tab */}
