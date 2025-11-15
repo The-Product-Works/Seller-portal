@@ -20,6 +20,7 @@ interface CommissionWarningProps {
   onMrpChange?: (mrp: number) => void;
   showInlineCalculator?: boolean;
   variant?: 'warning' | 'info' | 'compact';
+  sellerCommission?: number; // Additional commission seller adds on top of 2%
 }
 
 export function CommissionWarning({
@@ -27,12 +28,17 @@ export function CommissionWarning({
   onMrpChange,
   showInlineCalculator = true,
   variant = 'warning',
+  sellerCommission = 0,
 }: CommissionWarningProps) {
   const [customMrp, setCustomMrp] = useState<number>(mrp);
 
   // Commission calculation formula
-  const commission = customMrp * 0.02; // 2%
-  const gst = commission * 0.18; // 18% of commission
+  const platformCommission = 0.02; // 2% platform commission
+  const totalCommissionRate = platformCommission + (sellerCommission / 100); // Total commission rate
+  const commission = customMrp * totalCommissionRate; // Total commission
+  const platformCommissionAmount = customMrp * platformCommission; // Platform's 2%
+  const sellerAdditionalCommission = customMrp * (sellerCommission / 100); // Seller's additional %
+  const gst = platformCommissionAmount * 0.18; // 18% of platform commission only
   const totalDeduction = commission + gst;
   const sellerReceives = customMrp - totalDeduction;
   const percentageReceived = ((sellerReceives / customMrp) * 100).toFixed(2);
@@ -145,15 +151,25 @@ export function CommissionWarning({
               <div className="border-t" />
               <div className="flex justify-between items-center text-sm">
                 <span className="text-amber-700 flex items-center gap-1">
-                  <TrendingDown className="h-4 w-4" /> Commission (2%):
+                  <TrendingDown className="h-4 w-4" /> Platform Commission (2%):
                 </span>
                 <span className="font-medium text-red-600">
-                  -₹{commission.toFixed(2)}
+                  -₹{platformCommissionAmount.toFixed(2)}
                 </span>
               </div>
+              {sellerCommission > 0 && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-orange-700 flex items-center gap-1">
+                    <TrendingDown className="h-4 w-4" /> Your Additional Commission ({sellerCommission}%):
+                  </span>
+                  <span className="font-medium text-orange-600">
+                    -₹{sellerAdditionalCommission.toFixed(2)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between items-center text-sm">
                 <span className="text-amber-700 flex items-center gap-1">
-                  <TrendingDown className="h-4 w-4" /> GST (18% on commission):
+                  <TrendingDown className="h-4 w-4" /> GST (18% on platform commission):
                 </span>
                 <span className="font-medium text-red-600">
                   -₹{gst.toFixed(2)}

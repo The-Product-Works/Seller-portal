@@ -114,6 +114,7 @@ export default function AddProductDialog({
   const [shippingInfo, setShippingInfo] = useState("");
   const [shelfLifeMonths, setShelfLifeMonths] = useState<number>(12);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
+  const [sellerCommission, setSellerCommission] = useState<number>(0); // Additional commission seller adds on top of 2%
   const [status, setStatus] = useState<"draft" | "active">("draft");
   const [showPreview, setShowPreview] = useState(false);
   const [showImageManager, setShowImageManager] = useState(false);
@@ -162,6 +163,7 @@ export default function AddProductDialog({
       setShippingInfo("");
       setShelfLifeMonths(12);
       setDiscountPercentage(0);
+      setSellerCommission(0);
       setStatus("draft");
       setProductImages([]);
       setGalleryImages([]);
@@ -825,6 +827,7 @@ export default function AddProductDialog({
     setShippingInfo("");
     setShelfLifeMonths(12);
     setDiscountPercentage(0);
+    setSellerCommission(0);
     setProductImages([]);
     setGalleryImages([]);
     setCertificateFiles([]);
@@ -1043,6 +1046,30 @@ export default function AddProductDialog({
                 />
               </div>
             </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Additional Commission (%) - ON TOP of 2%</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    value={sellerCommission}
+                    onChange={(e) => setSellerCommission(Math.max(0, Number(e.target.value)))}
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    placeholder="0"
+                    className="flex-1"
+                  />
+                  <div className="flex items-center px-3 bg-blue-50 border border-blue-200 rounded text-sm font-medium text-blue-700 whitespace-nowrap">
+                    Total: {(2 + sellerCommission).toFixed(1)}%
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Platform takes 2% + your additional {sellerCommission.toFixed(1)}% = {(2 + sellerCommission).toFixed(1)}% total
+                </p>
+              </div>
+            </div>
           </TabsContent>
 
           {/* Variants Tab */}
@@ -1055,6 +1082,7 @@ export default function AddProductDialog({
                   updateVariant(0, "price", price);
                 }
               }}
+              sellerCommission={sellerCommission}
               showInlineCalculator={true}
               variant="warning"
             />
