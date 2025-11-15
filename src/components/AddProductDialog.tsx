@@ -310,7 +310,7 @@ export default function AddProductDialog({
     try {
       console.log("Creating global product with:", {
         productName: globalProductSearch,
-        brandId: selectedBrand?.brand_id || "generic",
+        brandId: selectedBrand?.brand_id || "",
         categoryId: selectedCategory
       });
       
@@ -913,7 +913,7 @@ export default function AddProductDialog({
                   </SelectTrigger>
                   <SelectContent>
                     {globalProducts
-                      .filter(p => !selectedBrand || p.brand_id === selectedBrand.brand_id)
+                      .filter(p => !selectedBrand || p.brand_id === selectedBrand.brand_id || p.brand_id === "")
                       .map((product) => (
                         <SelectItem key={product.global_product_id} value={product.global_product_id}>
                           {product.product_name}
