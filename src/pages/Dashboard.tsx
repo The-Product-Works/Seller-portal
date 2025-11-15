@@ -11,7 +11,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DollarSign, Package, ShoppingCart, Clock, AlertCircle, RefreshCw, Star, Shield, TrendingUp, Flag } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
-import { LowStockNotificationsBundle } from "@/components/LowStockNotificationsBundle";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -626,13 +625,8 @@ export default function Dashboard() {
               </div>
 
               <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5 text-orange-600" />Low Stock Alerts - Products</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5 text-orange-600" />Low Stock Alerts - All (Products & Bundles)</CardTitle></CardHeader>
                 <CardContent><LowStockNotifications showRestockButton={false} /></CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5 text-purple-600" />Low Stock Alerts - Bundles</CardTitle></CardHeader>
-                <CardContent><LowStockNotificationsBundle showRestockButton={false} /></CardContent>
               </Card>
             </>
           )}

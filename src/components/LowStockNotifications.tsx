@@ -47,23 +47,17 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
         return;
       }
 
-      // Query low stock notifications
+      // Query low stock notifications - ALL TYPES (products and bundles)
       console.log("Querying notifications table with sellerId:", sellerId);
       
-      // Build the query step by step to see where it fails
-      let query = supabase
+      const { data, error } = await supabase
         .from("notifications")
-        .select("*");
-      
-      query = query.eq("type", "low_stock");
-      query = query.eq("is_read", false);
-      query = query.eq("related_seller_id", sellerId);
-      // Filter for product alerts only (exclude bundles)
-      query = query.not("title", "like", "%Bundle%");
-      query = query.order("created_at", { ascending: false });
-      query = query.limit(10);
-
-      const { data, error } = await query;
+        .select("*")
+        .eq("type", "low_stock")
+        .eq("is_read", false)
+        .eq("related_seller_id", sellerId)
+        .order("created_at", { ascending: false })
+        .limit(10);
 
       console.log("Query response - Data:", data);
       console.log("Query response - Error:", error);
