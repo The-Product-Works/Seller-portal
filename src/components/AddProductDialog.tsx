@@ -855,7 +855,7 @@ export default function AddProductDialog({
           <TabsContent value="basic" className="space-y-4">
             {/* Brand Selection */}
             <div className="space-y-2">
-              <Label>Brand (Optional)</Label>
+              <Label>Brand <span className="text-red-500">*</span></Label>
               <div className="flex gap-2">
                 <Select 
                   value={selectedBrand?.brand_id || ""} 
@@ -898,7 +898,7 @@ export default function AddProductDialog({
 
             {/* Global Product Selection */}
             <div className="space-y-2">
-              <Label>Global Product Name (Optional)</Label>
+              <Label>Global Product Name <span className="text-red-500">*</span></Label>
               <div className="flex gap-2">
                 <Select 
                   value={selectedGlobalProduct?.global_product_id || ""} 
