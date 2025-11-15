@@ -149,7 +149,8 @@ export default function KYC() {
           const { data: docs, error: docsError } = await supabase
             .from("seller_documents")
             .select("*")
-            .eq("seller_id", s.id);
+            .eq("seller_id", s.id)
+            .order("uploaded_at", { ascending: false });
 
           console.log("Loading seller documents for seller:", s.id);
           console.log("Documents query error:", docsError);

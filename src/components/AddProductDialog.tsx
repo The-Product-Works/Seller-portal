@@ -307,21 +307,16 @@ export default function AddProductDialog({
       return;
     }
     
-    if (!selectedBrand) {
-      toast({ title: "Select a brand first", variant: "destructive" });
-      return;
-    }
-    
     try {
       console.log("Creating global product with:", {
         productName: globalProductSearch,
-        brandId: selectedBrand.brand_id,
+        brandId: selectedBrand?.brand_id || "generic",
         categoryId: selectedCategory
       });
       
       const newProduct = await createGlobalProduct(
         globalProductSearch,
-        selectedBrand.brand_id,
+        selectedBrand?.brand_id || "",
         selectedCategory
       );
       
@@ -332,9 +327,7 @@ export default function AddProductDialog({
         global_product_id: newProduct.global_product_id,
         product_name: newProduct.product_name,
         brand_id: newProduct.brand_id,
-        brands: {
-          name: selectedBrand.name,
-        },
+        brands: selectedBrand ? { name: selectedBrand.name } : { name: "Generic" },
       };
       
       // Set as selected and add to the list for display (only if it's not already there)
@@ -444,26 +437,13 @@ export default function AddProductDialog({
       return;
     }
 
-    // When creating new product, require global product and brand selection
-    if (!editingProduct) {
-      if (!selectedGlobalProduct) {
-        toast({ title: "Please select or create a global product", variant: "destructive" });
-        return;
-      }
-      
-      if (!selectedBrand) {
-        toast({ title: "Please select or create a brand", variant: "destructive" });
-        return;
-      }
-    }
-
     if (!sellerDescription.trim()) {
       toast({ title: "Description is required", variant: "destructive" });
       return;
     }
 
-    // Ensure global product exists with correct brand
-    if (selectedGlobalProduct.brand_id !== selectedBrand.brand_id) {
+    // Validate brand-product match only if both are selected
+    if (selectedGlobalProduct && selectedBrand && selectedGlobalProduct.brand_id !== selectedBrand.brand_id) {
       toast({ 
         title: "Brand mismatch", 
         description: "Please create a new product or select matching brand",
@@ -519,7 +499,8 @@ export default function AddProductDialog({
       }
 
       // Handle slug for new products only
-      const productTitle = selectedGlobalProduct.product_name;
+      // Use seller_title as fallback if no global product selected
+      const productTitle = sellerTitle || selectedGlobalProduct?.product_name || "Untitled Product";
       const listingSlug = !isEditing ? await generateUniqueSlug(productTitle, sellerId) : undefined;
       
       console.log(`=== ${isEditing ? "Updating" : "Creating"} Product Listing ===`);
@@ -530,7 +511,31 @@ export default function AddProductDialog({
 
       console.log("Seller ID:", sellerId);
       console.log("Product Title:", productTitle);
-      console.log("Global Product ID:", selectedGlobalProduct.global_product_id);
+      console.log("Global Product ID:", selectedGlobalProduct?.global_product_id);
+      
+      // Auto-create global product if not selected
+      let globalProductId = selectedGlobalProduct?.global_product_id;
+      if (!globalProductId && !isEditing) {
+        try {
+          // Auto-create a global product with the seller's title
+          const autoProduct = await createGlobalProduct(
+            productTitle,
+            selectedBrand?.brand_id || "",
+            selectedCategory
+          );
+          globalProductId = autoProduct.global_product_id;
+          console.log("Auto-created global product:", globalProductId);
+        } catch (err) {
+          console.error("Failed to auto-create global product:", err);
+          // If auto-creation fails, throw error - we need a global product ID
+          throw new Error("Failed to create product entry. Please try again.");
+        }
+      }
+      
+      // For editing, keep existing global product ID
+      if (isEditing && editingProduct) {
+        globalProductId = editingProduct.global_product_id;
+      }
       
       let listing;
       let listingError;
@@ -554,7 +559,7 @@ export default function AddProductDialog({
         const { data, error } = await supabase
           .from("seller_product_listings")
           .update({
-            seller_title: sellerTitle || selectedGlobalProduct.product_name,
+            seller_title: sellerTitle || productTitle,
             seller_description: sellerDescription,
             seller_ingredients: sellerIngredients,
             health_score: healthScore,
@@ -582,9 +587,9 @@ export default function AddProductDialog({
         const { data, error } = await supabase
           .from("seller_product_listings")
           .insert({
-            global_product_id: selectedGlobalProduct.global_product_id,
+            global_product_id: globalProductId,
             seller_id: sellerId,
-            seller_title: sellerTitle || selectedGlobalProduct.product_name,
+            seller_title: sellerTitle || productTitle,
             seller_description: sellerDescription,
             seller_ingredients: sellerIngredients,
             health_score: healthScore,
@@ -850,7 +855,7 @@ export default function AddProductDialog({
           <TabsContent value="basic" className="space-y-4">
             {/* Brand Selection */}
             <div className="space-y-2">
-              <Label>Brand *</Label>
+              <Label>Brand (Optional)</Label>
               <div className="flex gap-2">
                 <Select 
                   value={selectedBrand?.brand_id || ""} 
@@ -893,7 +898,7 @@ export default function AddProductDialog({
 
             {/* Global Product Selection */}
             <div className="space-y-2">
-              <Label>Global Product Name *</Label>
+              <Label>Global Product Name (Optional)</Label>
               <div className="flex gap-2">
                 <Select 
                   value={selectedGlobalProduct?.global_product_id || ""} 
@@ -901,10 +906,9 @@ export default function AddProductDialog({
                     const product = globalProducts.find(p => p.global_product_id === value);
                     setSelectedGlobalProduct(product || null);
                   }}
-                  disabled={!selectedBrand}
                 >
                   <SelectTrigger className="flex-1">
-                    <SelectValue placeholder={selectedBrand ? "Select a product" : "Select brand first"} />
+                    <SelectValue placeholder="Select a product (optional)" />
                   </SelectTrigger>
                   <SelectContent>
                     {globalProducts
@@ -919,9 +923,7 @@ export default function AddProductDialog({
                 <Button 
                   variant="outline" 
                   size="icon"
-                  disabled={!selectedBrand}
                   onClick={() => {
-                    if (!selectedBrand) return;
                     const newProductName = prompt("Enter new product name:");
                     if (newProductName) {
                       setGlobalProductSearch(newProductName);

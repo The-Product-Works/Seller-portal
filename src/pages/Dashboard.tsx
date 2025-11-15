@@ -483,8 +483,24 @@ export default function Dashboard() {
       {kycStatus !== "verified" && (
         <Alert className="border-yellow-200 bg-yellow-50">
           <AlertCircle className="h-4 w-4 text-yellow-600" />
-          <AlertTitle className="text-yellow-800">KYC Verification Pending</AlertTitle>
-          <AlertDescription className="text-yellow-700">Complete your KYC verification to unlock all features</AlertDescription>
+          <AlertTitle className="text-yellow-800">
+            {kycStatus === "pending" ? "KYC Verification Pending" : 
+             kycStatus === "new_user" ? "Welcome New User - Complete Your KYC" :
+             "KYC Verification Status"}
+          </AlertTitle>
+          <AlertDescription className="text-yellow-700">
+            {kycStatus === "pending" ? "Your KYC is under review. This may take 24-48 hours." :
+             kycStatus === "new_user" ? "Complete your KYC verification to start selling and unlock all features." :
+             "Complete your KYC verification to unlock all features"}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {kycStatus === "verified" && (
+        <Alert className="border-green-200 bg-green-50">
+          <AlertCircle className="h-4 w-4 text-green-600" />
+          <AlertTitle className="text-green-800">KYC Verified</AlertTitle>
+          <AlertDescription className="text-green-700">Your account is verified and all features are unlocked.</AlertDescription>
         </Alert>
       )}
 

@@ -224,8 +224,7 @@ export default function CustomerFeedback() {
           seller_product_listings!inner(
             seller_title,
             seller_id,
-            category,
-            price,
+            base_price,
             listing_images(image_url)
           )
         `)
@@ -273,8 +272,8 @@ export default function CustomerFeedback() {
         is_verified_purchase: review.is_verified_purchase || false,
         helpful_count: review.helpful_count || 0,
         product_title: review.seller_product_listings?.seller_title || "Unknown Product",
-        product_category: review.seller_product_listings?.category || "General",
-        product_price: review.seller_product_listings?.price || 0,
+        product_category: "Product",
+        product_price: review.seller_product_listings?.base_price || 0,
         product_image: review.seller_product_listings?.listing_images?.[0]?.image_url,
         buyer_name: "Anonymous" // Privacy protection
       }));
