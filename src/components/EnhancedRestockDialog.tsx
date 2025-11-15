@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { getAuthenticatedUserId } from "@/lib/seller-helpers";
 import { Package, AlertCircle, TrendingDown, AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -104,6 +105,23 @@ export function EnhancedRestockDialog({
           .eq("seller_id", sellerId);
 
         if (error) throw error;
+
+        // Create low stock notification if stock is 10 or less
+        if (newStock <= 10) {
+          const authUserId = await getAuthenticatedUserId();
+          if (authUserId) {
+            try {
+              await supabase.from("notifications").insert({
+                related_seller_id: authUserId,
+                type: "low_stock",
+                title: "Low Stock Alert - Bundle",
+                message: `Bundle "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
+              });
+            } catch (notifError) {
+              console.error("Error creating bundle notification:", notifError);
+            }
+          }
+        }
       } else if (isVariant) {
         const { error } = await supabase
           .from("listing_variants")
@@ -137,6 +155,23 @@ export function EnhancedRestockDialog({
             updated_at: new Date().toISOString(),
           })
           .eq("listing_id", variantData.listing_id);
+
+        // Create low stock notification if stock is 10 or less
+        if (newStock <= 10) {
+          const authUserId = await getAuthenticatedUserId();
+          if (authUserId) {
+            try {
+              await supabase.from("notifications").insert({
+                related_seller_id: authUserId,
+                type: "low_stock",
+                title: "Low Stock Alert - Product Variant",
+                message: `Variant "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
+              });
+            } catch (notifError) {
+              console.error("Error creating variant notification:", notifError);
+            }
+          }
+        }
       } else {
         const { error } = await supabase
           .from("seller_product_listings")
@@ -148,6 +183,23 @@ export function EnhancedRestockDialog({
           .eq("seller_id", sellerId);
 
         if (error) throw error;
+
+        // Create low stock notification if stock is 10 or less
+        if (newStock <= 10) {
+          const authUserId = await getAuthenticatedUserId();
+          if (authUserId) {
+            try {
+              await supabase.from("notifications").insert({
+                related_seller_id: authUserId,
+                type: "low_stock",
+                title: "Low Stock Alert - Product",
+                message: `Product "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
+              });
+            } catch (notifError) {
+              console.error("Error creating product notification:", notifError);
+            }
+          }
+        }
       }
 
       const action = qty > 0 ? "added" : "removed";
