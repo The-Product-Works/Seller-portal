@@ -610,11 +610,20 @@ export function OrderDetails({ orderId, sellerId }: OrderDetailsProps) {
       <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Cancel Order</AlertDialogTitle>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-orange-600" />
+              Cancel Order - Seller
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              Enter the reason for cancelling this order. This will be visible to the buyer.
+              WARNING: When you cancel this order, you must manually update your stock quantity. Make sure to restock the items back into your inventory.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="py-4 space-y-4 bg-orange-50 border border-orange-200 rounded-lg p-3">
+            <p className="text-sm text-orange-900">
+              <strong>Important Action Required:</strong><br/>
+              After cancellation, go to Inventory and increase your stock by the order quantity to reflect the cancellation.
+            </p>
+          </div>
           <div className="py-4">
             <Label htmlFor="cancel-reason">Reason for Cancellation</Label>
             <Textarea

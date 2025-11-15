@@ -39,7 +39,7 @@ export function Navbar() {
     { title: "Dashboard", path: "/dashboard", icon: BarChart2 },
     { title: "Inventory", path: "/inventory", icon: Boxes },
     { title: "Orders", path: "/orders", icon: ClipboardList },
-    { title: "Ads & Banners", path: "/ads", icon: Megaphone },
+    { title: "Customer Feedback", path: "/customer-feedback", icon: Megaphone },
     { title: "Redeem", path: "/redeem", icon: Wallet },
   ];
 

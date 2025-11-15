@@ -458,8 +458,12 @@ export default function Redeem() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       <>
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold">Redeem Earnings</h1>
+        {/* Header */}
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">Redeem Your Earnings</h1>
+            <p className="text-gray-600 mt-2">Monitor your earnings and manage redemptions</p>
+          </div>
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -470,9 +474,8 @@ export default function Redeem() {
               Raise Dispute
             </Button>
             <Button
-              variant="outline"
               onClick={() => setShowBankForm(true)}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
             >
               <Building className="w-4 h-4" />
               Bank Details
@@ -480,21 +483,25 @@ export default function Redeem() {
           </div>
         </div>
 
-        {/* Bank Details Status */}
+        {/* Bank Details Status - Enhanced */}
         {bankDetails.account_number ? (
-          <Card className="border-green-200 bg-green-50">
+          <Card className="border-green-200 bg-gradient-to-r from-green-50 to-emerald-50 shadow-lg">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-green-900">Bank Details Verified</p>
-                  <p className="text-sm text-green-700">
-                    {bankDetails.account_holder_name} - {bankDetails.bank_name}
-                    <br />
+                  <p className="font-semibold text-green-900 text-lg">✓ Bank Details Verified</p>
+                  <p className="text-sm text-green-700 mt-2">
+                    <strong>{bankDetails.account_holder_name}</strong> at {bankDetails.bank_name}
+                  </p>
+                  <p className="text-xs text-green-600 mt-1">
                     Account: ****{bankDetails.account_number.slice(-4)} ({bankDetails.account_type})
                   </p>
                 </div>
                 {bankDetails.account_verified && (
-                  <CheckCircle className="w-6 h-6 text-green-600" />
+                  <div className="text-right">
+                    <CheckCircle className="w-8 h-8 text-green-600 mb-2" />
+                    <p className="text-xs text-green-700">Ready to Redeem</p>
+                  </div>
                 )}
               </div>
             </CardContent>
@@ -518,66 +525,73 @@ export default function Redeem() {
           </Card>
         )}
 
-        {/* Earnings Overview */}
+        {/* Earnings Overview - Enhanced */}
         <div className="grid gap-4 md:grid-cols-3">
-          <Card>
+          <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 shadow-lg hover:shadow-xl transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Earnings</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-semibold text-green-900">Total Earnings</CardTitle>
+              <div className="bg-green-200 p-2 rounded-lg">
+                <TrendingUp className="h-5 w-5 text-green-700" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-green-600">
+              <div className="text-3xl font-bold text-green-700">
                 {formatCurrency(earningsData.totalEarnings)}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-green-600 mt-2">
                 After 2% commission + 18% GST
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-gradient-to-br from-blue-50 to-cyan-50 border-blue-200 shadow-lg hover:shadow-xl transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Available Balance</CardTitle>
-              <Wallet className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-semibold text-blue-900">Available Balance</CardTitle>
+              <div className="bg-blue-200 p-2 rounded-lg">
+                <Wallet className="h-5 w-5 text-blue-700" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-blue-600">
+              <div className="text-3xl font-bold text-blue-700">
                 {formatCurrency(earningsData.availableBalance)}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Ready for redemption
+              <p className="text-xs text-blue-600 mt-2">
+                Ready for redemption (80%)
               </p>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200 shadow-lg hover:shadow-xl transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending Balance</CardTitle>
-              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-semibold text-orange-900">Pending Balance</CardTitle>
+              <div className="bg-orange-200 p-2 rounded-lg">
+                <AlertCircle className="h-5 w-5 text-orange-700" />
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-orange-600">
+              <div className="text-3xl font-bold text-orange-700">
                 {formatCurrency(earningsData.pendingBalance)}
               </div>
-              <p className="text-xs text-muted-foreground">
-                Awaiting admin approval
+              <p className="text-xs text-orange-600 mt-2">
+                Awaiting admin approval (20%)
               </p>
             </CardContent>
           </Card>
         </div>
 
-        {/* Redemption Form */}
-        <Card>
+        {/* Redemption Form - Enhanced */}
+        <Card className="border-blue-200 bg-gradient-to-br from-blue-50 to-indigo-50 shadow-lg">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="w-5 h-5" />
+            <CardTitle className="flex items-center gap-2 text-2xl">
+              <DollarSign className="w-6 h-6 text-blue-600" />
               Request Redemption
             </CardTitle>
+            <p className="text-sm text-gray-600 mt-2">Transfer your earnings to your bank account</p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="flex gap-4">
-              <div className="flex-1">
-                <Label htmlFor="amount">Amount to Redeem</Label>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <Label htmlFor="amount" className="text-sm font-semibold">Amount to Redeem</Label>
                 <Input
                   id="amount"
                   type="number"
@@ -586,19 +600,20 @@ export default function Redeem() {
                   placeholder="Enter amount"
                   max={earningsData.availableBalance}
                   disabled={!bankDetails.account_number}
+                  className="mt-2 border-2 focus:border-blue-500"
                 />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Maximum available: {formatCurrency(earningsData.availableBalance)}
+                <p className="text-xs text-blue-600 mt-2">
+                  Maximum available: <strong>{formatCurrency(earningsData.availableBalance)}</strong>
                 </p>
               </div>
               <div className="flex flex-col justify-end">
                 <Button
                   onClick={requestRedemption}
                   disabled={redeeming || !redeemAmount || !bankDetails.account_number}
-                  className="flex items-center gap-2"
+                  className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 h-10"
                 >
                   {redeeming ? (
-                    <>Loading...</>
+                    <>Processin...</>
                   ) : (
                     <>
                       <Wallet className="w-4 h-4" />
@@ -610,11 +625,17 @@ export default function Redeem() {
             </div>
 
             {redeemAmount && !isNaN(parseFloat(redeemAmount)) && (
-              <div className="bg-blue-50 border border-blue-200 p-3 rounded text-sm">
-                <p className="font-medium text-blue-900 mb-2">Redemption Breakdown:</p>
-                <div className="space-y-1 text-blue-800 text-xs">
-                  <p>Amount to Redeem: <span className="float-right font-medium">{formatCurrency(parseFloat(redeemAmount))}</span></p>
-                  <p className="text-blue-700">Direct transfer to your bank account</p>
+              <div className="bg-white border-2 border-blue-200 p-4 rounded-lg">
+                <p className="font-semibold text-gray-900 mb-3">Redemption Details:</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Amount to Redeem:</span>
+                    <span className="font-semibold text-blue-600">{formatCurrency(parseFloat(redeemAmount))}</span>
+                  </div>
+                  <div className="border-t pt-2">
+                    <p className="text-gray-600 text-xs">✓ Direct transfer to your bank account</p>
+                    <p className="text-gray-600 text-xs">✓ Processed within 3-5 business days</p>
+                  </div>
                 </div>
               </div>
             )}
