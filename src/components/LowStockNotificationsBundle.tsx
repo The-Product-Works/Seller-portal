@@ -1,11 +1,11 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Package, AlertTriangle, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { getAuthenticatedSellerId, getAuthenticatedUserId } from "@/lib/seller-helpers";
+import { getAuthenticatedUserId } from "@/lib/seller-helpers";
 
 interface Notification {
   id: string;
@@ -21,62 +21,44 @@ interface Notification {
   metadata?: Record<string, unknown>;
 }
 
-interface LowStockNotificationsProps {
-  onProductClick?: (productId: string) => void;
+interface LowStockNotificationsBundleProps {
   onBundleClick?: (bundleId: string) => void;
   showRestockButton?: boolean;
 }
 
-export function LowStockNotifications({ onProductClick, onBundleClick, showRestockButton = true }: LowStockNotificationsProps) {
+export function LowStockNotificationsBundle({ onBundleClick, showRestockButton = true }: LowStockNotificationsBundleProps) {
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      // Get seller ID for querying notifications
-      // Note: related_seller_id in notifications table stores sellers.id (not auth.users.id)
-      const sellerId = await getAuthenticatedSellerId();
-      console.log("=== LowStockNotifications DEBUG ===");
-      console.log("loadNotifications called with sellerId:", sellerId);
-      if (!sellerId) {
-        console.log("No seller ID found");
+      const authUserId = await getAuthenticatedUserId();
+      if (!authUserId) {
         setLoading(false);
         return;
       }
 
-      // Query low stock notifications
-      console.log("Querying notifications table with sellerId:", sellerId);
-      
-      // Build the query step by step to see where it fails
-      let query = supabase
+      const { data, error } = await supabase
         .from("notifications")
-        .select("*");
-      
-      query = query.eq("type", "low_stock");
-      query = query.eq("is_read", false);
-      query = query.eq("related_seller_id", sellerId);
-      query = query.order("created_at", { ascending: false });
-      query = query.limit(10);
-
-      const { data, error } = await query;
-
-      console.log("Query response - Data:", data);
-      console.log("Query response - Error:", error);
-      console.log("=== END DEBUG ===");
+        .select("*")
+        .eq("type", "low_stock")
+        .eq("is_read", false)
+        .eq("related_seller_id", authUserId)
+        .not("related_bundle_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(10);
 
       if (error) {
         console.error("Error loading notifications:", error);
-        console.error("Error details:", error);
         toast({
           title: "Error",
-          description: "Failed to load low stock notifications: " + error.message,
+          description: "Failed to load bundle low stock notifications: " + error.message,
           variant: "destructive",
         });
       } else {
-        console.log("Loaded notifications:", data);
         setNotifications(data || []);
       }
     } catch (error) {
@@ -89,30 +71,18 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
 
   useEffect(() => {
     loadNotifications();
     
     const channel = supabase
-      .channel('low_stock_notifications')
+      .channel('low_stock_bundle_notifications')
       .on(
         'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'notifications',
-          filter: 'type=eq.low_stock',
-        },
-        (payload) => {
-          const newNotification = payload.new as Notification;
-          setNotifications(prev => [newNotification, ...prev]);
-          
-          toast({
-            title: "Low Stock Alert",
-            description: newNotification.message,
-            variant: "destructive",
-          });
+        { event: '*', schema: 'public', table: 'notifications' },
+        () => {
+          loadNotifications();
         }
       )
       .subscribe();
@@ -120,23 +90,21 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
     return () => {
       supabase.removeChannel(channel);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]);
+  }, [loadNotifications]);
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
+      const authUserId = await getAuthenticatedUserId();
+      if (!authUserId) return;
+
       const { error } = await supabase
         .from("notifications")
         .update({ is_read: true })
-        .eq("id", notificationId);
+        .eq("id", notificationId)
+        .eq("related_seller_id", authUserId);
 
       if (error) {
         console.error("Error marking notification as read:", error);
-        toast({
-          title: "Error",
-          description: "Failed to update notification",
-          variant: "destructive",
-        });
       } else {
         setNotifications(prev => prev.filter(n => n.id !== notificationId));
         toast({
@@ -155,26 +123,36 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
       const authUserId = await getAuthenticatedUserId();
       if (!authUserId) return;
 
-      const { error } = await supabase
+      // Get all bundle alert IDs first to update them
+      const { data: bundleNotifications } = await supabase
         .from("notifications")
-        .update({ is_read: true })
+        .select("id")
         .eq("type", "low_stock")
         .eq("is_read", false)
-        .eq("related_seller_id", authUserId);
+        .eq("related_seller_id", authUserId)
+        .not("related_bundle_id", "is", null);
 
-      if (error) {
-        console.error("Error dismissing all notifications:", error);
-        toast({
-          title: "Error",
-          description: "Failed to dismiss notifications",
-          variant: "destructive",
-        });
-      } else {
-        setNotifications([]);
-        toast({
-          title: "Success",
-          description: "All notifications dismissed",
-        });
+      if (bundleNotifications && bundleNotifications.length > 0) {
+        const bundleIds = bundleNotifications.map(n => n.id);
+        const { error } = await supabase
+          .from("notifications")
+          .update({ is_read: true })
+          .in("id", bundleIds);
+
+        if (error) {
+          console.error("Error dismissing all notifications:", error);
+          toast({
+            title: "Error",
+            description: "Failed to dismiss notifications",
+            variant: "destructive",
+          });
+        } else {
+          setNotifications([]);
+          toast({
+            title: "Success",
+            description: "All bundle notifications dismissed",
+          });
+        }
       }
     } catch (error) {
       console.error("Error in handleDismissAll:", error);
@@ -191,19 +169,19 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
   }
 
   return (
-    <Card className="border-orange-200 bg-orange-50/50">
+    <Card className="border-purple-200 bg-purple-50/50">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-orange-800">
+          <CardTitle className="flex items-center gap-2 text-purple-800">
             <AlertTriangle className="h-5 w-5" />
-            <span>Low Stock Alerts ({notifications.length})</span>
+            <span>Bundle Low Stock Alerts ({notifications.length})</span>
           </CardTitle>
           {notifications.length > 1 && (
             <Button
               size="sm"
               variant="outline"
               onClick={handleDismissAll}
-              className="border-orange-300 text-orange-700 hover:bg-orange-100"
+              className="border-purple-300 text-purple-700 hover:bg-purple-100"
             >
               Dismiss All
             </Button>
@@ -214,33 +192,33 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
         {notifications.map((notification) => (
           <div
             key={notification.id}
-            className="flex items-start gap-3 p-3 bg-white rounded-lg border border-orange-200 shadow-sm"
+            className="flex items-start gap-3 p-3 bg-white rounded-lg border border-purple-200 shadow-sm"
           >
-            <Package className="h-5 w-5 text-orange-600 mt-0.5 flex-shrink-0" />
+            <Package className="h-5 w-5 text-purple-600 mt-0.5 flex-shrink-0" />
             <div className="flex-1 min-w-0">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1">
                   {notification.title && (
-                    <p className="font-medium text-orange-900 text-sm mb-1">
+                    <p className="font-medium text-purple-900 text-sm mb-1">
                       {notification.title}
                     </p>
                   )}
-                  <p className="text-orange-700 text-sm">
+                  <p className="text-purple-700 text-sm">
                     {notification.message}
                   </p>
-                  <p className="text-orange-600 text-xs mt-2">
+                  <p className="text-purple-600 text-xs mt-2">
                     {new Date(notification.created_at).toLocaleString()}
                   </p>
-                  {showRestockButton && notification.related_product_id && (
+                  {showRestockButton && notification.related_bundle_id && (
                     <Button
                       size="sm"
-                      className="mt-2 bg-orange-600 hover:bg-orange-700 text-white"
+                      className="mt-2 bg-purple-600 hover:bg-purple-700 text-white"
                       onClick={() => {
-                        navigate(`/inventory?restockProductId=${notification.related_product_id}`);
+                        navigate(`/inventory?restockBundleId=${notification.related_bundle_id}`);
                         handleMarkAsRead(notification.id);
                       }}
                     >
-                      Restock Now
+                      Restock Bundle Now
                     </Button>
                   )}
                 </div>
@@ -251,7 +229,7 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
                     e.stopPropagation();
                     handleMarkAsRead(notification.id);
                   }}
-                  className="text-orange-600 hover:text-orange-800 hover:bg-orange-100 flex-shrink-0"
+                  className="text-purple-600 hover:text-purple-800 hover:bg-purple-100 flex-shrink-0"
                   aria-label="Dismiss notification"
                 >
                   <X className="h-4 w-4" />

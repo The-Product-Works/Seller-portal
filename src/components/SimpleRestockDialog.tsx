@@ -88,21 +88,6 @@ export function SimpleRestockDialog({
           .eq("seller_id", sellerId);
 
         if (error) throw error;
-
-        // Create low stock notification if stock is 10 or less
-        if (newStock <= 10) {
-          try {
-            await supabase.from("notifications").insert({
-              related_seller_id: sellerId,
-              type: "low_stock",
-              title: "Low Stock Alert - Bundle",
-              message: `Bundle "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
-            });
-          } catch (notifError) {
-            console.error("Error creating bundle notification:", notifError);
-          }
-        }
-
       } else if (isVariant) {
         // Update variant stock
         const { error } = await supabase
@@ -156,20 +141,6 @@ export function SimpleRestockDialog({
           .eq("seller_id", sellerId);
 
         if (error) throw error;
-
-        // Create low stock notification if stock is 10 or less
-        if (newStock <= 10) {
-          try {
-            await supabase.from("notifications").insert({
-              related_seller_id: sellerId,
-              type: "low_stock",
-              title: "Low Stock Alert - Product",
-              message: `Product "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
-            });
-          } catch (notifError) {
-            console.error("Error creating product notification:", notifError);
-          }
-        }
       }
 
       toast({

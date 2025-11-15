@@ -63,14 +63,29 @@ export default function BundleRestockDialog({
 
       if (bundleError) throw bundleError;
 
+      // If stock is now above 10, find and dismiss the low stock notification
+      if (newStock > 10) {
+        const { error: dismissError } = await supabase
+          .from("notifications")
+          .update({ is_read: true })
+          .eq("related_bundle_id", bundle.bundle_id)
+          .eq("type", "low_stock")
+          .eq("is_read", false);
+
+        if (dismissError) {
+          console.error("Error dismissing low stock notification:", dismissError);
+          // Do not throw, as the main action (restock) was successful
+        }
+      }
       // Create low stock notification if stock is 10 or less
-      if (newStock <= 10) {
+      else if (newStock <= 10) {
         try {
           const { error: notifError } = await supabase.from("notifications").insert({
-            related_seller_id: bundle.seller_id,
+            related_seller_id: await getAuthenticatedSellerId(),
             type: "low_stock",
             title: "Low Stock Alert - Bundle",
             message: `Bundle "${bundle.bundle_name}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
+            related_bundle_id: bundle.bundle_id,
           });
           if (notifError) throw notifError;
         } catch (notifError) {
