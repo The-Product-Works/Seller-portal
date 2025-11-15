@@ -1092,6 +1092,7 @@ export default function AddProductDialog({
               }}
               sellerCommission={sellerCommission}
               showInlineCalculator={true}
+              showTransactionCalculator={true}
               variant="warning"
             />
 
