@@ -36,19 +36,19 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
   const loadNotifications = async () => {
     setLoading(true);
     try {
-      // Get auth user ID for RLS policy to work correctly
-      // Note: related_seller_id in notifications table stores auth.users.id (not sellers.id)
-      const authUserId = await getAuthenticatedUserId();
+      // Get seller ID for querying notifications
+      // Note: related_seller_id in notifications table stores sellers.id (not auth.users.id)
+      const sellerId = await getAuthenticatedSellerId();
       console.log("=== LowStockNotifications DEBUG ===");
-      console.log("loadNotifications called with authUserId:", authUserId);
-      if (!authUserId) {
-        console.log("No auth user ID found");
+      console.log("loadNotifications called with sellerId:", sellerId);
+      if (!sellerId) {
+        console.log("No seller ID found");
         setLoading(false);
         return;
       }
 
       // Query low stock notifications
-      console.log("Querying notifications table with authUserId:", authUserId);
+      console.log("Querying notifications table with sellerId:", sellerId);
       
       // Build the query step by step to see where it fails
       let query = supabase
@@ -57,7 +57,9 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
       
       query = query.eq("type", "low_stock");
       query = query.eq("is_read", false);
-      query = query.eq("related_seller_id", authUserId);
+      query = query.eq("related_seller_id", sellerId);
+      // Filter for product alerts only (exclude bundles)
+      query = query.not("title", "like", "%Bundle%");
       query = query.order("created_at", { ascending: false });
       query = query.limit(10);
 

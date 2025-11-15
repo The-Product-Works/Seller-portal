@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Package, AlertTriangle, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { getAuthenticatedUserId } from "@/lib/seller-helpers";
+import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 
 interface Notification {
   id: string;
@@ -35,18 +35,18 @@ export function LowStockNotificationsBundle({ onBundleClick, showRestockButton =
   const loadNotifications = async () => {
     setLoading(true);
     try {
-      // Get auth user ID for RLS policy to work correctly
-      const authUserId = await getAuthenticatedUserId();
+      // Get seller ID for proper filtering
+      const sellerId = await getAuthenticatedSellerId();
       console.log("=== LowStockNotificationsBundle DEBUG ===");
-      console.log("loadNotifications called with authUserId:", authUserId);
-      if (!authUserId) {
-        console.log("No auth user ID found");
+      console.log("loadNotifications called with sellerId:", sellerId);
+      if (!sellerId) {
+        console.log("No seller ID found");
         setLoading(false);
         return;
       }
 
-      // Query bundle-specific low stock notifications
-      console.log("Querying bundle notifications table with authUserId:", authUserId);
+      // Query bundle-specific low stock notifications by title
+      console.log("Querying bundle notifications with sellerId:", sellerId);
       
       let query = supabase
         .from("notifications")
@@ -54,9 +54,9 @@ export function LowStockNotificationsBundle({ onBundleClick, showRestockButton =
       
       query = query.eq("type", "low_stock");
       query = query.eq("is_read", false);
-      query = query.eq("related_seller_id", authUserId);
-      // Filter for bundle alerts only - must have related_bundle_id
-      query = query.not("related_bundle_id", "is", null);
+      query = query.eq("related_seller_id", sellerId);
+      // Filter for bundle alerts only by title pattern
+      query = query.like("title", "%Bundle%");
       query = query.order("created_at", { ascending: false });
       query = query.limit(10);
 
@@ -112,14 +112,14 @@ export function LowStockNotificationsBundle({ onBundleClick, showRestockButton =
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
-      const authUserId = await getAuthenticatedUserId();
-      if (!authUserId) return;
+      const sellerId = await getAuthenticatedSellerId();
+      if (!sellerId) return;
 
       const { error } = await supabase
         .from("notifications")
         .update({ is_read: true })
         .eq("id", notificationId)
-        .eq("related_seller_id", authUserId);
+        .eq("related_seller_id", sellerId);
 
       if (error) {
         console.error("Error marking notification as read:", error);
@@ -137,9 +137,9 @@ export function LowStockNotificationsBundle({ onBundleClick, showRestockButton =
 
   const handleDismissAll = async () => {
     try {
-      // Use auth user ID for RLS policy to work
-      const authUserId = await getAuthenticatedUserId();
-      if (!authUserId) return;
+      // Use seller ID for RLS policy to work
+      const sellerId = await getAuthenticatedSellerId();
+      if (!sellerId) return;
 
       // Get all bundle alert IDs first to update them
       const { data: bundleNotifications } = await supabase
@@ -147,7 +147,7 @@ export function LowStockNotificationsBundle({ onBundleClick, showRestockButton =
         .select("id")
         .eq("type", "low_stock")
         .eq("is_read", false)
-        .eq("related_seller_id", authUserId)
+        .eq("related_seller_id", sellerId)
         .not("related_bundle_id", "is", null);
 
       if (bundleNotifications && bundleNotifications.length > 0) {

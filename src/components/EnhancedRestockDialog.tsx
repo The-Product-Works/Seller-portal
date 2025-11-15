@@ -12,7 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
-import { getAuthenticatedUserId } from "@/lib/seller-helpers";
 import { Package, AlertCircle, TrendingDown, AlertTriangle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -108,11 +107,10 @@ export function EnhancedRestockDialog({
 
         // Create low stock notification if stock is 10 or less
         if (newStock <= 10) {
-          const authUserId = await getAuthenticatedUserId();
-          if (authUserId) {
+          if (sellerId) {
             try {
               await supabase.from("notifications").insert({
-                related_seller_id: authUserId,
+                related_seller_id: sellerId,
                 type: "low_stock",
                 title: "Low Stock Alert - Bundle",
                 message: `Bundle "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
@@ -158,11 +156,10 @@ export function EnhancedRestockDialog({
 
         // Create low stock notification if stock is 10 or less
         if (newStock <= 10) {
-          const authUserId = await getAuthenticatedUserId();
-          if (authUserId) {
+          if (sellerId) {
             try {
               await supabase.from("notifications").insert({
-                related_seller_id: authUserId,
+                related_seller_id: sellerId,
                 type: "low_stock",
                 title: "Low Stock Alert - Product Variant",
                 message: `Variant "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
@@ -186,11 +183,10 @@ export function EnhancedRestockDialog({
 
         // Create low stock notification if stock is 10 or less
         if (newStock <= 10) {
-          const authUserId = await getAuthenticatedUserId();
-          if (authUserId) {
+          if (sellerId) {
             try {
               await supabase.from("notifications").insert({
-                related_seller_id: authUserId,
+                related_seller_id: sellerId,
                 type: "low_stock",
                 title: "Low Stock Alert - Product",
                 message: `Product "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,

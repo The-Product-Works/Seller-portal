@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DollarSign, Package, ShoppingCart, Clock, AlertCircle, RefreshCw, Star, Shield, TrendingUp, Flag } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
+import { LowStockNotificationsBundle } from "@/components/LowStockNotificationsBundle";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -213,7 +214,19 @@ export default function Dashboard() {
         .eq("seller_id", authSellerId);
 
       const outOfStock = (activeProducts || []).filter(p => p.total_stock_quantity === 0).length;
-      const lowStock = (activeProducts || []).filter(p => p.total_stock_quantity > 0 && p.total_stock_quantity <= 10).length;
+      const lowStockProducts = (activeProducts || []).filter(p => p.total_stock_quantity > 0 && p.total_stock_quantity <= 10).length;
+
+      // Get bundles low stock count
+      const { data: activeBundles } = await supabase
+        .from("bundles")
+        .select("bundle_id, total_stock_quantity")
+        .eq("seller_id", authSellerId)
+        .eq("status", "active");
+
+      const lowStockBundles = (activeBundles || []).filter(b => b.total_stock_quantity > 0 && b.total_stock_quantity <= 10).length;
+
+      // Total low stock = products + bundles
+      const lowStock = lowStockProducts + lowStockBundles;
 
       // Get order counts from order_items
       const { count: totalOrdersCount } = await supabase
@@ -613,8 +626,13 @@ export default function Dashboard() {
               </div>
 
               <Card>
-                <CardHeader><CardTitle className="flex items-center gap-2"><AlertCircle className="h-5 w-5 text-orange-600" />Low Stock Alerts ({stats.lowStockCount})</CardTitle></CardHeader>
+                <CardHeader><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5 text-orange-600" />Low Stock Alerts - Products</CardTitle></CardHeader>
                 <CardContent><LowStockNotifications showRestockButton={false} /></CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle className="flex items-center gap-2"><Package className="h-5 w-5 text-purple-600" />Low Stock Alerts - Bundles</CardTitle></CardHeader>
+                <CardContent><LowStockNotificationsBundle showRestockButton={false} /></CardContent>
               </Card>
             </>
           )}

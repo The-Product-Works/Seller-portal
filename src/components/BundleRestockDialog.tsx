@@ -65,20 +65,17 @@ export default function BundleRestockDialog({
 
       // Create low stock notification if stock is 10 or less
       if (newStock <= 10) {
-        const authUserId = await getAuthenticatedUserId();
-        if (authUserId) {
-          try {
-            const { error: notifError } = await supabase.from("notifications").insert({
-              related_seller_id: authUserId,
-              type: "low_stock",
-              title: "Low Stock Alert - Bundle",
-              message: `Bundle "${bundle.bundle_name}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
-            });
-            if (notifError) throw notifError;
-          } catch (notifError) {
-            // Silently fail if notification creation fails
-            console.error("Error creating notification:", notifError);
-          }
+        try {
+          const { error: notifError } = await supabase.from("notifications").insert({
+            related_seller_id: bundle.seller_id,
+            type: "low_stock",
+            title: "Low Stock Alert - Bundle",
+            message: `Bundle "${bundle.bundle_name}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
+          });
+          if (notifError) throw notifError;
+        } catch (notifError) {
+          // Silently fail if notification creation fails
+          console.error("Error creating notification:", notifError);
         }
       }
 
