@@ -63,25 +63,37 @@ export default function SellerVerification() {
         .eq("seller_id", sellerData.id)
         .order("uploaded_at", { ascending: false });
 
+      console.log("📄 Raw seller documents from DB:", sellerDocs);
+
       // Convert internal storage paths to signed URLs for display
       // Group by doc_type and take only the most recent of each type
       const latestDocsMap = new Map<string, SellerDocPartial>();
       
       if (sellerDocs && Array.isArray(sellerDocs)) {
+        console.log(`Processing ${sellerDocs.length} documents...`);
+        
         for (const d of sellerDocs) {
           const docType = (d as SellerDocPartial).doc_type;
-          if (!docType) continue;
+          if (!docType) {
+            console.warn("⚠️ Document without doc_type:", d);
+            continue;
+          }
           
           // Only keep the first occurrence of each doc_type (most recent due to ORDER BY)
           if (!latestDocsMap.has(docType)) {
             const path = (d as SellerDocPartial).storage_path as string | null | undefined;
+            
             if (!path) {
+              console.warn(`⚠️ ${docType}: No storage_path`);
               latestDocsMap.set(docType, d as SellerDocPartial);
               continue;
             }
             
+            console.log(`📝 Processing ${docType}: ${path}`);
+            
             // If already a signed URL, use it directly
             if (path.startsWith('http://') || path.startsWith('https://')) {
+              console.log(`✅ ${docType}: Already a signed URL`);
               latestDocsMap.set(docType, d as SellerDocPartial);
               continue;
             }
@@ -91,19 +103,26 @@ export default function SellerVerification() {
               ? path.substring('seller_details/'.length)
               : path;
             
-            // Otherwise, generate a signed URL from the storage path
+            console.log(`🔄 ${docType}: Generating signed URL for: ${pathToSign}`);
+            
+            // Generate a signed URL from the storage path
             try {
               const { data: urlData, error: urlErr } = await supabase.storage
                 .from("seller_details")
-                .createSignedUrl(pathToSign, 60 * 60 * 24 * 7);
+                .createSignedUrl(pathToSign, 60 * 60 * 24 * 7); // 7 days
+                
               if (urlErr) {
-                console.error("Failed to create signed URL for", pathToSign, urlErr);
+                console.error(`❌ ${docType}: Failed to create signed URL:`, urlErr);
                 latestDocsMap.set(docType, d as SellerDocPartial);
+              } else if (urlData?.signedUrl) {
+                console.log(`✅ ${docType}: Signed URL created successfully`);
+                latestDocsMap.set(docType, { ...(d as SellerDocPartial), storage_path: urlData.signedUrl });
               } else {
-                latestDocsMap.set(docType, { ...(d as SellerDocPartial), storage_path: urlData?.signedUrl });
+                console.error(`❌ ${docType}: No signed URL returned`);
+                latestDocsMap.set(docType, d as SellerDocPartial);
               }
             } catch (e) {
-              console.error("Signed URL generation error", e);
+              console.error(`❌ ${docType}: Exception generating signed URL:`, e);
               latestDocsMap.set(docType, d as SellerDocPartial);
             }
           }
@@ -112,7 +131,14 @@ export default function SellerVerification() {
 
       // Convert map to array ensuring we have all 3 doc types
       const docsWithUrls = Array.from(latestDocsMap.values());
-      console.log("Admin viewing documents:", docsWithUrls.length, "docs -", Array.from(latestDocsMap.keys()));
+      console.log("📊 Final documents for display:");
+      console.log(`  Total: ${docsWithUrls.length} documents`);
+      console.log(`  Types: ${Array.from(latestDocsMap.keys()).join(", ")}`);
+      docsWithUrls.forEach(doc => {
+        const dt = (doc as Record<string, unknown>).doc_type as string;
+        const sp = (doc as Record<string, unknown>).storage_path as string;
+        console.log(`  - ${dt}: ${sp?.substring(0, 60)}...`);
+      });
       setDocs(docsWithUrls || []);
 
       // load edit request feedback
