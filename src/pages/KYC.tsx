@@ -601,13 +601,21 @@ export default function KYC() {
                             </button>
                           </div>
                         ) : (
-                          <Input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) =>
-                              setSelfiePhoto(e.target.files?.[0] || null)
-                            }
-                          />
+                          <div className="space-y-2">
+                            <Input
+                              type="file"
+                              accept="image/*"
+                              capture="user"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                console.log("Selfie file selected:", file?.name, file?.size, file?.type);
+                                setSelfiePhoto(file || null);
+                              }}
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Use your camera to take a selfie or upload an existing photo
+                            </p>
+                          </div>
                         )}
                       </div>
 
