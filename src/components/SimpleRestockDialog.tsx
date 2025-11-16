@@ -43,10 +43,10 @@ export function SimpleRestockDialog({
 
   const handleSubmit = async () => {
     const qty = parseInt(quantity);
-    if (!qty || qty <= 0) {
+    if (isNaN(qty) || qty === 0) {
       toast({
         title: "Invalid Quantity",
-        description: "Please enter a valid quantity greater than 0",
+        description: "Please enter a valid quantity (can be positive to add or negative to remove)",
         variant: "destructive",
       });
       return;
@@ -64,6 +64,17 @@ export function SimpleRestockDialog({
     setLoading(true);
     try {
       const newStock = currentStock + qty;
+      
+      // Validate that new stock is not negative
+      if (newStock < 0) {
+        toast({
+          title: "Invalid Stock",
+          description: "Stock cannot go below 0. Current stock is " + currentStock,
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
 
       if (isBundle) {
         // Update bundle stock
@@ -134,7 +145,7 @@ export function SimpleRestockDialog({
 
       toast({
         title: "Stock Updated",
-        description: `Added ${qty} units to ${productName}. New stock: ${newStock}`,
+        description: `${qty > 0 ? 'Added' : 'Removed'} ${Math.abs(qty)} units to ${productName}. New stock: ${newStock}`,
       });
 
       onOpenChange(false);
@@ -158,10 +169,10 @@ export function SimpleRestockDialog({
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Package className="h-5 w-5 text-blue-600" />
-            Restock {isBundle ? "Bundle" : "Product"}
+            Update {isBundle ? "Bundle" : "Product"} Stock
           </AlertDialogTitle>
           <AlertDialogDescription>
-            Add stock quantity to {productName}
+            Increase or decrease stock quantity for {productName}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -175,32 +186,31 @@ export function SimpleRestockDialog({
           {/* Quantity Input */}
           <div className="space-y-2">
             <Label htmlFor="quantity" className="text-sm font-semibold">
-              Quantity to Add <span className="text-red-500">*</span>
+              Quantity Change <span className="text-red-500">*</span>
             </Label>
             <Input
               id="quantity"
               type="number"
-              min="1"
-              placeholder="Enter quantity"
+              placeholder="Enter positive to add, negative to remove"
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              New stock will be: {currentStock + (parseInt(quantity) || 0)} units
+              Current stock: {currentStock} → New stock: {currentStock + (parseInt(quantity) || 0)} units
             </p>
           </div>
 
           {/* Info box */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-xs text-blue-800">
-              <strong>Note:</strong> This will immediately update the stock quantity and make the product available for sale.
+              <strong>Note:</strong> Enter positive numbers to add stock, negative numbers to remove stock. Example: +50 or -10
             </p>
           </div>
         </div>
 
         <div className="flex gap-3">
           <AlertDialogCancel disabled={loading}>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={handleSubmit} disabled={loading || !quantity || parseInt(quantity) <= 0}>
+          <AlertDialogAction onClick={handleSubmit} disabled={loading || !quantity || isNaN(parseInt(quantity)) || parseInt(quantity) === 0}>
             {loading ? "Updating..." : "Update Stock"}
           </AlertDialogAction>
         </div>

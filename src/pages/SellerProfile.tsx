@@ -89,34 +89,29 @@ export default function SellerProfile() {
       const { data: documents } = await supabase
         .from("seller_documents")
         .select("doc_type, storage_path")
-        .eq("seller_id", s.id);
+        .eq("seller_id", s.id)
+        .order("uploaded_at", { ascending: false });
 
-      // convert internal storage paths to signed URLs for display
-  const docsWithUrls: SellerDocPartial[] = [];
+      // Group by doc_type and take only the most recent of each type
+      // storage_path is already a Supabase signed URL, use it directly
+      const latestDocsMap = new Map<string, SellerDocPartial>();
+      
       if (documents && Array.isArray(documents)) {
         for (const d of documents) {
-          const path = (d as SellerDocument).storage_path as string | null | undefined;
-          if (!path) {
-            docsWithUrls.push(d);
-            continue;
-          }
-          try {
-            const { data: urlData, error: urlErr } = await supabase.storage
-              .from("seller_details")
-              .createSignedUrl(path, 60 * 60 * 24 * 7);
-            if (urlErr) {
-              console.error("Failed to create signed URL for", path, urlErr);
-              docsWithUrls.push(d as SellerDocPartial);
-            } else {
-              docsWithUrls.push({ ...(d as SellerDocPartial), storage_path: urlData?.signedUrl });
-            }
-          } catch (e) {
-            console.error("Signed URL generation error", e);
-            docsWithUrls.push(d);
+          const docType = (d as SellerDocument).doc_type;
+          if (!docType) continue;
+          
+          // Only keep the first occurrence of each doc_type (most recent due to ORDER BY)
+          if (!latestDocsMap.has(docType)) {
+            latestDocsMap.set(docType, d as SellerDocPartial);
           }
         }
       }
 
+      // Convert map to array ensuring we have all 3 doc types
+      const docsWithUrls = Array.from(latestDocsMap.values());
+      console.log("Profile viewing documents:", docsWithUrls.length, "docs -", Array.from(latestDocsMap.keys()));
+      console.log("Document URLs:", docsWithUrls.map(d => ({ type: d.doc_type, url: d.storage_path })));
       setDocs(docsWithUrls || []);
 
       setFormData({

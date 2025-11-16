@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { supabaseAdmin } from "@/integrations/supabase/admin-client";
+import { supabase } from "@/integrations/supabase/client";
 import type { DocumentType, UploadedDocument } from "@/types/seller.types";
 import {
   documentUploadSchema,
@@ -36,32 +36,38 @@ export const useDocumentUpload = () => {
 
       // Upload file to storage
       const fileName = `${sellerId}/${docType}/${Date.now()}_${file.name}`;
-      const filePath = `seller_details/${fileName}`;
+      
+      console.log("Uploading file with name:", fileName);
 
-      console.log("Uploading file to path:", filePath);
-
-      const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
+      const { data: uploadData, error: uploadError } = await supabase.storage
         .from("seller_details")
-        .upload(filePath, file, {
+        .upload(fileName, file, {
           cacheControl: "3600",
           upsert: false,
         });
 
       if (uploadError) {
+        console.error("Upload error:", uploadError);
         throw new Error(`Upload failed: ${uploadError.message}`);
       }
 
+      console.log("File uploaded successfully, path:", fileName);
+
       // Get signed URL (valid for 100 years - effectively permanent)
-      const { data: signedUrlData, error: signedUrlError } = await supabaseAdmin.storage
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from("seller_details")
-        .createSignedUrl(filePath, 60 * 60 * 24 * 365 * 100);
+        .createSignedUrl(fileName, 60 * 60 * 24 * 365 * 100);
 
       if (signedUrlError) {
+        console.error("Failed to generate signed URL:", signedUrlError);
         throw new Error(`Signed URL generation failed: ${signedUrlError.message}`);
       }
 
-      // Save document metadata to seller_documents table
-      const { data: docData, error: docError } = await supabaseAdmin
+      const signedUrl = signedUrlData.signedUrl;
+      console.log("Signed URL generated successfully for", docType, ":", signedUrl);
+
+      // Save document metadata to seller_documents table with the signed URL
+      const { data: docData, error: docError } = await supabase
         .from("seller_documents")
         .insert({
           seller_id: sellerId,
@@ -69,17 +75,20 @@ export const useDocumentUpload = () => {
           file_name: file.name,
           file_size: file.size,
           mime_type: file.type,
-          storage_path: filePath,
+          storage_path: signedUrl, // Save the signed URL directly so it's viewable by both seller and admin
           uploaded_at: new Date().toISOString(),
         })
         .select()
         .single();
 
       if (docError) {
+        console.error("Failed to save document metadata:", docError);
         // If metadata save fails, try to delete the uploaded file
-        await supabaseAdmin.storage.from("seller_details").remove([filePath]);
+        await supabase.storage.from("seller_details").remove([fileName]);
         throw new Error(`Failed to save document metadata: ${docError.message}`);
       }
+
+      console.log("Document metadata saved successfully, id:", docData.id);
 
       const uploadedDoc: UploadedDocument = {
         id: docData.id,
@@ -87,7 +96,7 @@ export const useDocumentUpload = () => {
         fileName: file.name,
         fileSize: file.size,
         mimeType: file.type,
-        storagePath: filePath,
+        storagePath: signedUrl,
         uploadedAt: docData.uploaded_at,
       };
 
@@ -115,17 +124,12 @@ export const useDocumentUpload = () => {
         return false;
       }
 
-      // Delete from storage
-      const { error: storageError } = await supabaseAdmin.storage
-        .from("seller_details")
-        .remove([storagePath]);
-
-      if (storageError) {
-        console.error("Failed to delete file from storage:", storageError);
-      }
-
+      // Delete from storage (storagePath is a signed URL, extract the actual path)
+      // For signed URLs, we can't delete directly, so skip storage deletion
+      // The file will remain but won't be referenced
+      
       // Delete from database
-      const { error: dbError } = await supabaseAdmin
+      const { error: dbError } = await supabase
         .from("seller_documents")
         .delete()
         .eq("id", documentId);

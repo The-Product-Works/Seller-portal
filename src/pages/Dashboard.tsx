@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Bundle } from "@/types/bundle.types";
 import { SimpleRestockDialog } from "@/components/SimpleRestockDialog";
 import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
 
@@ -42,6 +43,13 @@ interface Stats {
   pendingOrders: number;
   averageRating: number;
   lowStockCount: number;
+  bundleLowStockCount: number;
+  bundlesLowStock?: Array<{
+    bundle_id: string;
+    bundle_name: string;
+    total_stock_quantity: number;
+    lowStockItems?: string[];
+  }>;
 }
 
 interface CategoryRevenue {
@@ -88,6 +96,8 @@ export default function Dashboard() {
     pendingOrders: 0,
     averageRating: 0,
     lowStockCount: 0,
+    bundleLowStockCount: 0,
+    bundlesLowStock: [],
   });
   const [healthScore, setHealthScore] = useState<HealthScore>({
     score: 0,
@@ -115,6 +125,7 @@ export default function Dashboard() {
   const [stockFilter, setStockFilter] = useState<string>("all"); // New: all, instock, lowstock, outofstock
   const [categoryData, setCategoryData] = useState<CategoryRevenue[]>([]);
   const [listings, setListings] = useState<ListingWithDetails[]>([]);
+  const [bundles, setBundles] = useState<Bundle[]>([]);
   const [performanceMetrics, setPerformanceMetrics] = useState<ProductPerformanceMetric[]>([]);
   const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
 
@@ -213,7 +224,19 @@ export default function Dashboard() {
         .eq("seller_id", authSellerId);
 
       const outOfStock = (activeProducts || []).filter(p => p.total_stock_quantity === 0).length;
-      const lowStock = (activeProducts || []).filter(p => p.total_stock_quantity > 0 && p.total_stock_quantity <= 10).length;
+      const lowStockProducts = (activeProducts || []).filter(p => p.total_stock_quantity > 0 && p.total_stock_quantity <= 10).length;
+
+      // Get bundles low stock count
+      const { data: activeBundles } = await supabase
+        .from("bundles")
+        .select("bundle_id, total_stock_quantity")
+        .eq("seller_id", authSellerId)
+        .eq("status", "active");
+
+      const lowStockBundles = (activeBundles || []).filter(b => b.total_stock_quantity > 0 && b.total_stock_quantity <= 10).length;
+
+      // Total low stock = products + bundles
+      const lowStock = lowStockProducts + lowStockBundles;
 
       // Get order counts from order_items
       const { count: totalOrdersCount } = await supabase
@@ -386,6 +409,57 @@ export default function Dashboard() {
         .sort((a, b) => b.revenue - a.revenue)
         .slice(0, 10); // Top 10 products
 
+      // Get bundles with low stock
+      const { data: bundlesData } = await supabase
+        .from("bundles")
+        .select(`
+          bundle_id,
+          bundle_name,
+          total_stock_quantity,
+          bundle_items (
+            listing_id,
+            seller_product_listings (
+              listing_id,
+              total_stock_quantity
+            )
+          )
+        `)
+        .eq("seller_id", authSellerId)
+        .eq("status", "active");
+
+      // Process bundles to find low stock
+      const bundlesLowStock: Array<{
+        bundle_id: string;
+        bundle_name: string;
+        total_stock_quantity: number;
+        lowStockItems?: string[];
+      }> = [];
+
+      if (bundlesData) {
+        for (const bundle of bundlesData) {
+          const lowStockItems: string[] = [];
+          
+          // Check if bundle itself is low stock
+          if (bundle.total_stock_quantity > 0 && bundle.total_stock_quantity <= 10) {
+            // Check items in bundle for low stock
+            if (bundle.bundle_items && Array.isArray(bundle.bundle_items)) {
+              for (const item of bundle.bundle_items) {
+                if (item.seller_product_listings && item.seller_product_listings.total_stock_quantity <= 10) {
+                  lowStockItems.push(`Item ${item.listing_id}`);
+                }
+              }
+            }
+            
+            bundlesLowStock.push({
+              bundle_id: bundle.bundle_id,
+              bundle_name: bundle.bundle_name,
+              total_stock_quantity: bundle.total_stock_quantity,
+              lowStockItems: lowStockItems.length > 0 ? lowStockItems : undefined,
+            });
+          }
+        }
+      }
+
       // NOW set stats with actual product revenue sum
       setStats({
         totalRevenue: totalProductRevenue,
@@ -396,6 +470,8 @@ export default function Dashboard() {
         pendingOrders: pendingOrdersCount || 0,
         averageRating: avgRating,
         lowStockCount: lowStock,
+        bundleLowStockCount: bundlesLowStock.length,
+        bundlesLowStock: bundlesLowStock,
       });
 
       setPerformanceMetrics(performanceArray);
@@ -483,8 +559,24 @@ export default function Dashboard() {
       {kycStatus !== "verified" && (
         <Alert className="border-yellow-200 bg-yellow-50">
           <AlertCircle className="h-4 w-4 text-yellow-600" />
-          <AlertTitle className="text-yellow-800">KYC Verification Pending</AlertTitle>
-          <AlertDescription className="text-yellow-700">Complete your KYC verification to unlock all features</AlertDescription>
+          <AlertTitle className="text-yellow-800">
+            {kycStatus === "pending" ? "KYC Verification Pending" : 
+             kycStatus === "new_user" ? "Welcome New User - Complete Your KYC" :
+             "KYC Verification Status"}
+          </AlertTitle>
+          <AlertDescription className="text-yellow-700">
+            {kycStatus === "pending" ? "Your KYC is under review. This may take 24-48 hours." :
+             kycStatus === "new_user" ? "Complete your KYC verification to start selling and unlock all features." :
+             "Complete your KYC verification to unlock all features"}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {kycStatus === "verified" && (
+        <Alert className="border-green-200 bg-green-50">
+          <AlertCircle className="h-4 w-4 text-green-600" />
+          <AlertTitle className="text-green-800">KYC Verified</AlertTitle>
+          <AlertDescription className="text-green-700">Your account is verified and all features are unlocked.</AlertDescription>
         </Alert>
       )}
 
@@ -599,6 +691,35 @@ export default function Dashboard() {
               <Card>
                 <CardHeader><CardTitle className="flex items-center gap-2"><AlertCircle className="h-5 w-5 text-orange-600" />Low Stock Alerts ({stats.lowStockCount})</CardTitle></CardHeader>
                 <CardContent><LowStockNotifications showRestockButton={false} /></CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle className="flex items-center gap-2"><AlertCircle className="h-5 w-5 text-red-600" />Bundle Low Stock ({stats.bundleLowStockCount})</CardTitle></CardHeader>
+                <CardContent>
+                  {stats.bundleLowStockCount > 0 ? (
+                    <div className="space-y-3">
+                      {stats.bundlesLowStock?.map((bundle) => (
+                        <div key={bundle.bundle_id} className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                          <div className="flex justify-between items-start">
+                            <div>
+                              <p className="font-medium text-sm text-red-900">{bundle.bundle_name}</p>
+                              <p className="text-xs text-red-700 mt-1">
+                                Stock: <span className="font-bold">{bundle.total_stock_quantity}</span> units
+                              </p>
+                              {bundle.lowStockItems && bundle.lowStockItems.length > 0 && (
+                                <p className="text-xs text-red-700 mt-1">
+                                  Low items: {bundle.lowStockItems.join(", ")}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-green-600 text-center py-4">✓ All bundles have sufficient stock</p>
+                  )}
+                </CardContent>
               </Card>
             </>
           )}

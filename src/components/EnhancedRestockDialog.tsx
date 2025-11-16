@@ -104,6 +104,22 @@ export function EnhancedRestockDialog({
           .eq("seller_id", sellerId);
 
         if (error) throw error;
+
+        // Create low stock notification if stock is 10 or less
+        if (newStock <= 10) {
+          if (sellerId) {
+            try {
+              await supabase.from("notifications").insert({
+                related_seller_id: sellerId,
+                type: "low_stock",
+                title: "Low Stock Alert - Bundle",
+                message: `Bundle "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
+              });
+            } catch (notifError) {
+              console.error("Error creating bundle notification:", notifError);
+            }
+          }
+        }
       } else if (isVariant) {
         const { error } = await supabase
           .from("listing_variants")
@@ -137,6 +153,22 @@ export function EnhancedRestockDialog({
             updated_at: new Date().toISOString(),
           })
           .eq("listing_id", variantData.listing_id);
+
+        // Create low stock notification if stock is 10 or less
+        if (newStock <= 10) {
+          if (sellerId) {
+            try {
+              await supabase.from("notifications").insert({
+                related_seller_id: sellerId,
+                type: "low_stock",
+                title: "Low Stock Alert - Product Variant",
+                message: `Variant "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
+              });
+            } catch (notifError) {
+              console.error("Error creating variant notification:", notifError);
+            }
+          }
+        }
       } else {
         const { error } = await supabase
           .from("seller_product_listings")
@@ -148,6 +180,22 @@ export function EnhancedRestockDialog({
           .eq("seller_id", sellerId);
 
         if (error) throw error;
+
+        // Create low stock notification if stock is 10 or less
+        if (newStock <= 10) {
+          if (sellerId) {
+            try {
+              await supabase.from("notifications").insert({
+                related_seller_id: sellerId,
+                type: "low_stock",
+                title: "Low Stock Alert - Product",
+                message: `Product "${productName}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
+              });
+            } catch (notifError) {
+              console.error("Error creating product notification:", notifError);
+            }
+          }
+        }
       }
 
       const action = qty > 0 ? "added" : "removed";

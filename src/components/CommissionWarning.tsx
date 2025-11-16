@@ -20,6 +20,8 @@ interface CommissionWarningProps {
   onMrpChange?: (mrp: number) => void;
   showInlineCalculator?: boolean;
   variant?: 'warning' | 'info' | 'compact';
+  sellerCommission?: number; // Additional commission seller adds on top of 2%
+  showTransactionCalculator?: boolean; // Show transaction-based calculator
 }
 
 export function CommissionWarning({
@@ -27,12 +29,19 @@ export function CommissionWarning({
   onMrpChange,
   showInlineCalculator = true,
   variant = 'warning',
+  sellerCommission = 0,
+  showTransactionCalculator = false,
 }: CommissionWarningProps) {
   const [customMrp, setCustomMrp] = useState<number>(mrp);
+  const [transactionCount, setTransactionCount] = useState<number>(100); // Number of transactions
 
   // Commission calculation formula
-  const commission = customMrp * 0.02; // 2%
-  const gst = commission * 0.18; // 18% of commission
+  const platformCommission = 0.02; // 2% platform commission
+  const totalCommissionRate = platformCommission + (sellerCommission / 100); // Total commission rate
+  const commission = customMrp * totalCommissionRate; // Total commission
+  const platformCommissionAmount = customMrp * platformCommission; // Platform's 2%
+  const sellerAdditionalCommission = customMrp * (sellerCommission / 100); // Seller's additional %
+  const gst = platformCommissionAmount * 0.18; // 18% of platform commission only
   const totalDeduction = commission + gst;
   const sellerReceives = customMrp - totalDeduction;
   const percentageReceived = ((sellerReceives / customMrp) * 100).toFixed(2);
@@ -145,15 +154,25 @@ export function CommissionWarning({
               <div className="border-t" />
               <div className="flex justify-between items-center text-sm">
                 <span className="text-amber-700 flex items-center gap-1">
-                  <TrendingDown className="h-4 w-4" /> Commission (2%):
+                  <TrendingDown className="h-4 w-4" /> Platform Commission (2%):
                 </span>
                 <span className="font-medium text-red-600">
-                  -₹{commission.toFixed(2)}
+                  -₹{platformCommissionAmount.toFixed(2)}
                 </span>
               </div>
+              {sellerCommission > 0 && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-orange-700 flex items-center gap-1">
+                    <TrendingDown className="h-4 w-4" /> Your Additional Commission ({sellerCommission}%):
+                  </span>
+                  <span className="font-medium text-orange-600">
+                    -₹{sellerAdditionalCommission.toFixed(2)}
+                  </span>
+                </div>
+              )}
               <div className="flex justify-between items-center text-sm">
                 <span className="text-amber-700 flex items-center gap-1">
-                  <TrendingDown className="h-4 w-4" /> GST (18% on commission):
+                  <TrendingDown className="h-4 w-4" /> GST (18% on platform commission):
                 </span>
                 <span className="font-medium text-red-600">
                   -₹{gst.toFixed(2)}
@@ -173,6 +192,118 @@ export function CommissionWarning({
                 <strong>💡 Pro Tip:</strong> If you want to earn ₹100 per unit, set your MRP to approximately{' '}
                 <strong className="text-indigo-700">₹{(100 / 0.9764).toFixed(2)}</strong>
               </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Transaction-Based Calculator */}
+      {showTransactionCalculator && (
+        <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Calculator className="h-5 w-5 text-purple-600" />
+              Multiple Transactions Calculator
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="transaction-count" className="text-sm font-medium">
+                  Number of Transactions
+                </Label>
+                <div className="mt-2 relative">
+                  <Input
+                    id="transaction-count"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={transactionCount}
+                    onChange={(e) => setTransactionCount(Math.max(1, Number(e.target.value)))}
+                    placeholder="100"
+                    className="bg-white border-2 border-purple-300 focus:border-purple-500"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="avg-value" className="text-sm font-medium">
+                  Average Transaction Value (₹)
+                </Label>
+                <div className="mt-2 relative">
+                  <DollarSign className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="avg-value"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={customMrp}
+                    onChange={handleMrpChange}
+                    placeholder="100"
+                    className="pl-8 bg-white border-2 border-purple-300 focus:border-purple-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Summary for Multiple Transactions */}
+            <div className="bg-white p-4 rounded-lg border border-purple-200 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 bg-purple-50 rounded border border-purple-200">
+                  <p className="text-xs text-purple-600">Total Transaction Value</p>
+                  <p className="text-2xl font-bold text-purple-700 mt-1">
+                    ₹{(customMrp * transactionCount).toFixed(2)}
+                  </p>
+                </div>
+                <div className="p-3 bg-red-50 rounded border border-red-200">
+                  <p className="text-xs text-red-600">Total 2% Commission</p>
+                  <p className="text-2xl font-bold text-red-700 mt-1">
+                    ₹{(customMrp * transactionCount * 0.02).toFixed(2)}
+                  </p>
+                </div>
+              </div>
+
+              {sellerCommission > 0 && (
+                <div className="p-3 bg-orange-50 rounded border border-orange-200">
+                  <p className="text-xs text-orange-600">Your Additional Commission ({sellerCommission}%)</p>
+                  <p className="text-2xl font-bold text-orange-700 mt-1">
+                    ₹{(customMrp * transactionCount * (sellerCommission / 100)).toFixed(2)}
+                  </p>
+                </div>
+              )}
+
+              <div className="border-t-2 border-purple-300 pt-3">
+                <div className="flex justify-between items-center mb-2">
+                  <span className="text-sm font-medium text-gray-700">Total GST (18% on 2%):</span>
+                  <span className="font-bold text-red-600">
+                    -₹{(customMrp * transactionCount * 0.02 * 0.18).toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-lg font-bold text-gray-900">You Receive (Net):</span>
+                  <span className="text-2xl font-bold text-green-700">
+                    ₹{(customMrp * transactionCount - (customMrp * transactionCount * (0.02 + sellerCommission / 100)) - (customMrp * transactionCount * 0.02 * 0.18)).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Scenario Examples */}
+            <div className="bg-gray-50 p-3 rounded border border-gray-200 space-y-2">
+              <p className="text-sm font-semibold text-gray-900">📊 Example Scenarios:</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-xs">
+                <div className="p-2 bg-white rounded">
+                  <p className="text-gray-600">100 × ₹100 order</p>
+                  <p className="font-bold text-red-600">2% loss = ₹200</p>
+                </div>
+                <div className="p-2 bg-white rounded">
+                  <p className="text-gray-600">1000 × ₹50 order</p>
+                  <p className="font-bold text-red-600">2% loss = ₹1,000</p>
+                </div>
+                <div className="p-2 bg-white rounded">
+                  <p className="text-gray-600">500 × ₹200 order</p>
+                  <p className="font-bold text-red-600">2% loss = ₹2,000</p>
+                </div>
+              </div>
             </div>
           </CardContent>
         </Card>

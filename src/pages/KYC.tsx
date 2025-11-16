@@ -159,7 +159,8 @@ export default function KYC() {
           const { data: docs, error: docsError } = await supabase
             .from("seller_documents")
             .select("*")
-            .eq("seller_id", s.id);
+            .eq("seller_id", s.id)
+            .order("uploaded_at", { ascending: false });
 
           console.log("Loading seller documents for seller:", s.id);
           console.log("Documents query error:", docsError);
@@ -167,42 +168,44 @@ export default function KYC() {
           console.log("Number of documents:", docs?.length);
 
           if (docs && docs.length > 0) {
-            const docMap: { selfie?: string; aadhaar?: string; pan?: string } =
-              {};
+            const docMap: { selfie?: string; aadhaar?: string; pan?: string } = {};
             
+            // Group documents by type and take only the most recent one (already sorted by uploaded_at DESC)
+            const latestDocs = new Map<string, typeof docs[0]>();
             for (const doc of docs) {
-              console.log("Processing document:", doc.doc_type, "storage_path:", doc.storage_path);
-              
-              // If storage_path is a full path (not a signed URL), generate signed URL
-              let finalPath = doc.storage_path;
-              if (doc.storage_path && !doc.storage_path.startsWith('http')) {
-                console.log("Generating signed URL for path:", doc.storage_path);
-                const { data: signedData, error: signedError } = await supabase.storage
-                  .from("seller_details")
-                  .createSignedUrl(doc.storage_path, 60 * 60 * 24 * 365 * 100);
-                
-                if (signedError) {
-                  console.error("Failed to create signed URL:", signedError);
-                } else {
-                  finalPath = signedData?.signedUrl || doc.storage_path;
-                  console.log("Signed URL created");
-                }
-              }
-              
-              if (doc.doc_type === "selfie") {
-                console.log("Mapping selfie");
-                docMap.selfie = finalPath;
-              }
-              if (doc.doc_type === "aadhaar") {
-                console.log("Mapping aadhaar");
-                docMap.aadhaar = finalPath;
-              }
-              if (doc.doc_type === "pan") {
-                console.log("Mapping pan");
-                docMap.pan = finalPath;
+              const docType = doc.doc_type;
+              if (docType && !latestDocs.has(docType)) {
+                latestDocs.set(docType, doc);
               }
             }
-            console.log("Final docMap:", docMap);
+            
+            console.log("Latest docs by type:", Array.from(latestDocs.keys()));
+            
+            // Process only the latest document of each type - storage_path is already a signed URL
+            for (const [docType, doc] of latestDocs.entries()) {
+              console.log("Processing document:", docType, "storage_path:", doc.storage_path);
+              
+              if (!doc.storage_path) {
+                console.warn("No storage_path for", docType);
+                continue;
+              }
+              
+              // storage_path is already a Supabase signed URL, use it directly
+              const displayUrl = doc.storage_path;
+              console.log("Display URL for", docType, ":", displayUrl);
+              
+              // Map to the correct field based on doc type
+              if (docType === "selfie") {
+                docMap.selfie = displayUrl;
+              } else if (docType === "aadhaar") {
+                docMap.aadhaar = displayUrl;
+              } else if (docType === "pan") {
+                docMap.pan = displayUrl;
+              }
+            }
+            
+            console.log("Final docMap with all 3 docs:", docMap);
+            console.log("Selfie:", !!docMap.selfie, "Aadhaar:", !!docMap.aadhaar, "PAN:", !!docMap.pan);
             setUploadedDocuments(docMap);
           } else {
             console.log("No documents found or docs is null/empty");
@@ -235,21 +238,6 @@ export default function KYC() {
       }
     })();
   }, [navigate, toast]);
-
-  const uploadFile = async (file: File, folder: string) => {
-    if (!seller?.id) throw new Error("No seller id");
-    const ext = (file.name.split(".").pop() || "dat").toLowerCase();
-    const path = `${seller.id}/${folder}/${Date.now()}.${ext}`;
-    const up = await supabase.storage
-      .from("seller_details")
-      .upload(path, file, { upsert: true });
-    if (up.error) throw up.error;
-    const signed = await supabase.storage
-      .from("seller_details")
-      .createSignedUrl(up.data.path, 60 * 60 * 24 * 365 * 10);
-    if (signed.error) throw signed.error;
-    return signed.data.signedUrl;
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -368,25 +356,72 @@ export default function KYC() {
           console.log("Aadhaar photo:", aadhaarPhoto?.name, aadhaarPhoto?.size);
           console.log("PAN photo:", panPhoto?.name, panPhoto?.size);
           
+          const uploadResults = {
+            selfie: false,
+            aadhaar: false,
+            pan: false
+          };
+          
           if (selfiePhoto) {
             console.log("Uploading selfie...");
             const r = await uploadDocument(newSeller.id, selfiePhoto, "selfie");
             console.log("Selfie upload result:", r);
-            if (!r.success) console.error("Selfie upload failed:", r.error);
+            uploadResults.selfie = r.success;
+            if (!r.success) {
+              console.error("Selfie upload failed:", r.error);
+              toast({
+                title: "Selfie upload failed",
+                description: r.error || "Failed to upload selfie",
+                variant: "destructive",
+              });
+            }
           }
+          
           if (aadhaarPhoto) {
             console.log("Uploading aadhaar...");
             const r = await uploadDocument(newSeller.id, aadhaarPhoto, "aadhaar");
             console.log("Aadhaar upload result:", r);
-            if (!r.success) console.error("Aadhaar upload failed:", r.error);
+            uploadResults.aadhaar = r.success;
+            if (!r.success) {
+              console.error("Aadhaar upload failed:", r.error);
+              toast({
+                title: "Aadhaar upload failed",
+                description: r.error || "Failed to upload aadhaar",
+                variant: "destructive",
+              });
+            }
           }
+          
           if (panPhoto) {
             console.log("Uploading pan...");
             const r = await uploadDocument(newSeller.id, panPhoto, "pan");
             console.log("PAN upload result:", r);
-            if (!r.success) console.error("PAN upload failed:", r.error);
+            uploadResults.pan = r.success;
+            if (!r.success) {
+              console.error("PAN upload failed:", r.error);
+              toast({
+                title: "PAN upload failed",
+                description: r.error || "Failed to upload PAN",
+                variant: "destructive",
+              });
+            }
           }
-          console.log("All document uploads completed");
+          
+          console.log("All document uploads completed. Results:", uploadResults);
+          
+          // Check if all required uploads succeeded
+          const failedUploads = [];
+          if (selfiePhoto && !uploadResults.selfie) failedUploads.push("Selfie");
+          if (aadhaarPhoto && !uploadResults.aadhaar) failedUploads.push("Aadhaar");
+          if (panPhoto && !uploadResults.pan) failedUploads.push("PAN");
+          
+          if (failedUploads.length > 0) {
+            toast({
+              title: "Some uploads failed",
+              description: `Failed to upload: ${failedUploads.join(", ")}. Please resubmit.`,
+              variant: "destructive",
+            });
+          }
         } catch (upErr: unknown) {
           const error = upErr instanceof Error ? upErr : new Error(String(upErr));
           console.error("Error uploading KYC documents:", error);
@@ -454,25 +489,58 @@ export default function KYC() {
         console.log("Aadhaar photo:", aadhaarPhoto?.name, aadhaarPhoto?.size);
         console.log("PAN photo:", panPhoto?.name, panPhoto?.size);
         
+        const uploadResults = {
+          selfie: false,
+          aadhaar: false,
+          pan: false
+        };
+        
         if (selfiePhoto) {
           console.log("Uploading new selfie...");
           const r = await uploadDocument(seller.id, selfiePhoto, "selfie");
           console.log("Selfie upload result:", r);
-          if (!r.success) console.error("Selfie upload failed:", r.error);
+          uploadResults.selfie = r.success;
+          if (!r.success) {
+            console.error("Selfie upload failed:", r.error);
+            toast({
+              title: "Selfie upload failed",
+              description: r.error || "Failed to upload selfie",
+              variant: "destructive",
+            });
+          }
         }
+        
         if (aadhaarPhoto) {
           console.log("Uploading new aadhaar...");
           const r = await uploadDocument(seller.id, aadhaarPhoto, "aadhaar");
           console.log("Aadhaar upload result:", r);
-          if (!r.success) console.error("Aadhaar upload failed:", r.error);
+          uploadResults.aadhaar = r.success;
+          if (!r.success) {
+            console.error("Aadhaar upload failed:", r.error);
+            toast({
+              title: "Aadhaar upload failed",
+              description: r.error || "Failed to upload aadhaar",
+              variant: "destructive",
+            });
+          }
         }
+        
         if (panPhoto) {
           console.log("Uploading new pan...");
           const r = await uploadDocument(seller.id, panPhoto, "pan");
           console.log("PAN upload result:", r);
-          if (!r.success) console.error("PAN upload failed:", r.error);
+          uploadResults.pan = r.success;
+          if (!r.success) {
+            console.error("PAN upload failed:", r.error);
+            toast({
+              title: "PAN upload failed",
+              description: r.error || "Failed to upload PAN",
+              variant: "destructive",
+            });
+          }
         }
-        console.log("All document re-uploads completed");
+        
+        console.log("All document re-uploads completed. Results:", uploadResults);
       } catch (upErr: unknown) {
         const error = upErr instanceof Error ? upErr : new Error(String(upErr));
         console.error("Error uploading KYC documents:", error);
@@ -551,7 +619,7 @@ export default function KYC() {
                     <div className="grid md:grid-cols-3 gap-6">
                       {/* Selfie */}
                       <div className="space-y-2">
-                        <Label>Selfie Photo</Label>
+                        <Label htmlFor="selfie-upload">Selfie Photo *</Label>
                         {uploadedDocuments.selfie || selfiePhoto ? (
                           <div className="relative border-2 border-dashed rounded-lg p-2">
                             <img
@@ -576,13 +644,23 @@ export default function KYC() {
                             </button>
                           </div>
                         ) : (
-                          <Input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) =>
-                              setSelfiePhoto(e.target.files?.[0] || null)
-                            }
-                          />
+                          <div className="space-y-2">
+                            <input
+                              id="selfie-upload"
+                              type="file"
+                              accept="image/*"
+                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                console.log("Selfie file selected:", file?.name, file?.size, file?.type);
+                                setSelfiePhoto(file || null);
+                              }}
+                              required
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Upload a clear selfie photo (required)
+                            </p>
+                          </div>
                         )}
                       </div>
 
