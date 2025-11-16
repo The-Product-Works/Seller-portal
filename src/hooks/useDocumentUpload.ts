@@ -36,13 +36,12 @@ export const useDocumentUpload = () => {
 
       // Upload file to storage
       const fileName = `${sellerId}/${docType}/${Date.now()}_${file.name}`;
-      const filePath = `seller_details/${fileName}`;
-
-      console.log("Uploading file to path:", filePath);
+      
+      console.log("Uploading file with name:", fileName);
 
       const { data: uploadData, error: uploadError } = await supabaseAdmin.storage
         .from("seller_details")
-        .upload(filePath, file, {
+        .upload(fileName, file, {
           cacheControl: "3600",
           upsert: false,
         });
@@ -54,13 +53,13 @@ export const useDocumentUpload = () => {
       // Get signed URL (valid for 100 years - effectively permanent)
       const { data: signedUrlData, error: signedUrlError } = await supabaseAdmin.storage
         .from("seller_details")
-        .createSignedUrl(filePath, 60 * 60 * 24 * 365 * 100);
+        .createSignedUrl(fileName, 60 * 60 * 24 * 365 * 100);
 
       if (signedUrlError) {
         throw new Error(`Signed URL generation failed: ${signedUrlError.message}`);
       }
 
-      // Save document metadata to seller_documents table
+      // Save document metadata to seller_documents table (save path WITHOUT bucket prefix)
       const { data: docData, error: docError } = await supabaseAdmin
         .from("seller_documents")
         .insert({
@@ -69,7 +68,7 @@ export const useDocumentUpload = () => {
           file_name: file.name,
           file_size: file.size,
           mime_type: file.type,
-          storage_path: filePath,
+          storage_path: fileName, // Save path without 'seller_details/' prefix
           uploaded_at: new Date().toISOString(),
         })
         .select()
@@ -77,7 +76,7 @@ export const useDocumentUpload = () => {
 
       if (docError) {
         // If metadata save fails, try to delete the uploaded file
-        await supabaseAdmin.storage.from("seller_details").remove([filePath]);
+        await supabaseAdmin.storage.from("seller_details").remove([fileName]);
         throw new Error(`Failed to save document metadata: ${docError.message}`);
       }
 
@@ -87,7 +86,7 @@ export const useDocumentUpload = () => {
         fileName: file.name,
         fileSize: file.size,
         mimeType: file.type,
-        storagePath: filePath,
+        storagePath: fileName,
         uploadedAt: docData.uploaded_at,
       };
 
