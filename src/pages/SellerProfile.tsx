@@ -92,7 +92,7 @@ export default function SellerProfile() {
         .eq("seller_id", s.id);
 
       // convert internal storage paths to signed URLs for display
-  const docsWithUrls: SellerDocPartial[] = [];
+      const docsWithUrls: SellerDocPartial[] = [];
       if (documents && Array.isArray(documents)) {
         for (const d of documents) {
           const path = (d as SellerDocument).storage_path as string | null | undefined;
@@ -100,6 +100,14 @@ export default function SellerProfile() {
             docsWithUrls.push(d);
             continue;
           }
+          
+          // If already a signed URL, use it directly
+          if (path.startsWith('http://') || path.startsWith('https://')) {
+            docsWithUrls.push(d as SellerDocPartial);
+            continue;
+          }
+          
+          // Otherwise, generate a signed URL from the storage path
           try {
             const { data: urlData, error: urlErr } = await supabase.storage
               .from("seller_details")

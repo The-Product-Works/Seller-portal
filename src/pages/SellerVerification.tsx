@@ -71,6 +71,14 @@ export default function SellerVerification() {
             docsWithUrls.push(d as SellerDocPartial);
             continue;
           }
+          
+          // If already a signed URL, use it directly
+          if (path.startsWith('http://') || path.startsWith('https://')) {
+            docsWithUrls.push(d as SellerDocPartial);
+            continue;
+          }
+          
+          // Otherwise, generate a signed URL from the storage path
           try {
             const { data: urlData, error: urlErr } = await supabase.storage
               .from("seller_details")
