@@ -248,21 +248,6 @@ export default function KYC() {
     })();
   }, [navigate, toast]);
 
-  const uploadFile = async (file: File, folder: string) => {
-    if (!seller?.id) throw new Error("No seller id");
-    const ext = (file.name.split(".").pop() || "dat").toLowerCase();
-    const path = `${seller.id}/${folder}/${Date.now()}.${ext}`;
-    const up = await supabase.storage
-      .from("seller_details")
-      .upload(path, file, { upsert: true });
-    if (up.error) throw up.error;
-    const signed = await supabase.storage
-      .from("seller_details")
-      .createSignedUrl(up.data.path, 60 * 60 * 24 * 365 * 10);
-    if (signed.error) throw signed.error;
-    return signed.data.signedUrl;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
@@ -363,25 +348,72 @@ export default function KYC() {
           console.log("Aadhaar photo:", aadhaarPhoto?.name, aadhaarPhoto?.size);
           console.log("PAN photo:", panPhoto?.name, panPhoto?.size);
           
+          const uploadResults = {
+            selfie: false,
+            aadhaar: false,
+            pan: false
+          };
+          
           if (selfiePhoto) {
             console.log("Uploading selfie...");
             const r = await uploadDocument(newSeller.id, selfiePhoto, "selfie");
             console.log("Selfie upload result:", r);
-            if (!r.success) console.error("Selfie upload failed:", r.error);
+            uploadResults.selfie = r.success;
+            if (!r.success) {
+              console.error("Selfie upload failed:", r.error);
+              toast({
+                title: "Selfie upload failed",
+                description: r.error || "Failed to upload selfie",
+                variant: "destructive",
+              });
+            }
           }
+          
           if (aadhaarPhoto) {
             console.log("Uploading aadhaar...");
             const r = await uploadDocument(newSeller.id, aadhaarPhoto, "aadhaar");
             console.log("Aadhaar upload result:", r);
-            if (!r.success) console.error("Aadhaar upload failed:", r.error);
+            uploadResults.aadhaar = r.success;
+            if (!r.success) {
+              console.error("Aadhaar upload failed:", r.error);
+              toast({
+                title: "Aadhaar upload failed",
+                description: r.error || "Failed to upload aadhaar",
+                variant: "destructive",
+              });
+            }
           }
+          
           if (panPhoto) {
             console.log("Uploading pan...");
             const r = await uploadDocument(newSeller.id, panPhoto, "pan");
             console.log("PAN upload result:", r);
-            if (!r.success) console.error("PAN upload failed:", r.error);
+            uploadResults.pan = r.success;
+            if (!r.success) {
+              console.error("PAN upload failed:", r.error);
+              toast({
+                title: "PAN upload failed",
+                description: r.error || "Failed to upload PAN",
+                variant: "destructive",
+              });
+            }
           }
-          console.log("All document uploads completed");
+          
+          console.log("All document uploads completed. Results:", uploadResults);
+          
+          // Check if all required uploads succeeded
+          const failedUploads = [];
+          if (selfiePhoto && !uploadResults.selfie) failedUploads.push("Selfie");
+          if (aadhaarPhoto && !uploadResults.aadhaar) failedUploads.push("Aadhaar");
+          if (panPhoto && !uploadResults.pan) failedUploads.push("PAN");
+          
+          if (failedUploads.length > 0) {
+            toast({
+              title: "Some uploads failed",
+              description: `Failed to upload: ${failedUploads.join(", ")}. Please resubmit.`,
+              variant: "destructive",
+            });
+          }
         } catch (upErr: unknown) {
           const error = upErr instanceof Error ? upErr : new Error(String(upErr));
           console.error("Error uploading KYC documents:", error);
@@ -431,25 +463,58 @@ export default function KYC() {
         console.log("Aadhaar photo:", aadhaarPhoto?.name, aadhaarPhoto?.size);
         console.log("PAN photo:", panPhoto?.name, panPhoto?.size);
         
+        const uploadResults = {
+          selfie: false,
+          aadhaar: false,
+          pan: false
+        };
+        
         if (selfiePhoto) {
           console.log("Uploading new selfie...");
           const r = await uploadDocument(seller.id, selfiePhoto, "selfie");
           console.log("Selfie upload result:", r);
-          if (!r.success) console.error("Selfie upload failed:", r.error);
+          uploadResults.selfie = r.success;
+          if (!r.success) {
+            console.error("Selfie upload failed:", r.error);
+            toast({
+              title: "Selfie upload failed",
+              description: r.error || "Failed to upload selfie",
+              variant: "destructive",
+            });
+          }
         }
+        
         if (aadhaarPhoto) {
           console.log("Uploading new aadhaar...");
           const r = await uploadDocument(seller.id, aadhaarPhoto, "aadhaar");
           console.log("Aadhaar upload result:", r);
-          if (!r.success) console.error("Aadhaar upload failed:", r.error);
+          uploadResults.aadhaar = r.success;
+          if (!r.success) {
+            console.error("Aadhaar upload failed:", r.error);
+            toast({
+              title: "Aadhaar upload failed",
+              description: r.error || "Failed to upload aadhaar",
+              variant: "destructive",
+            });
+          }
         }
+        
         if (panPhoto) {
           console.log("Uploading new pan...");
           const r = await uploadDocument(seller.id, panPhoto, "pan");
           console.log("PAN upload result:", r);
-          if (!r.success) console.error("PAN upload failed:", r.error);
+          uploadResults.pan = r.success;
+          if (!r.success) {
+            console.error("PAN upload failed:", r.error);
+            toast({
+              title: "PAN upload failed",
+              description: r.error || "Failed to upload PAN",
+              variant: "destructive",
+            });
+          }
         }
-        console.log("All document re-uploads completed");
+        
+        console.log("All document re-uploads completed. Results:", uploadResults);
       } catch (upErr: unknown) {
         const error = upErr instanceof Error ? upErr : new Error(String(upErr));
         console.error("Error uploading KYC documents:", error);
