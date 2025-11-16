@@ -196,7 +196,7 @@ export default function SellerVerification() {
                 </div>
 
                 <div className="text-right">
-                  {status === "approved" ? (
+                  {status === "verified" ? (
                     <Button variant="secondary" onClick={() => navigate("/dashboard")}>
                       <CheckCircle className="h-4 w-4 mr-1" /> Verified - Go to Dashboard
                     </Button>

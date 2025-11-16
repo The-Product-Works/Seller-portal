@@ -79,9 +79,14 @@ export default function KYC() {
     panNumber: "",
     gstin: "",
     businessName: "",
-    businessType: "individual", // ✅ default valid enum
+    businessType: "individual",
     phone: "",
-    address: "",
+    address_line1: "",
+    address_line2: "",
+    city: "",
+    state: "",
+    pincode: "",
+    country: "India",
     bankName: "",
     bankAccountNumber: "",
     bankIfscCode: "",
@@ -134,9 +139,14 @@ export default function KYC() {
             panNumber: s.pan ?? "",
             gstin: s.gstin ?? "",
             businessName: s.business_name ?? "",
-            businessType: s.business_type || "individual", // ✅ default if null
+            businessType: s.business_type || "individual",
             phone: s.phone ?? "",
-            address: s.address_line1 ?? "",
+            address_line1: s.address_line1 ?? "",
+            address_line2: s.address_line2 ?? "",
+            city: s.city ?? "",
+            state: s.state ?? "",
+            pincode: s.pincode ?? "",
+            country: s.country ?? "India",
             bankName: s.bank_name ?? "",
             bankAccountNumber: s.account_number ?? "",
             bankIfscCode: s.ifsc_code ?? "",
@@ -292,6 +302,9 @@ export default function KYC() {
           (b) => b.value === formData.businessType?.toLowerCase()
         )?.value || "individual";
 
+      // ✅ Derive is_individual from business_type
+      const isIndividual = safeBusinessType === "individual";
+
       if (!seller) {
         if (!selfiePhoto || !aadhaarPhoto || !panPhoto) {
           toast({
@@ -308,6 +321,13 @@ export default function KYC() {
         } = await supabase.auth.getUser();
         if (!user) throw new Error("Not authenticated");
 
+        // Update user phone in auth
+        if (formData.phone) {
+          await supabase.auth.admin.updateUserById(user.id, {
+            phone: formData.phone,
+          });
+        }
+
         const { data: newSeller, error } = await supabase
           .from("sellers")
           .insert({
@@ -315,12 +335,18 @@ export default function KYC() {
             name: formData.businessName || user.email,
             email: user.email,
             phone: formData.phone || null,
+            is_individual: isIndividual,
             aadhaar: formData.aadhaarNumber || null,
             pan: formData.panNumber || null,
             gstin: formData.gstin || null,
             business_name: formData.businessName || null,
-            business_type: safeBusinessType, // ✅ valid enum guaranteed
-            address_line1: formData.address || null,
+            business_type: safeBusinessType,
+            address_line1: formData.address_line1 || null,
+            address_line2: formData.address_line2 || null,
+            city: formData.city || null,
+            state: formData.state || null,
+            pincode: formData.pincode || null,
+            country: formData.country || "India",
             bank_name: formData.bankName || null,
             account_number: formData.bankAccountNumber || null,
             ifsc_code: formData.bankIfscCode || null,
@@ -328,6 +354,7 @@ export default function KYC() {
             account_type: formData.accountType || null,
             verification_status: "pending",
             onboarding_status: "in_review",
+            onboarding_step: 1,
           })
           .select()
           .single();
@@ -379,15 +406,33 @@ export default function KYC() {
         return;
       }
 
+      // Update user phone in auth
+      const {
+        data: { user: currentUser },
+      } = await supabase.auth.getUser();
+      if (currentUser && formData.phone) {
+        await supabase.auth.admin.updateUserById(currentUser.id, {
+          phone: formData.phone,
+        });
+      }
+
       const { error: updErr } = await supabase
         .from("sellers")
         .update({
+          name: formData.businessName || seller.name,
+          phone: formData.phone || null,
+          is_individual: isIndividual,
           aadhaar: formData.aadhaarNumber,
           pan: formData.panNumber,
           gstin: formData.gstin,
           business_name: formData.businessName,
-          business_type: safeBusinessType, // ✅ enum-safe always
-          address_line1: formData.address,
+          business_type: safeBusinessType,
+          address_line1: formData.address_line1,
+          address_line2: formData.address_line2 || null,
+          city: formData.city || null,
+          state: formData.state || null,
+          pincode: formData.pincode || null,
+          country: formData.country || "India",
           bank_name: formData.bankName,
           account_number: formData.bankAccountNumber,
           ifsc_code: formData.bankIfscCode,
@@ -503,8 +548,6 @@ export default function KYC() {
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                       <Camera className="w-5 h-5" /> Upload Documents
                     </h3>
-                    {console.log("uploadedDocuments state:", uploadedDocuments)}
-                    {console.log("selfiePhoto state:", selfiePhoto)}
                     <div className="grid md:grid-cols-3 gap-6">
                       {/* Selfie */}
                       <div className="space-y-2">
@@ -723,14 +766,79 @@ export default function KYC() {
                       />
                     </div>
 
-                    <div className="md:col-span-2">
-                      <Label>Address</Label>
+                    <div>
+                      <Label>Address Line 1</Label>
                       <Input
-                        value={formData.address}
+                        value={formData.address_line1}
                         onChange={(e) =>
                           setFormData({
                             ...formData,
-                            address: e.target.value,
+                            address_line1: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Address Line 2 (Optional)</Label>
+                      <Input
+                        value={formData.address_line2}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            address_line2: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>City</Label>
+                      <Input
+                        value={formData.city}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            city: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>State</Label>
+                      <Input
+                        value={formData.state}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            state: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Pincode</Label>
+                      <Input
+                        value={formData.pincode}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            pincode: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+
+                    <div>
+                      <Label>Country</Label>
+                      <Input
+                        value={formData.country}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            country: e.target.value,
                           })
                         }
                       />
