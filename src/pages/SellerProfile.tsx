@@ -92,82 +92,26 @@ export default function SellerProfile() {
         .eq("seller_id", s.id)
         .order("uploaded_at", { ascending: false });
 
-      console.log("📄 Raw documents from DB (Profile):", documents);
-
-      // convert internal storage paths to signed URLs for display
       // Group by doc_type and take only the most recent of each type
+      // storage_path is already a Supabase signed URL, use it directly
       const latestDocsMap = new Map<string, SellerDocPartial>();
       
       if (documents && Array.isArray(documents)) {
-        console.log(`Processing ${documents.length} documents...`);
-        
         for (const d of documents) {
           const docType = (d as SellerDocument).doc_type;
-          if (!docType) {
-            console.warn("⚠️ Document without doc_type:", d);
-            continue;
-          }
+          if (!docType) continue;
           
           // Only keep the first occurrence of each doc_type (most recent due to ORDER BY)
           if (!latestDocsMap.has(docType)) {
-            const path = (d as SellerDocument).storage_path as string | null | undefined;
-            
-            if (!path) {
-              console.warn(`⚠️ ${docType}: No storage_path`);
-              latestDocsMap.set(docType, d);
-              continue;
-            }
-            
-            console.log(`📝 Processing ${docType}: ${path}`);
-            
-            // If already a signed URL, use it directly
-            if (path.startsWith('http://') || path.startsWith('https://')) {
-              console.log(`✅ ${docType}: Already a signed URL`);
-              latestDocsMap.set(docType, d as SellerDocPartial);
-              continue;
-            }
-            
-            // Remove 'seller_details/' prefix if it exists
-            const pathToSign = path.startsWith('seller_details/') 
-              ? path.substring('seller_details/'.length)
-              : path;
-            
-            console.log(`🔄 ${docType}: Generating signed URL for: ${pathToSign}`);
-            
-            // Generate a signed URL from the storage path
-            try {
-              const { data: urlData, error: urlErr } = await supabase.storage
-                .from("seller_details")
-                .createSignedUrl(pathToSign, 60 * 60 * 24 * 7); // 7 days
-                
-              if (urlErr) {
-                console.error(`❌ ${docType}: Failed to create signed URL:`, urlErr);
-                latestDocsMap.set(docType, d as SellerDocPartial);
-              } else if (urlData?.signedUrl) {
-                console.log(`✅ ${docType}: Signed URL created successfully`);
-                latestDocsMap.set(docType, { ...(d as SellerDocPartial), storage_path: urlData.signedUrl });
-              } else {
-                console.error(`❌ ${docType}: No signed URL returned`);
-                latestDocsMap.set(docType, d);
-              }
-            } catch (e) {
-              console.error(`❌ ${docType}: Exception generating signed URL:`, e);
-              latestDocsMap.set(docType, d);
-            }
+            latestDocsMap.set(docType, d as SellerDocPartial);
           }
         }
       }
 
       // Convert map to array ensuring we have all 3 doc types
       const docsWithUrls = Array.from(latestDocsMap.values());
-      console.log("📊 Final documents for Profile display:");
-      console.log(`  Total: ${docsWithUrls.length} documents`);
-      console.log(`  Types: ${Array.from(latestDocsMap.keys()).join(", ")}`);
-      docsWithUrls.forEach(doc => {
-        const dt = (doc as Record<string, unknown>).doc_type as string;
-        const sp = (doc as Record<string, unknown>).storage_path as string;
-        console.log(`  - ${dt}: ${sp?.substring(0, 60)}...`);
-      });
+      console.log("Profile viewing documents:", docsWithUrls.length, "docs -", Array.from(latestDocsMap.keys()));
+      console.log("Document URLs:", docsWithUrls.map(d => ({ type: d.doc_type, url: d.storage_path })));
       setDocs(docsWithUrls || []);
 
       setFormData({

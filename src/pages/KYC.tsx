@@ -171,45 +171,26 @@ export default function KYC() {
             
             console.log("Latest docs by type:", Array.from(latestDocs.keys()));
             
-            // Process only the latest document of each type
+            // Process only the latest document of each type - storage_path is already a signed URL
             for (const [docType, doc] of latestDocs.entries()) {
-              console.log("Processing latest document:", docType, "storage_path:", doc.storage_path);
+              console.log("Processing document:", docType, "storage_path:", doc.storage_path);
               
               if (!doc.storage_path) {
                 console.warn("No storage_path for", docType);
                 continue;
               }
               
-              // If storage_path is a full URL (signed URL), use it directly
-              // Otherwise, generate a signed URL from the storage path
-              let finalPath = doc.storage_path;
-              if (!doc.storage_path.startsWith('http')) {
-                console.log("Generating signed URL for path:", doc.storage_path);
-                
-                // Remove 'seller_details/' prefix if it exists (it's the bucket name)
-                const pathToSign = doc.storage_path.startsWith('seller_details/') 
-                  ? doc.storage_path.substring('seller_details/'.length)
-                  : doc.storage_path;
-                
-                const { data: signedData, error: signedError } = await supabase.storage
-                  .from("seller_details")
-                  .createSignedUrl(pathToSign, 60 * 60 * 24 * 365 * 100);
-                
-                if (signedError) {
-                  console.error("Failed to create signed URL for", pathToSign, ":", signedError);
-                } else if (signedData?.signedUrl) {
-                  finalPath = signedData.signedUrl;
-                  console.log("Signed URL created successfully for", docType);
-                }
-              }
+              // storage_path is already a Supabase signed URL, use it directly
+              const displayUrl = doc.storage_path;
+              console.log("Display URL for", docType, ":", displayUrl);
               
               // Map to the correct field based on doc type
               if (docType === "selfie") {
-                docMap.selfie = finalPath;
+                docMap.selfie = displayUrl;
               } else if (docType === "aadhaar") {
-                docMap.aadhaar = finalPath;
+                docMap.aadhaar = displayUrl;
               } else if (docType === "pan") {
-                docMap.pan = finalPath;
+                docMap.pan = displayUrl;
               }
             }
             

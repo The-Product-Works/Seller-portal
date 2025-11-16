@@ -50,16 +50,22 @@ export const useDocumentUpload = () => {
         throw new Error(`Upload failed: ${uploadError.message}`);
       }
 
+      console.log("File uploaded successfully, path:", fileName);
+
       // Get signed URL (valid for 100 years - effectively permanent)
       const { data: signedUrlData, error: signedUrlError } = await supabaseAdmin.storage
         .from("seller_details")
         .createSignedUrl(fileName, 60 * 60 * 24 * 365 * 100);
 
       if (signedUrlError) {
+        console.error("Failed to generate signed URL:", signedUrlError);
         throw new Error(`Signed URL generation failed: ${signedUrlError.message}`);
       }
 
-      // Save document metadata to seller_documents table (save path WITHOUT bucket prefix)
+      const signedUrl = signedUrlData.signedUrl;
+      console.log("Signed URL generated successfully for", docType);
+
+      // Save document metadata to seller_documents table with the signed URL
       const { data: docData, error: docError } = await supabaseAdmin
         .from("seller_documents")
         .insert({
@@ -68,17 +74,20 @@ export const useDocumentUpload = () => {
           file_name: file.name,
           file_size: file.size,
           mime_type: file.type,
-          storage_path: fileName, // Save path without 'seller_details/' prefix
+          storage_path: signedUrl, // Save the signed URL directly so it's viewable by both seller and admin
           uploaded_at: new Date().toISOString(),
         })
         .select()
         .single();
 
       if (docError) {
+        console.error("Failed to save document metadata:", docError);
         // If metadata save fails, try to delete the uploaded file
         await supabaseAdmin.storage.from("seller_details").remove([fileName]);
         throw new Error(`Failed to save document metadata: ${docError.message}`);
       }
+
+      console.log("Document metadata saved successfully, id:", docData.id);
 
       const uploadedDoc: UploadedDocument = {
         id: docData.id,
@@ -86,7 +95,7 @@ export const useDocumentUpload = () => {
         fileName: file.name,
         fileSize: file.size,
         mimeType: file.type,
-        storagePath: fileName,
+        storagePath: signedUrl,
         uploadedAt: docData.uploaded_at,
       };
 
