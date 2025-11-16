@@ -70,6 +70,8 @@ export default function SellerVerification() {
       if (sellerDocs && Array.isArray(sellerDocs)) {
         for (const d of sellerDocs) {
           const docType = (d as SellerDocPartial).doc_type;
+          if (!docType) continue;
+          
           // Only keep the first occurrence of each doc_type (most recent due to ORDER BY)
           if (!latestDocsMap.has(docType)) {
             const path = (d as SellerDocPartial).storage_path as string | null | undefined;
@@ -84,13 +86,18 @@ export default function SellerVerification() {
               continue;
             }
             
+            // Remove 'seller_details/' prefix if it exists
+            const pathToSign = path.startsWith('seller_details/') 
+              ? path.substring('seller_details/'.length)
+              : path;
+            
             // Otherwise, generate a signed URL from the storage path
             try {
               const { data: urlData, error: urlErr } = await supabase.storage
                 .from("seller_details")
-                .createSignedUrl(path, 60 * 60 * 24 * 7);
+                .createSignedUrl(pathToSign, 60 * 60 * 24 * 7);
               if (urlErr) {
-                console.error("Failed to create signed URL for", path, urlErr);
+                console.error("Failed to create signed URL for", pathToSign, urlErr);
                 latestDocsMap.set(docType, d as SellerDocPartial);
               } else {
                 latestDocsMap.set(docType, { ...(d as SellerDocPartial), storage_path: urlData?.signedUrl });
