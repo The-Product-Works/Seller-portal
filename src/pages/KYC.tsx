@@ -576,7 +576,7 @@ export default function KYC() {
                     <div className="grid md:grid-cols-3 gap-6">
                       {/* Selfie */}
                       <div className="space-y-2">
-                        <Label>Selfie Photo</Label>
+                        <Label htmlFor="selfie-upload">Selfie Photo *</Label>
                         {uploadedDocuments.selfie || selfiePhoto ? (
                           <div className="relative border-2 border-dashed rounded-lg p-2">
                             <img
@@ -602,18 +602,20 @@ export default function KYC() {
                           </div>
                         ) : (
                           <div className="space-y-2">
-                            <Input
+                            <input
+                              id="selfie-upload"
                               type="file"
                               accept="image/*"
-                              capture="user"
+                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 console.log("Selfie file selected:", file?.name, file?.size, file?.type);
                                 setSelfiePhoto(file || null);
                               }}
+                              required
                             />
                             <p className="text-xs text-muted-foreground">
-                              Use your camera to take a selfie or upload an existing photo
+                              Upload a clear selfie photo (required)
                             </p>
                           </div>
                         )}
