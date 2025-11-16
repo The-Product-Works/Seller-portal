@@ -158,13 +158,22 @@ export default function KYC() {
           console.log("Number of documents:", docs?.length);
 
           if (docs && docs.length > 0) {
-            const docMap: { selfie?: string; aadhaar?: string; pan?: string } =
-              {};
+            const docMap: { selfie?: string; aadhaar?: string; pan?: string } = {};
             
+            // Group documents by type and take only the most recent one (already sorted by uploaded_at DESC)
+            const latestDocs = new Map<string, typeof docs[0]>();
             for (const doc of docs) {
-              console.log("Processing document:", doc.doc_type, "storage_path:", doc.storage_path);
+              if (!latestDocs.has(doc.doc_type)) {
+                latestDocs.set(doc.doc_type, doc);
+              }
+            }
+            
+            // Process only the latest document of each type
+            for (const [docType, doc] of latestDocs.entries()) {
+              console.log("Processing latest document:", docType, "storage_path:", doc.storage_path);
               
-              // If storage_path is a full path (not a signed URL), generate signed URL
+              // If storage_path is a full URL (signed URL), use it directly
+              // Otherwise, generate a signed URL from the storage path
               let finalPath = doc.storage_path;
               if (doc.storage_path && !doc.storage_path.startsWith('http')) {
                 console.log("Generating signed URL for path:", doc.storage_path);
@@ -176,24 +185,21 @@ export default function KYC() {
                   console.error("Failed to create signed URL:", signedError);
                 } else {
                   finalPath = signedData?.signedUrl || doc.storage_path;
-                  console.log("Signed URL created");
+                  console.log("Signed URL created successfully");
                 }
               }
               
-              if (doc.doc_type === "selfie") {
-                console.log("Mapping selfie");
+              // Map to the correct field based on doc type
+              if (docType === "selfie") {
                 docMap.selfie = finalPath;
-              }
-              if (doc.doc_type === "aadhaar") {
-                console.log("Mapping aadhaar");
+              } else if (docType === "aadhaar") {
                 docMap.aadhaar = finalPath;
-              }
-              if (doc.doc_type === "pan") {
-                console.log("Mapping pan");
+              } else if (docType === "pan") {
                 docMap.pan = finalPath;
               }
             }
-            console.log("Final docMap:", docMap);
+            
+            console.log("Final docMap with all 3 docs:", docMap);
             setUploadedDocuments(docMap);
           } else {
             console.log("No documents found or docs is null/empty");

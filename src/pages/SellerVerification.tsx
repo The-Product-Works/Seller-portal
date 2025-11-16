@@ -60,42 +60,52 @@ export default function SellerVerification() {
       const { data: sellerDocs } = await supabase
         .from("seller_documents")
         .select("doc_type, storage_path")
-        .eq("seller_id", sellerData.id);
+        .eq("seller_id", sellerData.id)
+        .order("uploaded_at", { ascending: false });
 
       // Convert internal storage paths to signed URLs for display
-      const docsWithUrls: SellerDocPartial[] = [];
+      // Group by doc_type and take only the most recent of each type
+      const latestDocsMap = new Map<string, SellerDocPartial>();
+      
       if (sellerDocs && Array.isArray(sellerDocs)) {
         for (const d of sellerDocs) {
-          const path = (d as SellerDocPartial).storage_path as string | null | undefined;
-          if (!path) {
-            docsWithUrls.push(d as SellerDocPartial);
-            continue;
-          }
-          
-          // If already a signed URL, use it directly
-          if (path.startsWith('http://') || path.startsWith('https://')) {
-            docsWithUrls.push(d as SellerDocPartial);
-            continue;
-          }
-          
-          // Otherwise, generate a signed URL from the storage path
-          try {
-            const { data: urlData, error: urlErr } = await supabase.storage
-              .from("seller_details")
-              .createSignedUrl(path, 60 * 60 * 24 * 7);
-            if (urlErr) {
-              console.error("Failed to create signed URL for", path, urlErr);
-              docsWithUrls.push(d);
-            } else {
-              docsWithUrls.push({ ...(d as SellerDocPartial), storage_path: urlData?.signedUrl });
+          const docType = (d as SellerDocPartial).doc_type;
+          // Only keep the first occurrence of each doc_type (most recent due to ORDER BY)
+          if (!latestDocsMap.has(docType)) {
+            const path = (d as SellerDocPartial).storage_path as string | null | undefined;
+            if (!path) {
+              latestDocsMap.set(docType, d as SellerDocPartial);
+              continue;
             }
-          } catch (e) {
-            console.error("Signed URL generation error", e);
-            docsWithUrls.push(d);
+            
+            // If already a signed URL, use it directly
+            if (path.startsWith('http://') || path.startsWith('https://')) {
+              latestDocsMap.set(docType, d as SellerDocPartial);
+              continue;
+            }
+            
+            // Otherwise, generate a signed URL from the storage path
+            try {
+              const { data: urlData, error: urlErr } = await supabase.storage
+                .from("seller_details")
+                .createSignedUrl(path, 60 * 60 * 24 * 7);
+              if (urlErr) {
+                console.error("Failed to create signed URL for", path, urlErr);
+                latestDocsMap.set(docType, d as SellerDocPartial);
+              } else {
+                latestDocsMap.set(docType, { ...(d as SellerDocPartial), storage_path: urlData?.signedUrl });
+              }
+            } catch (e) {
+              console.error("Signed URL generation error", e);
+              latestDocsMap.set(docType, d as SellerDocPartial);
+            }
           }
         }
       }
 
+      // Convert map to array ensuring we have all 3 doc types
+      const docsWithUrls = Array.from(latestDocsMap.values());
+      console.log("Admin viewing documents:", docsWithUrls.length, "docs -", Array.from(latestDocsMap.keys()));
       setDocs(docsWithUrls || []);
 
       // load edit request feedback
