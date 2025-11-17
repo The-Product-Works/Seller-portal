@@ -164,6 +164,14 @@ export default function SellerVerification() {
                   </div>
                 )}
 
+                {!["approved", "verified", "rejected"].includes(status) && !adminMessage && (
+                  <div className="p-3 bg-blue-50 border rounded">
+                    <p className="text-sm text-blue-900">
+                      Admin will check KYC information and verify your seller account. Please check back later.
+                    </p>
+                  </div>
+                )}
+
                 <div>
                   <h4 className="text-md font-medium mt-3 mb-2">Uploaded Documents</h4>
                   {docs.length ? (
@@ -201,7 +209,7 @@ export default function SellerVerification() {
                     </Button>
                   ) : (
                     <Button disabled>
-                      <Loader2 className="animate-spin h-4 w-4 mr-1" /> Under Review
+                      <Loader2 className="animate-spin h-4 w-4 mr-1" /> Under Review by Admin
                     </Button>
                   )}
                 </div>
