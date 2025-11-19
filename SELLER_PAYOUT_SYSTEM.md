@@ -76,7 +76,423 @@ A comprehensive seller payout tracking system that:
 
 ---
 
-## 📊 Table Details & Rationale
+## � SQL Migration Script
+
+### **Complete Database Setup**
+
+```sql
+-- =====================================================
+-- SELLER PAYOUT SYSTEM
+-- Manual admin-managed payout tracking system
+-- =====================================================
+
+-- 1. SELLER PAYOUTS TABLE
+-- Main table for tracking monthly payouts to sellers
+CREATE TABLE seller_payouts (
+  payout_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+  
+  -- Payout Period
+  payout_month INTEGER NOT NULL CHECK (payout_month BETWEEN 1 AND 12),
+  payout_year INTEGER NOT NULL CHECK (payout_year >= 2024),
+  payout_date DATE NOT NULL,
+  
+  -- Amount Breakdown
+  gross_sales DECIMAL(10, 2) NOT NULL DEFAULT 0 CHECK (gross_sales >= 0),
+  razorpay_fees DECIMAL(10, 2) NOT NULL DEFAULT 0 CHECK (razorpay_fees >= 0),
+  refund_deductions DECIMAL(10, 2) NOT NULL DEFAULT 0 CHECK (refund_deductions >= 0),
+  previous_balance DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  net_amount DECIMAL(10, 2) NOT NULL DEFAULT 0,
+  
+  -- Status Management
+  status VARCHAR(50) NOT NULL DEFAULT 'pending' 
+    CHECK (status IN ('pending', 'approved', 'paid', 'rejected', 'on_hold')),
+  
+  -- Admin Actions
+  approved_by UUID REFERENCES users(id),
+  approved_at TIMESTAMP,
+  paid_by UUID REFERENCES users(id),
+  paid_at TIMESTAMP,
+  
+  -- Payment Details (Manual entry by admin)
+  payment_method VARCHAR(100),
+  payment_reference VARCHAR(255),
+  payment_notes TEXT,
+  admin_notes TEXT,
+  rejection_reason TEXT,
+  
+  -- Timestamps
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW(),
+  
+  -- Ensure one payout per seller per month
+  CONSTRAINT unique_seller_month_year UNIQUE(seller_id, payout_month, payout_year)
+);
+
+-- Indexes for seller_payouts
+CREATE INDEX idx_seller_payouts_seller_id ON seller_payouts(seller_id);
+CREATE INDEX idx_seller_payouts_status ON seller_payouts(status);
+CREATE INDEX idx_seller_payouts_date ON seller_payouts(payout_date);
+CREATE INDEX idx_seller_payouts_period ON seller_payouts(payout_year DESC, payout_month DESC);
+
+-- Trigger to update updated_at
+CREATE OR REPLACE FUNCTION update_seller_payouts_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_seller_payouts_updated_at
+  BEFORE UPDATE ON seller_payouts
+  FOR EACH ROW
+  EXECUTE FUNCTION update_seller_payouts_updated_at();
+
+-- =====================================================
+
+-- 2. SELLER PAYOUT ITEMS TABLE
+-- Individual order items included in each payout
+CREATE TABLE seller_payout_items (
+  payout_item_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  payout_id UUID REFERENCES seller_payouts(payout_id) ON DELETE CASCADE,
+  
+  -- Order References
+  order_id UUID NOT NULL REFERENCES orders(order_id),
+  order_item_id UUID NOT NULL REFERENCES order_items(order_item_id),
+  payment_id UUID REFERENCES payments(payment_id),
+  
+  -- Order Details
+  order_date TIMESTAMP NOT NULL,
+  item_subtotal DECIMAL(10, 2) NOT NULL CHECK (item_subtotal >= 0),
+  
+  -- Razorpay Fee Allocation (proportional to seller's share)
+  allocated_razorpay_fee DECIMAL(10, 2) NOT NULL DEFAULT 0 CHECK (allocated_razorpay_fee >= 0),
+  allocated_razorpay_tax DECIMAL(10, 2) NOT NULL DEFAULT 0 CHECK (allocated_razorpay_tax >= 0),
+  
+  -- Refund Information
+  refund_id UUID REFERENCES order_refunds(refund_id),
+  is_refunded BOOLEAN DEFAULT FALSE,
+  refund_amount DECIMAL(10, 2) DEFAULT 0 CHECK (refund_amount >= 0),
+  
+  -- Settlement Status
+  is_settled BOOLEAN DEFAULT FALSE,
+  settlement_hold_until DATE NOT NULL, -- 28th of payout month
+  
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Indexes for seller_payout_items
+CREATE INDEX idx_payout_items_payout_id ON seller_payout_items(payout_id);
+CREATE INDEX idx_payout_items_order_item ON seller_payout_items(order_item_id);
+CREATE INDEX idx_payout_items_order_id ON seller_payout_items(order_id);
+CREATE INDEX idx_payout_items_settlement ON seller_payout_items(is_settled, settlement_hold_until);
+CREATE INDEX idx_payout_items_refunded ON seller_payout_items(is_refunded);
+
+-- =====================================================
+
+-- 3. SELLER BALANCES TABLE
+-- Running balance for each seller
+CREATE TABLE seller_balances (
+  balance_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL UNIQUE REFERENCES sellers(id) ON DELETE CASCADE,
+  
+  -- Balance Breakdown
+  available_balance DECIMAL(10, 2) NOT NULL DEFAULT 0, -- Can be withdrawn
+  pending_balance DECIMAL(10, 2) NOT NULL DEFAULT 0,   -- In hold period (3 orders)
+  total_earned DECIMAL(10, 2) NOT NULL DEFAULT 0,      -- Lifetime earnings
+  total_paid_out DECIMAL(10, 2) NOT NULL DEFAULT 0,    -- Lifetime payouts
+  total_refunded DECIMAL(10, 2) NOT NULL DEFAULT 0,    -- Lifetime refunds
+  
+  -- Last Payout Info
+  last_payout_date DATE,
+  last_payout_amount DECIMAL(10, 2) DEFAULT 0,
+  
+  updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Index for seller_balances
+CREATE INDEX idx_seller_balances_seller ON seller_balances(seller_id);
+
+-- Trigger to update updated_at
+CREATE OR REPLACE FUNCTION update_seller_balances_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_seller_balances_updated_at
+  BEFORE UPDATE ON seller_balances
+  FOR EACH ROW
+  EXECUTE FUNCTION update_seller_balances_updated_at();
+
+-- =====================================================
+
+-- 4. SELLER BALANCE TRANSACTIONS TABLE
+-- Complete audit trail of all balance changes
+CREATE TABLE seller_balance_transactions (
+  transaction_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  seller_id UUID NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+  
+  -- Transaction Type
+  type VARCHAR(50) NOT NULL 
+    CHECK (type IN ('order', 'refund', 'payout', 'fee_deduction', 'adjustment')),
+  
+  -- Amount & Balance
+  amount DECIMAL(10, 2) NOT NULL,
+  balance_before DECIMAL(10, 2) NOT NULL,
+  balance_after DECIMAL(10, 2) NOT NULL,
+  
+  -- Related References
+  related_order_id UUID REFERENCES orders(order_id),
+  related_order_item_id UUID REFERENCES order_items(order_item_id),
+  related_payout_id UUID REFERENCES seller_payouts(payout_id),
+  related_refund_id UUID REFERENCES order_refunds(refund_id),
+  
+  -- Details
+  description TEXT,
+  metadata JSONB,
+  
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Indexes for seller_balance_transactions
+CREATE INDEX idx_balance_txn_seller ON seller_balance_transactions(seller_id);
+CREATE INDEX idx_balance_txn_type ON seller_balance_transactions(type);
+CREATE INDEX idx_balance_txn_created ON seller_balance_transactions(created_at DESC);
+CREATE INDEX idx_balance_txn_order ON seller_balance_transactions(related_order_id) WHERE related_order_id IS NOT NULL;
+CREATE INDEX idx_balance_txn_payout ON seller_balance_transactions(related_payout_id) WHERE related_payout_id IS NOT NULL;
+
+-- =====================================================
+
+-- 5. PAYOUT APPROVAL LOGS TABLE
+-- Track all admin actions on payouts
+CREATE TABLE payout_approval_logs (
+  log_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  payout_id UUID NOT NULL REFERENCES seller_payouts(payout_id) ON DELETE CASCADE,
+  
+  -- Action Details
+  action VARCHAR(50) NOT NULL 
+    CHECK (action IN ('approved', 'paid', 'rejected', 'put_on_hold', 'released_from_hold')),
+  performed_by UUID NOT NULL REFERENCES users(id),
+  performed_at TIMESTAMP DEFAULT NOW(),
+  
+  -- Status Change
+  previous_status VARCHAR(50),
+  new_status VARCHAR(50),
+  notes TEXT,
+  
+  -- Payment Info (for 'paid' action)
+  payment_method VARCHAR(100),
+  payment_reference VARCHAR(255),
+  
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- Indexes for payout_approval_logs
+CREATE INDEX idx_approval_logs_payout ON payout_approval_logs(payout_id);
+CREATE INDEX idx_approval_logs_admin ON payout_approval_logs(performed_by);
+CREATE INDEX idx_approval_logs_action ON payout_approval_logs(action);
+CREATE INDEX idx_approval_logs_created ON payout_approval_logs(created_at DESC);
+
+-- =====================================================
+
+-- 6. HELPER VIEWS
+-- View for pending payouts with seller details
+CREATE OR REPLACE VIEW v_pending_payouts AS
+SELECT 
+  sp.payout_id,
+  sp.payout_month,
+  sp.payout_year,
+  sp.payout_date,
+  sp.gross_sales,
+  sp.razorpay_fees,
+  sp.refund_deductions,
+  sp.net_amount,
+  sp.status,
+  sp.created_at,
+  s.id as seller_id,
+  s.business_name,
+  s.email       AS contact_email,
+  s.phone       AS contact_phone,
+  sb.available_balance,
+  sb.pending_balance,
+  COUNT(spi.payout_item_id) as order_count
+FROM seller_payouts sp
+JOIN sellers s ON sp.seller_id = s.id
+LEFT JOIN seller_balances sb ON s.id = sb.seller_id
+LEFT JOIN seller_payout_items spi ON sp.payout_id = spi.payout_id
+WHERE sp.status = 'pending'
+GROUP BY sp.payout_id, s.id, sb.available_balance, sb.pending_balance;
+
+-- View for seller payout summary
+CREATE OR REPLACE VIEW v_seller_payout_summary AS
+SELECT 
+  s.id as seller_id,
+  s.business_name,
+  sb.available_balance,
+  sb.pending_balance,
+  sb.total_earned,
+  sb.total_paid_out,
+  sb.total_refunded,
+  sb.last_payout_date,
+  sb.last_payout_amount,
+  COUNT(DISTINCT sp.payout_id) as total_payouts,
+  COUNT(DISTINCT CASE WHEN sp.status = 'pending' THEN sp.payout_id END) as pending_payouts,
+  COUNT(DISTINCT CASE WHEN sp.status = 'approved' THEN sp.payout_id END) as approved_payouts,
+  COUNT(DISTINCT CASE WHEN sp.status = 'paid' THEN sp.payout_id END) as paid_payouts
+FROM sellers s
+LEFT JOIN seller_balances sb ON s.id = sb.seller_id
+LEFT JOIN seller_payouts sp ON s.id = sp.seller_id
+GROUP BY s.id, sb.available_balance, sb.pending_balance, sb.total_earned, 
+         sb.total_paid_out, sb.total_refunded, sb.last_payout_date, sb.last_payout_amount;
+
+-- =====================================================
+
+-- 7. ROW LEVEL SECURITY (RLS) - COMMENTED OUT
+-- Uncomment and adjust based on your auth setup
+
+-- -- Enable RLS on all tables
+-- ALTER TABLE seller_payouts ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE seller_payout_items ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE seller_balances ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE seller_balance_transactions ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE payout_approval_logs ENABLE ROW LEVEL SECURITY;
+
+-- -- Admin can do everything
+-- CREATE POLICY "Admins can manage all payouts" ON seller_payouts
+--   FOR ALL TO authenticated
+--   USING (
+--     EXISTS (
+--       SELECT 1 FROM users
+--       WHERE users.id = auth.uid()
+--       AND users.role = 'admin'
+--     )
+--   );
+
+-- CREATE POLICY "Admins can manage all payout items" ON seller_payout_items
+--   FOR ALL TO authenticated
+--   USING (
+--     EXISTS (
+--       SELECT 1 FROM users
+--       WHERE users.id = auth.uid()
+--       AND users.role = 'admin'
+--     )
+--   );
+
+-- CREATE POLICY "Admins can manage all balances" ON seller_balances
+--   FOR ALL TO authenticated
+--   USING (
+--     EXISTS (
+--       SELECT 1 FROM users
+--       WHERE users.id = auth.uid()
+--       AND users.role = 'admin'
+--     )
+--   );
+
+-- CREATE POLICY "Admins can view all transactions" ON seller_balance_transactions
+--   FOR SELECT TO authenticated
+--   USING (
+--     EXISTS (
+--       SELECT 1 FROM users
+--       WHERE users.id = auth.uid()
+--       AND users.role = 'admin'
+--     )
+--   );
+
+-- CREATE POLICY "Admins can view all logs" ON payout_approval_logs
+--   FOR SELECT TO authenticated
+--   USING (
+--     EXISTS (
+--       SELECT 1 FROM users
+--       WHERE users.id = auth.uid()
+--       AND users.role = 'admin'
+--     )
+--   );
+
+-- -- Sellers can view their own data
+-- CREATE POLICY "Sellers can view own payouts" ON seller_payouts
+--   FOR SELECT TO authenticated
+--   USING (
+--     seller_id IN (
+--       SELECT id FROM sellers
+--       WHERE user_id = auth.uid()
+--     )
+--   );
+
+-- CREATE POLICY "Sellers can view own payout items" ON seller_payout_items
+--   FOR SELECT TO authenticated
+--   USING (
+--     EXISTS (
+--       SELECT 1 FROM seller_payouts sp
+--       JOIN sellers s ON sp.seller_id = s.id
+--       WHERE sp.payout_id = seller_payout_items.payout_id
+--       AND s.user_id = auth.uid()
+--     )
+--   );
+
+-- CREATE POLICY "Sellers can view own balance" ON seller_balances
+--   FOR SELECT TO authenticated
+--   USING (
+--     seller_id IN (
+--       SELECT id FROM sellers
+--       WHERE user_id = auth.uid()
+--     )
+--   );
+
+-- CREATE POLICY "Sellers can view own transactions" ON seller_balance_transactions
+--   FOR SELECT TO authenticated
+--   USING (
+--     seller_id IN (
+--       SELECT id FROM sellers
+--       WHERE user_id = auth.uid()
+--     )
+--   );
+
+-- =====================================================
+
+-- 8. TABLE COMMENTS
+COMMENT ON TABLE seller_payouts IS 'Main table for tracking monthly seller payouts. Generated on 28th of each month.';
+COMMENT ON TABLE seller_payout_items IS 'Individual order items included in each payout with proportional fee allocation.';
+COMMENT ON TABLE seller_balances IS 'Running balance for each seller with available and pending amounts.';
+COMMENT ON TABLE seller_balance_transactions IS 'Complete audit trail of all balance changes for sellers.';
+COMMENT ON TABLE payout_approval_logs IS 'Log of all admin actions on payouts (approve, reject, paid, etc).';
+
+-- =====================================================
+-- END OF MIGRATION
+-- =====================================================
+```
+
+### **Important Notes:**
+
+1. **Foreign Key References:**
+   - `approved_by` and `paid_by` reference `users(id)` - adjust if your user table has a different name
+   - Adjust `sellers.email` and `sellers.phone` column names in views if they differ in your schema
+
+2. **Row Level Security (RLS):**
+   - Currently commented out
+   - Uncomment and customize based on your authentication system
+   - Adjust `auth.uid()` calls if using a different auth provider
+
+3. **Views:**
+   - Two helper views created for quick access to common queries
+   - `v_pending_payouts`: Shows all pending payouts with seller details
+   - `v_seller_payout_summary`: Aggregated payout statistics per seller
+
+4. **To Run This Migration:**
+   ```bash
+   # Save to a file
+   psql your_database < seller_payout_migration.sql
+   
+   # Or in Supabase SQL Editor:
+   # Copy and paste the entire SQL script
+   ```
+
+---
+
+## �📊 Table Details & Rationale
 
 ### **1. `seller_payouts` - Main Payout Records**
 

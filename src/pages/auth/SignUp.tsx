@@ -46,6 +46,97 @@ export default function SignUp() {
 
     setLoading(true);
 
+    // Check if user with this email already exists in public.users table
+    const { data: existingUsers, error: userCheckError } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email);
+
+    if (userCheckError) {
+      console.error("Error checking existing user:", userCheckError);
+      setLoading(false);
+      toast({
+        title: "Error",
+        description: "Failed to verify email availability. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // If any user exists with this email, check their roles
+    if (existingUsers && existingUsers.length > 0) {
+      for (const user of existingUsers) {
+        const { data: userRoles, error: roleCheckError } = await supabase
+          .from("user_roles")
+          .select(`
+            role_id,
+            roles (
+              role_name
+            )
+          `)
+          .eq("user_id", user.id);
+
+        if (roleCheckError) {
+          console.error("Error checking user roles:", roleCheckError);
+          setLoading(false);
+          toast({
+            title: "Error",
+            description: "Failed to verify account status. Please try again.",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        // Check if user has buyer role
+        const hasBuyerRole = userRoles?.some(
+          (ur: any) => ur.roles?.role_name === "buyer"
+        );
+
+        if (hasBuyerRole) {
+          setLoading(false);
+          toast({
+            title: "Account Already Exists",
+            description: "This email is already registered as a buyer account. Please use a different email for seller registration.",
+            variant: "destructive",
+          });
+          setErrors({
+            email: "Email already registered as buyer",
+          });
+          return;
+        }
+
+        // Check if user has seller role (they might be trying to signup again)
+        const hasSellerRole = userRoles?.some(
+          (ur: any) => ur.roles?.role_name === "seller"
+        );
+
+        if (hasSellerRole) {
+          setLoading(false);
+          toast({
+            title: "Account Already Exists",
+            description: "You already have a seller account. Please sign in instead.",
+            variant: "destructive",
+          });
+          setErrors({
+            email: "Email already registered",
+          });
+          return;
+        }
+      }
+
+      // User exists but has no role assigned - this shouldn't happen but block it anyway
+      setLoading(false);
+      toast({
+        title: "Email Already Registered",
+        description: "This email is already registered. Please sign in or contact support.",
+        variant: "destructive",
+      });
+      setErrors({
+        email: "Email already registered",
+      });
+      return;
+    }
+
     const redirectUrl = `${window.location.origin}/kyc`;
     
     const { data: authData, error: authError } = await supabase.auth.signUp({
