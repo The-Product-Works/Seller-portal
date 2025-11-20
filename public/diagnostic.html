@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Notification System Diagnostics</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .warning { background: #fff3cd; color: #856404; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        pre {
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Notification System Diagnostics</h1>
+    
+    <div class="card">
+        <h2>Step 1: Environment Variables Check</h2>
+        <div id="envCheck"></div>
+        <button onclick="checkEnv()">Check Environment</button>
+    </div>
+
+    <div class="card">
+        <h2>Step 2: Test Resend API</h2>
+        <input type="email" id="testEmail" placeholder="your@email.com" style="padding: 8px; width: 300px; margin-right: 10px;">
+        <button onclick="testResend()">Send Test Email</button>
+        <div id="resendResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Step 3: Check Database Connection</h2>
+        <button onclick="testDatabase()">Test Database</button>
+        <div id="dbResult"></div>
+    </div>
+
+    <div class="card">
+        <h2>Instructions</h2>
+        <ol>
+            <li>Make sure you've <strong>restarted the dev server</strong> after adding environment variables</li>
+            <li>Check that .env file contains:
+                <pre>VITE_RESEND_API_KEY="re_W4Aw8xPL_5mPNPS2CQPMPWktcvprLbDwh"
+VITE_RESEND_FROM_EMAIL="onboarding@resend.dev"</pre>
+            </li>
+            <li>Open browser console (F12) to see detailed logs</li>
+        </ol>
+    </div>
+
+    <script type="module">
+        window.checkEnv = function() {
+            const apiKey = import.meta.env.VITE_RESEND_API_KEY;
+            const fromEmail = import.meta.env.VITE_RESEND_FROM_EMAIL;
+            
+            let html = '';
+            
+            if (apiKey) {
+                html += `<div class="status success">✅ RESEND_API_KEY is set (length: ${apiKey.length})</div>`;
+            } else {
+                html += `<div class="status error">❌ RESEND_API_KEY is NOT set<br>
+                        You need to:<br>
+                        1. Add VITE_RESEND_API_KEY to .env file<br>
+                        2. RESTART the dev server (stop and run 'npm run dev' again)</div>`;
+            }
+            
+            if (fromEmail) {
+                html += `<div class="status success">✅ FROM_EMAIL is set: ${fromEmail}</div>`;
+            } else {
+                html += `<div class="status warning">⚠️ FROM_EMAIL not set, will use default</div>`;
+            }
+            
+            document.getElementById('envCheck').innerHTML = html;
+            console.log('Environment check:', { apiKey: !!apiKey, fromEmail });
+        }
+
+        window.testResend = async function() {
+            const email = document.getElementById('testEmail').value;
+            if (!email) {
+                alert('Please enter an email address');
+                return;
+            }
+
+            const apiKey = import.meta.env.VITE_RESEND_API_KEY;
+            const fromEmail = import.meta.env.VITE_RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+
+            if (!apiKey) {
+                document.getElementById('resendResult').innerHTML = 
+                    '<div class="status error">❌ API Key not configured!</div>';
+                return;
+            }
+
+            document.getElementById('resendResult').innerHTML = 
+                '<div class="status warning">Sending email...</div>';
+
+            try {
+                const response = await fetch('https://api.resend.com/emails', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify({
+                        from: fromEmail,
+                        to: email,
+                        subject: 'Test Email from Notification System',
+                        html: '<h1>Test Email</h1><p>If you received this, the notification system is working!</p>'
+                    })
+                });
+
+                const result = await response.json();
+                console.log('Resend response:', result);
+
+                if (response.ok) {
+                    document.getElementById('resendResult').innerHTML = 
+                        `<div class="status success">✅ Email sent! Check your inbox.<br>
+                        Email ID: ${result.id}</div>`;
+                } else {
+                    document.getElementById('resendResult').innerHTML = 
+                        `<div class="status error">❌ Error: ${result.message || result.error}<br>
+                        <pre>${JSON.stringify(result, null, 2)}</pre></div>`;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                document.getElementById('resendResult').innerHTML = 
+                    `<div class="status error">❌ Network error: ${error.message}<br>
+                    This might be a CORS issue. Check browser console for details.</div>`;
+            }
+        }
+
+        window.testDatabase = async function() {
+            try {
+                const { createClient } = await import('@supabase/supabase-js');
+                const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+                const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+                
+                if (!supabaseUrl || !supabaseKey) {
+                    document.getElementById('dbResult').innerHTML = 
+                        '<div class="status error">❌ Supabase credentials not configured</div>';
+                    return;
+                }
+
+                const supabase = createClient(supabaseUrl, supabaseKey);
+                
+                // Try to query email_notifications table
+                const { data, error } = await supabase
+                    .from('email_notifications')
+                    .select('count')
+                    .limit(1);
+
+                if (error) {
+                    document.getElementById('dbResult').innerHTML = 
+                        `<div class="status error">❌ Database error: ${error.message}<br>
+                        Make sure the migration has been applied!</div>`;
+                } else {
+                    document.getElementById('dbResult').innerHTML = 
+                        '<div class="status success">✅ Database connection works!<br>email_notifications table is accessible</div>';
+                }
+            } catch (error) {
+                document.getElementById('dbResult').innerHTML = 
+                    `<div class="status error">❌ Error: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+</html>
