@@ -3,7 +3,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { sendEmail, getLowStockAlertTemplate } from "@/lib/notifications";
-import { testNotificationConfig } from "@/lib/notifications/test-config";
 import { Navbar } from "@/components/Navbar";
 
 export default function TestNotifications() {
@@ -18,7 +17,7 @@ export default function TestNotifications() {
     }
 
     setLoading(true);
-    setResult("Sending test email... Check browser console for details.");
+    setResult("Sending test email via Edge Function... Check browser console for details.");
 
     console.log('===== TEST NOTIFICATION START =====');
     console.log('Test email:', email);
@@ -30,7 +29,7 @@ export default function TestNotifications() {
         threshold: 10
       });
 
-      console.log('Calling sendEmail function...');
+      console.log('Calling sendEmail function (Edge Function)...');
 
       const response = await sendEmail({
         recipientEmail: email,
@@ -57,15 +56,6 @@ export default function TestNotifications() {
     }
   };
 
-  const handleConfigCheck = () => {
-    const isConfigured = testNotificationConfig();
-    if (isConfigured) {
-      setResult("✅ Notification system is properly configured!");
-    } else {
-      setResult("❌ Notification system is NOT configured. Check console for details.");
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
@@ -75,10 +65,9 @@ export default function TestNotifications() {
             <CardTitle>Test Notification System</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <Button onClick={handleConfigCheck} variant="outline" className="w-full mb-4">
-                Check Configuration
-              </Button>
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
+              <p className="font-medium text-blue-900">✅ Using Supabase Edge Function</p>
+              <p className="text-blue-700 mt-1">Emails are sent server-side, bypassing CORS restrictions.</p>
             </div>
 
             <div className="space-y-2">
@@ -96,29 +85,14 @@ export default function TestNotifications() {
             </Button>
 
             {result && (
-              <div className={`p-4 rounded-lg ${
+              <div className={`p-4 rounded-lg whitespace-pre-wrap ${
                 result.startsWith('✅') ? 'bg-green-100 text-green-800' :
                 result.startsWith('❌') ? 'bg-red-100 text-red-800' :
                 'bg-blue-100 text-blue-800'
               }`}>
-                <pre className="whitespace-pre-wrap text-sm">{result}</pre>
+                {result}
               </div>
             )}
-
-            <div className="mt-6 p-4 bg-gray-100 rounded-lg">
-              <h3 className="font-semibold mb-2">Environment Variables:</h3>
-              <div className="text-sm space-y-1 font-mono">
-                <div>VITE_RESEND_API_KEY: {import.meta.env.VITE_RESEND_API_KEY ? '✅ Set' : '❌ Not Set'}</div>
-                <div>VITE_RESEND_FROM_EMAIL: {import.meta.env.VITE_RESEND_FROM_EMAIL || 'Not Set (will use default)'}</div>
-              </div>
-            </div>
-
-            <div className="mt-4 p-4 bg-yellow-100 rounded-lg">
-              <p className="text-sm text-yellow-800">
-                <strong>⚠️ Important:</strong> If environment variables show as "Not Set", 
-                you need to restart the dev server after adding them to .env file.
-              </p>
-            </div>
           </CardContent>
         </Card>
       </div>

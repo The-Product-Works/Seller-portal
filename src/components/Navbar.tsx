@@ -225,10 +225,16 @@ export function Navbar() {
                   Profile Settings
                 </DropdownMenuItem>
                 {!isAdmin && (
+                <>
                 <DropdownMenuItem onClick={() => navigate('/seller-verification')}>
                   <AlertCircle className="w-4 h-4 mr-2" />
                   Verification Status
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate('/test-notifications')}>
+                  <Bell className="w-4 h-4 mr-2" />
+                  Test Notifications
+                </DropdownMenuItem>
+                </>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem className="text-destructive" onClick={handleLogout}>

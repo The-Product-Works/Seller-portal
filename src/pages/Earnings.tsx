@@ -122,6 +122,7 @@ export default function Earnings() {
   }, [initializePage]);
 
   const fetchBalance = async (id: string) => {
+    console.log('📊 Fetching balance for seller:', id);
     const { data, error } = await supabase
       .from("seller_balances")
       .select("*")
@@ -130,14 +131,17 @@ export default function Earnings() {
 
     if (error) {
       console.error("Error fetching balance:", error);
+      console.log("⚠️ No balance record found - this is normal for new sellers");
       // Balance might not exist yet - that's okay
       return;
     }
 
+    console.log('✅ Balance data:', data);
     setBalance(data);
   };
 
   const fetchTransactions = async (id: string) => {
+    console.log('💰 Fetching transactions for seller:', id);
     const { data, error } = await supabase
       .from("seller_balance_transactions")
       .select(`
@@ -157,25 +161,33 @@ export default function Earnings() {
       .limit(50);
 
     if (error) {
-      console.error("Error fetching transactions:", error);
+      console.error("❌ Error fetching transactions:", error);
       return;
     }
 
+    console.log('✅ Transactions found:', data?.length || 0, data);
     setTransactions(data as unknown as TransactionWithDetails[]);
   };
 
   const fetchPayoutItems = async (id: string) => {
+    console.log('🎯 Fetching payout items for seller:', id);
     // Get seller's order items first
     const { data: orderItems, error: orderError } = await supabase
       .from("order_items")
       .select("order_item_id")
       .eq("seller_id", id);
 
-    if (orderError || !orderItems?.length) {
-      console.error("Error fetching order items:", orderError);
+    if (orderError) {
+      console.error("❌ Error fetching order items:", orderError);
       return;
     }
 
+    if (!orderItems?.length) {
+      console.log("⚠️ No order items found for this seller");
+      return;
+    }
+
+    console.log('📦 Found order items:', orderItems.length);
     const orderItemIds = orderItems.map(item => item.order_item_id);
 
     const { data, error } = await supabase
@@ -201,10 +213,11 @@ export default function Earnings() {
       .limit(100);
 
     if (error) {
-      console.error("Error fetching payout items:", error);
+      console.error("❌ Error fetching payout items:", error);
       return;
     }
 
+    console.log('✅ Payout items found:', data?.length || 0, data);
     setPayoutItems(data as unknown as PayoutItemWithDetails[]);
   };
 

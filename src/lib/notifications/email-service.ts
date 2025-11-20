@@ -1,8 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
 
-const RESEND_API_KEY = import.meta.env.VITE_RESEND_API_KEY;
-const FROM_EMAIL = import.meta.env.VITE_RESEND_FROM_EMAIL || "onboarding@resend.dev";
-
 export type AlertType = 
   // Seller Notifications
   | 'new_order_received'
@@ -32,7 +29,7 @@ interface SendEmailParams {
 }
 
 /**
- * Send email using Resend API and track in database
+ * Send email using Supabase Edge Function (bypasses CORS)
  */
 export async function sendEmail(params: SendEmailParams): Promise<{
   success: boolean;
@@ -40,87 +37,45 @@ export async function sendEmail(params: SendEmailParams): Promise<{
   error?: string;
 }> {
   try {
-    // Debug: Log environment variable status
     console.log('=== Email Service Debug ===');
-    console.log('API Key exists:', !!RESEND_API_KEY);
-    console.log('API Key length:', RESEND_API_KEY?.length || 0);
-    console.log('From Email:', FROM_EMAIL);
     console.log('Recipient:', params.recipientEmail);
     console.log('Alert Type:', params.alertType);
+    console.log('Using Supabase Edge Function');
     console.log('========================');
 
-    // Check if API key is configured
-    if (!RESEND_API_KEY) {
-      const errorMsg = 'RESEND_API_KEY is not configured. Did you restart the dev server?';
-      console.error(errorMsg);
-      alert('❌ ' + errorMsg);
+    // Get current session
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      console.error('No active session - user must be logged in');
       return {
         success: false,
-        error: errorMsg
+        error: 'Authentication required'
       };
     }
 
-    console.log('Sending email via Resend API...');
+    console.log('Calling Supabase Edge Function: send-email');
 
-    // Send email via Resend
-    const requestBody = {
-      from: FROM_EMAIL,
-      to: params.recipientEmail,
-      subject: params.subject,
-      html: params.htmlContent
-    };
-    
-    console.log('Request body:', requestBody);
-
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${RESEND_API_KEY}`
-      },
-      body: JSON.stringify(requestBody)
+    // Call Supabase Edge Function
+    const { data, error } = await supabase.functions.invoke('send-email', {
+      body: params,
     });
 
-    console.log('Response status:', response.status);
-    console.log('Response ok:', response.ok);
+    console.log('Edge Function response:', data, error);
 
-    const result = await response.json();
-    console.log('Resend API response:', result);
-    
-    const emailStatus = response.ok ? 'sent' : 'failed';
-
-    // Track notification in database
-    const { data: notification, error: dbError } = await supabase
-      .from('email_notifications')
-      .insert({
-        notification_type: 'email',
-        recipient_type: params.recipientType,
-        recipient_id: params.recipientId || null,
-        recipient_email: params.recipientEmail,
-        subject: params.subject,
-        alert_type: params.alertType,
-        related_order_id: params.relatedOrderId || null,
-        related_product_id: params.relatedProductId || null,
-        related_seller_id: params.relatedSellerId || null,
-        related_entity_id: params.relatedEntityId || null,
-        tracking_id: params.trackingId || null,
-        transaction_id: params.transactionId || null,
-        status: emailStatus,
-        metadata: (params.metadata || null) as never
-      })
-      .select('notification_id')
-      .single();
-
-    if (dbError) {
-      console.error('Error tracking notification in database:', dbError);
-    }
-
-    if (!response.ok) {
-      const errorMsg = result.message || result.error || 'Failed to send email';
-      console.error('❌ Resend API Error:', errorMsg, result);
+    if (error) {
+      console.error('❌ Edge Function Error:', error);
       return {
         success: false,
-        error: errorMsg
+        error: error.message || 'Failed to send email'
+      };
+    }
+
+    if (!data.success) {
+      console.error('❌ Email sending failed:', data.error);
+      return {
+        success: false,
+        error: data.error
       };
     }
 
@@ -128,22 +83,11 @@ export async function sendEmail(params: SendEmailParams): Promise<{
 
     return {
       success: true,
-      notificationId: notification?.notification_id
+      notificationId: data.notificationId
     };
 
   } catch (error) {
     console.error('❌ Error sending email:', error);
-    
-    // Check for CORS error
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      const corsError = 'Network error - This might be a CORS issue. Resend API may not allow browser requests.';
-      console.error(corsError);
-      return {
-        success: false,
-        error: corsError
-      };
-    }
-    
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'

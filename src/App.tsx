@@ -48,7 +48,7 @@ const App = () => (
             <Route path="/redeem" element={<ProtectedRoute requiresKYC><Redeem /></ProtectedRoute>} />
             <Route path="/customer-feedback" element={<ProtectedRoute requiresKYC><CustomerFeedback /></ProtectedRoute>} />
             <Route path="/earnings" element={<ProtectedRoute requiresKYC><Earnings /></ProtectedRoute>} />
-            <Route path="/test-notifications" element={<TestNotifications />} />
+            <Route path="/test-notifications" element={<ProtectedRoute requiresKYC><TestNotifications /></ProtectedRoute>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
