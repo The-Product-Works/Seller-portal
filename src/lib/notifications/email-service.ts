@@ -40,33 +40,49 @@ export async function sendEmail(params: SendEmailParams): Promise<{
   error?: string;
 }> {
   try {
+    // Debug: Log environment variable status
+    console.log('=== Email Service Debug ===');
+    console.log('API Key exists:', !!RESEND_API_KEY);
+    console.log('API Key length:', RESEND_API_KEY?.length || 0);
+    console.log('From Email:', FROM_EMAIL);
+    console.log('Recipient:', params.recipientEmail);
+    console.log('Alert Type:', params.alertType);
+    console.log('========================');
+
     // Check if API key is configured
     if (!RESEND_API_KEY) {
-      console.error('RESEND_API_KEY is not configured');
+      const errorMsg = 'RESEND_API_KEY is not configured. Did you restart the dev server?';
+      console.error(errorMsg);
+      alert('❌ ' + errorMsg);
       return {
         success: false,
-        error: 'Email service not configured - RESEND_API_KEY missing'
+        error: errorMsg
       };
     }
 
-    console.log('Sending email to:', params.recipientEmail);
-    console.log('Alert type:', params.alertType);
-    console.log('From email:', FROM_EMAIL);
+    console.log('Sending email via Resend API...');
 
     // Send email via Resend
+    const requestBody = {
+      from: FROM_EMAIL,
+      to: params.recipientEmail,
+      subject: params.subject,
+      html: params.htmlContent
+    };
+    
+    console.log('Request body:', requestBody);
+
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${RESEND_API_KEY}`
       },
-      body: JSON.stringify({
-        from: FROM_EMAIL,
-        to: params.recipientEmail,
-        subject: params.subject,
-        html: params.htmlContent
-      })
+      body: JSON.stringify(requestBody)
     });
+
+    console.log('Response status:', response.status);
+    console.log('Response ok:', response.ok);
 
     const result = await response.json();
     console.log('Resend API response:', result);
@@ -100,11 +116,15 @@ export async function sendEmail(params: SendEmailParams): Promise<{
     }
 
     if (!response.ok) {
+      const errorMsg = result.message || result.error || 'Failed to send email';
+      console.error('❌ Resend API Error:', errorMsg, result);
       return {
         success: false,
-        error: result.message || 'Failed to send email'
+        error: errorMsg
       };
     }
+
+    console.log('✅ Email sent successfully!');
 
     return {
       success: true,
@@ -112,7 +132,18 @@ export async function sendEmail(params: SendEmailParams): Promise<{
     };
 
   } catch (error) {
-    console.error('Error sending email:', error);
+    console.error('❌ Error sending email:', error);
+    
+    // Check for CORS error
+    if (error instanceof TypeError && error.message.includes('fetch')) {
+      const corsError = 'Network error - This might be a CORS issue. Resend API may not allow browser requests.';
+      console.error(corsError);
+      return {
+        success: false,
+        error: corsError
+      };
+    }
+    
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error'
