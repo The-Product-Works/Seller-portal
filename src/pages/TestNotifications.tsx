@@ -18,7 +18,10 @@ export default function TestNotifications() {
     }
 
     setLoading(true);
-    setResult("Sending test email...");
+    setResult("Sending test email... Check browser console for details.");
+
+    console.log('===== TEST NOTIFICATION START =====');
+    console.log('Test email:', email);
 
     try {
       const htmlContent = getLowStockAlertTemplate({
@@ -26,6 +29,8 @@ export default function TestNotifications() {
         currentStock: 5,
         threshold: 10
       });
+
+      console.log('Calling sendEmail function...');
 
       const response = await sendEmail({
         recipientEmail: email,
@@ -35,13 +40,18 @@ export default function TestNotifications() {
         htmlContent,
       });
 
+      console.log('sendEmail response:', response);
+      console.log('===== TEST NOTIFICATION END =====');
+
       if (response.success) {
-        setResult(`✅ Email sent successfully! Notification ID: ${response.notificationId}`);
+        setResult(`✅ Email sent successfully! Notification ID: ${response.notificationId}\n\nCheck your email inbox.`);
       } else {
-        setResult(`❌ Failed to send email: ${response.error}`);
+        setResult(`❌ Failed to send email: ${response.error}\n\nCheck browser console (F12) for more details.`);
       }
     } catch (error) {
-      setResult(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      console.error('Test error:', error);
+      console.log('===== TEST NOTIFICATION END =====');
+      setResult(`❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}\n\nCheck browser console (F12) for details.`);
     } finally {
       setLoading(false);
     }
