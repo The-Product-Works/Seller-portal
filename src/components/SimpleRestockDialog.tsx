@@ -13,6 +13,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Package } from "lucide-react";
+import { sendEmail, getLowStockAlertTemplate, getOutOfStockAlertTemplate } from "@/lib/notifications";
 
 interface SimpleRestockDialogProps {
   open: boolean;
@@ -148,6 +149,9 @@ export function SimpleRestockDialog({
         description: `${qty > 0 ? 'Added' : 'Removed'} ${Math.abs(qty)} units to ${productName}. New stock: ${newStock}`,
       });
 
+      // Send notifications for low stock or out of stock
+      await checkAndSendStockAlerts(newStock, productName, sellerId);
+
       onOpenChange(false);
       setQuantity("");
       onSuccess?.();
@@ -160,6 +164,62 @@ export function SimpleRestockDialog({
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkAndSendStockAlerts = async (stock: number, productName: string, sellerId: string) => {
+    try {
+      // Get seller email
+      const { data: seller } = await supabase
+        .from("sellers")
+        .select("email")
+        .eq("id", sellerId)
+        .single();
+
+      if (!seller?.email) return;
+
+      const LOW_STOCK_THRESHOLD = 10;
+
+      if (stock === 0) {
+        // Send out of stock alert
+        const htmlContent = getOutOfStockAlertTemplate({
+          productName,
+          currentStock: stock,
+          threshold: LOW_STOCK_THRESHOLD
+        });
+
+        await sendEmail({
+          recipientEmail: seller.email,
+          recipientId: sellerId,
+          recipientType: 'seller',
+          alertType: 'product_out_of_stock',
+          subject: `🚫 Product Out of Stock: ${productName}`,
+          htmlContent,
+          relatedProductId: productId,
+          relatedSellerId: sellerId
+        });
+      } else if (stock <= LOW_STOCK_THRESHOLD) {
+        // Send low stock alert
+        const htmlContent = getLowStockAlertTemplate({
+          productName,
+          currentStock: stock,
+          threshold: LOW_STOCK_THRESHOLD
+        });
+
+        await sendEmail({
+          recipientEmail: seller.email,
+          recipientId: sellerId,
+          recipientType: 'seller',
+          alertType: 'low_stock_alert',
+          subject: `⚠️ Low Stock Alert: ${productName}`,
+          htmlContent,
+          relatedProductId: productId,
+          relatedSellerId: sellerId
+        });
+      }
+    } catch (error) {
+      console.error("Error sending stock alert:", error);
+      // Don't throw - stock update was successful, just notification failed
     }
   };
 
