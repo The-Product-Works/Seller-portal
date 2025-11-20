@@ -40,7 +40,7 @@ export function Navbar() {
     { title: "Inventory", path: "/inventory", icon: Boxes },
     { title: "Orders", path: "/orders", icon: ClipboardList },
     { title: "Customer Feedback", path: "/customer-feedback", icon: Megaphone },
-    { title: "Earnings", path: "/redeem", icon: Wallet },
+    { title: "Earnings", path: "/earnings", icon: Wallet },
   ];
 
   const adminNavItems: NavItem[] = [

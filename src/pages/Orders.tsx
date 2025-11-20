@@ -52,6 +52,7 @@ import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from "date-fns";
 import type { Database } from "@/integrations/supabase/database.types";
 import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
+import { processDeliveryForPayout } from "@/lib/payout";
 
 // Database type aliases
 type OrderRow = Database['public']['Tables']['orders']['Row'];
@@ -574,6 +575,22 @@ export default function Orders() {
         .eq("order_item_id", selectedOrder.order_item_id);
 
       if (statusError) throw statusError;
+
+      // 💰 RECORD SELLER EARNING IF STATUS IS DELIVERED
+      if (newStatus === "delivered" && sellerId) {
+        const payoutResult = await processDeliveryForPayout({
+          orderItemId: selectedOrder.order_item_id,
+          sellerId: sellerId,
+        });
+
+        if (payoutResult.success) {
+          console.log("✅ Seller earning recorded:", payoutResult.message);
+        } else {
+          console.error("⚠️ Payout processing failed:", payoutResult.message);
+          // Note: Order is still marked as delivered
+          // Failed payout can be manually reconciled later
+        }
+      }
 
       // Add to order status history
       const { error: historyError } = await supabase

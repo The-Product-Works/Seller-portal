@@ -28,6 +28,7 @@ import {
 import { ArrowLeft, Package, User, MapPin, CreditCard, Truck, FileText, CheckCircle, XCircle, Clock, AlertTriangle } from "lucide-react";
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import type { Database } from "@/integrations/supabase/database.types";
+import { processDeliveryForPayout } from "@/lib/payout";
 
 // Database type aliases for better readability
 type Order = Database['public']['Tables']['orders']['Row'];
@@ -270,9 +271,9 @@ export default function OrderDetails() {
       // Set the single order item as items array for compatibility
       const mappedItem: ExtendedOrderItem = {
         ...orderItemData,
-        seller_title: (orderItemData.seller_product_listings as any)?.seller_title,
-        sku: (orderItemData.listing_variants as any)?.sku,
-        variant_name: (orderItemData.listing_variants as any)?.variant_name,
+        seller_title: (orderItemData.seller_product_listings as { seller_title?: string })?.seller_title,
+        sku: (orderItemData.listing_variants as { sku?: string })?.sku,
+        variant_name: (orderItemData.listing_variants as { variant_name?: string })?.variant_name,
       };
       setItems([mappedItem]);
       
@@ -332,6 +333,22 @@ export default function OrderDetails() {
         .eq("order_item_id", orderItemId);
 
       if (orderError) throw orderError;
+
+      // 💰 RECORD SELLER EARNING IF STATUS IS DELIVERED
+      if (newStatus === "delivered" && sellerId && orderItemId) {
+        const payoutResult = await processDeliveryForPayout({
+          orderItemId: orderItemId,
+          sellerId: sellerId,
+        });
+
+        if (payoutResult.success) {
+          console.log("✅ Seller earning recorded:", payoutResult.message);
+        } else {
+          console.error("⚠️ Payout processing failed:", payoutResult.message);
+          // Note: Order is still marked as delivered
+          // Failed payout can be manually reconciled later
+        }
+      }
 
       // Add to status history with all additional details in remarks
       try {
