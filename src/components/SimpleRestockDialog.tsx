@@ -169,6 +169,8 @@ export function SimpleRestockDialog({
 
   const checkAndSendStockAlerts = async (stock: number, productName: string, sellerId: string) => {
     try {
+      console.log('Checking stock alerts for:', productName, 'Stock:', stock);
+      
       // Get seller email
       const { data: seller } = await supabase
         .from("sellers")
@@ -176,11 +178,17 @@ export function SimpleRestockDialog({
         .eq("id", sellerId)
         .single();
 
-      if (!seller?.email) return;
+      console.log('Seller email:', seller?.email);
+      
+      if (!seller?.email) {
+        console.warn('No seller email found, skipping notification');
+        return;
+      }
 
       const LOW_STOCK_THRESHOLD = 10;
 
       if (stock === 0) {
+        console.log('Sending OUT OF STOCK alert');
         // Send out of stock alert
         const htmlContent = getOutOfStockAlertTemplate({
           productName,
@@ -188,7 +196,7 @@ export function SimpleRestockDialog({
           threshold: LOW_STOCK_THRESHOLD
         });
 
-        await sendEmail({
+        const result = await sendEmail({
           recipientEmail: seller.email,
           recipientId: sellerId,
           recipientType: 'seller',
@@ -198,7 +206,10 @@ export function SimpleRestockDialog({
           relatedProductId: productId,
           relatedSellerId: sellerId
         });
+        
+        console.log('Out of stock email result:', result);
       } else if (stock <= LOW_STOCK_THRESHOLD) {
+        console.log('Sending LOW STOCK alert');
         // Send low stock alert
         const htmlContent = getLowStockAlertTemplate({
           productName,
@@ -206,7 +217,7 @@ export function SimpleRestockDialog({
           threshold: LOW_STOCK_THRESHOLD
         });
 
-        await sendEmail({
+        const result = await sendEmail({
           recipientEmail: seller.email,
           recipientId: sellerId,
           recipientType: 'seller',
@@ -216,6 +227,10 @@ export function SimpleRestockDialog({
           relatedProductId: productId,
           relatedSellerId: sellerId
         });
+        
+        console.log('Low stock email result:', result);
+      } else {
+        console.log('Stock level OK, no alert needed');
       }
     } catch (error) {
       console.error("Error sending stock alert:", error);

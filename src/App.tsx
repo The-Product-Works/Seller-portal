@@ -21,6 +21,7 @@ import SellerVerification from "./pages/SellerVerification";
 import Redeem from "./pages/Redeem";
 import CustomerFeedback from "./pages/CustomerFeedback";
 import Earnings from "./pages/Earnings";
+import TestNotifications from "./pages/TestNotifications";
 
 const queryClient = new QueryClient();
 
@@ -47,6 +48,7 @@ const App = () => (
             <Route path="/redeem" element={<ProtectedRoute requiresKYC><Redeem /></ProtectedRoute>} />
             <Route path="/customer-feedback" element={<ProtectedRoute requiresKYC><CustomerFeedback /></ProtectedRoute>} />
             <Route path="/earnings" element={<ProtectedRoute requiresKYC><Earnings /></ProtectedRoute>} />
+            <Route path="/test-notifications" element={<TestNotifications />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
