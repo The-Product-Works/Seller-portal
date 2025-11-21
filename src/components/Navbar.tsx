@@ -33,6 +33,7 @@ export function Navbar() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [pendingVerifications, setPendingVerifications] = useState(0);
+  const [kycStatus, setKycStatus] = useState<string | null>(null);
 
   const sellerNavItems: NavItem[] = [
     { title: "Home", path: "/landing", icon: Home },
@@ -52,6 +53,7 @@ export function Navbar() {
   useEffect(() => {
     loadProfile();
     checkAdminStatus();
+    checkKYCStatus();
     if (isAdmin) {
       checkPendingVerifications();
     }
@@ -99,6 +101,23 @@ export function Navbar() {
       }
     } catch (error) {
       console.error("Error checking admin status:", error);
+    }
+  };
+
+  const checkKYCStatus = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { data } = await supabase
+          .from("sellers")
+          .select("verification_status")
+          .eq("user_id", user.id)
+          .single();
+
+        setKycStatus(data?.verification_status || null);
+      }
+    } catch (error) {
+      console.error("Error checking KYC status:", error);
     }
   };
 
@@ -161,29 +180,53 @@ export function Navbar() {
 
           {/* Center Navigation */}
           <div className="hidden md:flex items-center gap-1">
-            {(isAdmin ? adminNavItems : sellerNavItems).map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) =>
-                  `flex items-center gap-2 px-4 py-2 rounded-lg transition-smooth ${
-                    isActive
-                      ? "bg-primary/10 text-primary font-medium"
-                      : "text-foreground hover:bg-muted"
-                  }`
-                }
-              >
-                <div className="flex items-center gap-2">
-                  <item.icon className="w-4 h-4" />
-                  <span className="text-sm">{item.title}</span>
-                  {item.badge ? (
-                    <span className="px-1.5 py-0.5 text-xs font-medium bg-red-500 text-white rounded-full">
-                      {item.badge}
-                    </span>
-                  ) : null}
-                </div>
-              </NavLink>
-            ))}
+            {(isAdmin ? adminNavItems : sellerNavItems).map((item) => {
+              const isKYCVerified = isAdmin || kycStatus === "approved" || kycStatus === "verified";
+              const isDisabled = !isAdmin && !isKYCVerified;
+              
+              if (isDisabled) {
+                return (
+                  <div
+                    key={item.path}
+                    className="flex items-center gap-2 px-4 py-2 rounded-lg transition-smooth text-muted-foreground/50 cursor-not-allowed opacity-60 pointer-events-none"
+                  >
+                    <div className="flex items-center gap-2">
+                      <item.icon className="w-4 h-4" />
+                      <span className="text-sm">{item.title}</span>
+                      {item.badge ? (
+                        <span className="px-1.5 py-0.5 text-xs font-medium bg-red-500 text-white rounded-full">
+                          {item.badge}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              }
+              
+              return (
+                <NavLink
+                  key={item.path}
+                  to={item.path}
+                  className={({ isActive }) =>
+                    `flex items-center gap-2 px-4 py-2 rounded-lg transition-smooth ${
+                      isActive
+                        ? "bg-primary/10 text-primary font-medium"
+                        : "text-foreground hover:bg-muted"
+                    }`
+                  }
+                >
+                  <div className="flex items-center gap-2">
+                    <item.icon className="w-4 h-4" />
+                    <span className="text-sm">{item.title}</span>
+                    {item.badge ? (
+                      <span className="px-1.5 py-0.5 text-xs font-medium bg-red-500 text-white rounded-full">
+                        {item.badge}
+                      </span>
+                    ) : null}
+                  </div>
+                </NavLink>
+              );
+            })}
           </div>
 
           {/* Right Side */}

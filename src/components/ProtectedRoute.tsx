@@ -65,71 +65,22 @@ export function ProtectedRoute({ children, requiresKYC = false }: ProtectedRoute
 
   // If KYC is required, enforce status-based routing
   if (requiresKYC) {
+    const current = location.pathname.toLowerCase();
+    
     if (!kycStatus) {
-      // No KYC record yet → must start KYC
-      const current = location.pathname.toLowerCase();
+      // No KYC record yet → redirect to KYC page
       if (!current.includes("kyc")) {
-        return (
-          <div className="min-h-screen flex items-center justify-center p-4">
-            <Alert className="max-w-md border-yellow-500 bg-yellow-50">
-              <AlertTriangle className="h-5 w-5 text-yellow-600" />
-              <AlertTitle className="text-yellow-900 font-semibold">KYC Verification Required</AlertTitle>
-              <AlertDescription className="text-yellow-800 mt-2">
-                Please complete your KYC verification to access this page.
-              </AlertDescription>
-              <Button 
-                onClick={() => window.location.href = '/kyc'} 
-                className="mt-4 w-full bg-yellow-600 hover:bg-yellow-700"
-              >
-                Complete KYC Now
-              </Button>
-            </Alert>
-          </div>
-        );
+        return <Navigate to="/kyc" replace />;
       }
     } else if (kycStatus === "rejected") {
-      // Rejected → must redo KYC
-      const current = location.pathname.toLowerCase();
+      // Rejected → redirect to KYC page
       if (!current.includes("kyc")) {
-        return (
-          <div className="min-h-screen flex items-center justify-center p-4">
-            <Alert className="max-w-md border-red-500 bg-red-50">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
-              <AlertTitle className="text-red-900 font-semibold">KYC Verification Failed</AlertTitle>
-              <AlertDescription className="text-red-800 mt-2">
-                Your KYC verification was rejected. Please resubmit your documents to access this page.
-              </AlertDescription>
-              <Button 
-                onClick={() => window.location.href = '/kyc'} 
-                className="mt-4 w-full bg-red-600 hover:bg-red-700"
-              >
-                Resubmit KYC
-              </Button>
-            </Alert>
-          </div>
-        );
+        return <Navigate to="/kyc" replace />;
       }
     } else if (kycStatus === "pending") {
-      // Pending → can only access SellerVerification page
-      const current = location.pathname.toLowerCase();
+      // Pending → can only access SellerVerification or KYC page
       if (!current.includes("seller-verification") && !current.includes("kyc")) {
-        return (
-          <div className="min-h-screen flex items-center justify-center p-4">
-            <Alert className="max-w-md border-blue-500 bg-blue-50">
-              <AlertTriangle className="h-5 w-5 text-blue-600" />
-              <AlertTitle className="text-blue-900 font-semibold">KYC Verification Pending</AlertTitle>
-              <AlertDescription className="text-blue-800 mt-2">
-                Your KYC verification is currently under review. Please wait for approval before accessing other pages.
-              </AlertDescription>
-              <Button 
-                onClick={() => window.location.href = '/seller-verification'} 
-                className="mt-4 w-full bg-blue-600 hover:bg-blue-700"
-              >
-                Check Verification Status
-              </Button>
-            </Alert>
-          </div>
-        );
+        return <Navigate to="/seller-verification" replace />;
       }
     }
   }
