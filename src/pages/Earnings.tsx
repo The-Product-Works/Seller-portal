@@ -144,18 +144,7 @@ export default function Earnings() {
     console.log('💰 Fetching transactions for seller:', id);
     const { data, error } = await supabase
       .from("seller_balance_transactions")
-      .select(`
-        *,
-        orders:related_order_id(order_number),
-        order_items:related_order_item_id(
-          quantity,
-          price_per_unit,
-          seller_product_listings(
-            seller_title,
-            global_products(product_name)
-          )
-        )
-      `)
+      .select("*")
       .eq("seller_id", id)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -184,6 +173,8 @@ export default function Earnings() {
 
     if (!orderItems?.length) {
       console.log("⚠️ No order items found for this seller");
+      setPendingItems([]);
+      setSettledItems([]);
       return;
     }
 
@@ -192,22 +183,7 @@ export default function Earnings() {
 
     const { data, error } = await supabase
       .from("seller_payout_items")
-      .select(`
-        *,
-        orders:order_id(order_number),
-        order_items:order_item_id(
-          quantity,
-          price_per_unit,
-          seller_product_listings(
-            seller_title,
-            global_products(product_name)
-          )
-        ),
-        payments:payment_id(
-          razorpay_payment_id,
-          amount
-        )
-      `)
+      .select("*")
       .in("order_item_id", orderItemIds)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -496,13 +472,32 @@ export default function Earnings() {
                 </CardTitle>
                 <CardDescription>
                   Orders awaiting settlement on the 28th of the month
+                  {balance?.pending_balance && balance.pending_balance > 0 && (
+                    <span className="ml-2 font-semibold text-orange-600">
+                      (₹{balance.pending_balance.toFixed(2)} pending)
+                    </span>
+                  )}
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 {pendingItems.length === 0 ? (
                   <div className="text-center py-12">
                     <Clock className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">No pending settlements</p>
+                    {balance?.pending_balance && balance.pending_balance > 0 ? (
+                      <div>
+                        <p className="text-lg font-semibold text-orange-600 mb-2">
+                          ₹{balance.pending_balance.toFixed(2)} Pending
+                        </p>
+                        <p className="text-muted-foreground">
+                          Your pending earnings are being processed
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Settlement date: 28th of the month
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-muted-foreground">No pending settlements</p>
+                    )}
                   </div>
                 ) : (
                   <div className="overflow-x-auto">

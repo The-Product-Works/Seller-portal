@@ -13,3 +13,10 @@ export {
   getPayoutProcessedTemplate
 } from './email-templates';
 export { notifyPayoutProcessed } from './payout-notification';
+export {
+  sendLowStockAlert,
+  sendOutOfStockAlert,
+  sendPayoutNotification,
+  sendNewOrderNotification,
+  sendReturnRequestNotification
+} from './notification-helpers';
