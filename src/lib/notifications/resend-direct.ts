@@ -42,8 +42,20 @@ export async function sendDirectEmail(params: SendDirectEmailParams): Promise<{
     console.log('Subject:', params.subject);
     console.log('================================');
 
-    const RESEND_API_KEY = 're_FJ8AtYR2_DdXyYoLNmGTvonL6WPiQZxK1';
-    const FROM_EMAIL = 'onboarding@resend.dev';
+    // Use environment variables
+    const RESEND_API_KEY = import.meta.env.VITE_RESEND_API_KEY;
+    const FROM_EMAIL = import.meta.env.VITE_RESEND_FROM_EMAIL || 'onboarding@resend.dev';
+
+    if (!RESEND_API_KEY) {
+      console.error('❌ RESEND_API_KEY is not set in environment variables');
+      return {
+        success: false,
+        error: 'Resend API key is not configured. Please check your environment variables.'
+      };
+    }
+
+    console.log('Using API Key:', RESEND_API_KEY ? `${RESEND_API_KEY.substring(0, 8)}...` : 'NOT SET');
+    console.log('From Email:', FROM_EMAIL);
 
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -58,7 +70,7 @@ export async function sendDirectEmail(params: SendDirectEmailParams): Promise<{
         html: params.htmlContent,
         tags: [
           { name: 'alert_type', value: params.alertType },
-          { name: 'environment', value: 'production' },
+          { name: 'environment', value: import.meta.env.MODE || 'development' },
           ...(params.relatedOrderId ? [{ name: 'order_id', value: params.relatedOrderId }] : []),
           ...(params.transactionId ? [{ name: 'transaction_id', value: params.transactionId }] : []),
         ],

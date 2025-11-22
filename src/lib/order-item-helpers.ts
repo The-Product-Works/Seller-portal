@@ -118,7 +118,7 @@ export async function fetchOrderItemDetails(orderItemId: string, sellerId: strin
 export async function updateOrderItemStatus(
   orderItemId: string,
   newStatus: string,
-  additionalData?: Record<string, any>
+  additionalData?: Record<string, unknown>
 ) {
   const updateData: OrderItemUpdate = {
     status: newStatus,
