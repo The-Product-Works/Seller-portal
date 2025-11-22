@@ -94,7 +94,7 @@ export async function sendWorkingEmail(params: EmailParams): Promise<{
 export async function sendSellerNotification(
   sellerEmail: string,
   type: 'low_stock' | 'out_of_stock' | 'new_order' | 'payout_processed' | 'order_cancelled',
-  data: Record<string, unknown>
+  data: any
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   
   const templates = {
@@ -248,7 +248,7 @@ export const workingNotifications = {
   },
   
   // New Order Notification
-  async sendNewOrderNotification(sellerId: string, orderData: Record<string, unknown>) {
+  async sendNewOrderNotification(sellerId: string, orderData: any) {
     const email = await getSellerEmail(sellerId);
     if (!email) return { success: false, error: 'Seller email not found' };
     
@@ -280,7 +280,7 @@ export const workingNotifications = {
 
 // Export for console testing
 if (typeof window !== 'undefined') {
-  (window as unknown as Record<string, unknown>).workingEmails = {
+  (window as any).workingEmails = {
     sendEmail: sendWorkingEmail,
     sendSellerNotification,
     notifications: workingNotifications,

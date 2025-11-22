@@ -1,6 +1,5 @@
 // src/services/real-time-notifications.ts
 import { supabase } from '@/integrations/supabase/client';
-import type { RealtimeChannel } from '@supabase/supabase-js';
 import { 
   sendLowStockAlert, 
   sendOutOfStockAlert,
@@ -12,55 +11,6 @@ import {
   sendNewReviewNotification,
   sendPayoutNotification
 } from '@/lib/notifications/proxy-notification-helpers';
-
-// Type interfaces for database records
-interface OrderItem {
-  order_id: string;
-  seller_id: string;
-  listing_id: string;
-  quantity: number;
-  price_per_unit: number;
-  status: string;
-}
-
-interface ProductListing {
-  id: string;
-  seller_id: string;
-  title: string;
-  seller_title: string;
-  total_stock_quantity: number;
-  listing_id: string;
-}
-
-interface Bundle {
-  id: string;
-  seller_id: string;
-  title: string;
-  stock_quantity: number;
-}
-
-interface Seller {
-  id: string;
-  verification_status: string;
-  business_name: string;
-  name: string;
-  email: string;
-}
-
-interface Account {
-  id: string;
-  seller_id: string;
-  account_number: string;
-  account_verified: boolean;
-}
-
-interface ReturnRequest {
-  id: string;
-  order_id: string;
-  seller_id: string;
-  reason: string;
-  status: string;
-}
 
 export interface NotificationConfig {
   enabled: boolean;
@@ -76,7 +26,7 @@ export interface NotificationConfig {
 export class RealTimeNotificationService {
   private static instance: RealTimeNotificationService;
   private config: NotificationConfig | null = null;
-  private subscriptions: { [key: string]: RealtimeChannel } = {};
+  private subscriptions: { [key: string]: any } = {};
   private isActive = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -257,7 +207,7 @@ export class RealTimeNotificationService {
   }
 
   // Add duplicate prevention helper
-  private isDuplicateEvent(eventType: string, entityId: string, data: Record<string, unknown>): boolean {
+  private isDuplicateEvent(eventType: string, entityId: string, data: any): boolean {
     const eventKey = `${eventType}_${entityId}_${JSON.stringify(data)}`;
     const currentTime = Date.now();
     
@@ -304,7 +254,7 @@ export class RealTimeNotificationService {
           if (!this.isActive) return;
           
           console.log('🎉 New order item detected:', payload.new);
-          const orderItem = payload.new as unknown as OrderItem;
+          const orderItem = payload.new as any;
           
           // Skip if specific seller monitoring and this isn't their order
           if (this.config!.sellerId !== 'ALL' && orderItem.seller_id !== this.config!.sellerId) {
@@ -354,8 +304,8 @@ export class RealTimeNotificationService {
         async (payload) => {
           if (!this.isActive) return;
           
-          const oldOrderItem = payload.old as unknown as OrderItem;
-          const newOrderItem = payload.new as unknown as OrderItem;
+          const oldOrderItem = payload.old as any;
+          const newOrderItem = payload.new as any;
           
           // Skip if specific seller monitoring and this isn't their order
           if (this.config!.sellerId !== 'ALL' && newOrderItem.seller_id !== this.config!.sellerId) {
@@ -424,8 +374,8 @@ export class RealTimeNotificationService {
         async (payload) => {
           if (!this.isActive) return;
           
-          const oldListing = payload.old as unknown as ProductListing;
-          const newListing = payload.new as unknown as ProductListing;
+          const oldListing = payload.old as any;
+          const newListing = payload.new as any;
           
           // Skip if specific seller monitoring and this isn't their product
           if (this.config!.sellerId !== 'ALL' && newListing.seller_id !== this.config!.sellerId) {
@@ -522,11 +472,11 @@ export class RealTimeNotificationService {
           table: 'seller_bank_accounts',
           filter: `seller_id=eq.${this.config!.sellerId}`
         },
-        async (payload: { new: Record<string, unknown>; old: Record<string, unknown> }) => {
+        async (payload) => {
           if (!this.isActive) return;
           
-          const oldAccount = payload.old as unknown as Account;
-          const newAccount = payload.new as unknown as Account;
+          const oldAccount = payload.old as any;
+          const newAccount = payload.new as any;
           
           // Check if account was verified (simulating payout event)
           if (!oldAccount.account_verified && newAccount.account_verified) {
@@ -572,10 +522,10 @@ export class RealTimeNotificationService {
           table: 'order_returns',
           filter: `seller_id=eq.${this.config!.sellerId}`
         },
-        async (payload: { new: Record<string, unknown>; old: Record<string, unknown> }) => {
+        async (payload) => {
           if (!this.isActive) return;
           
-          const returnRequest = payload.new as unknown as ReturnRequest;
+          const returnRequest = payload.new as any;
           console.log('🔄 New return request detected:', returnRequest);
           
           try {
@@ -620,8 +570,8 @@ export class RealTimeNotificationService {
         async (payload) => {
           if (!this.isActive) return;
           
-          const oldSeller = payload.old as unknown as Seller;
-          const newSeller = payload.new as unknown as Seller;
+          const oldSeller = payload.old as any;
+          const newSeller = payload.new as any;
           
           // Check if account was approved
           if (oldSeller.verification_status !== 'approved' && newSeller.verification_status === 'approved') {

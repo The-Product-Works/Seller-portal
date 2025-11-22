@@ -91,7 +91,7 @@ export async function sendEmailViaProxy(params: ProxyEmailParams): Promise<{
 export async function sendSellerNotificationViaProxy(
   sellerEmail: string,
   type: 'low_stock' | 'out_of_stock' | 'new_order' | 'payout_processed' | 'order_cancelled' | 'return_request' | 'refund_completed' | 'account_approved' | 'new_review',
-  data: Record<string, unknown>
+  data: any
 ): Promise<{ success: boolean; messageId?: string; error?: string }> {
   
   const templates = {
@@ -307,7 +307,7 @@ export async function sendSellerNotificationViaProxy(
 
 // Export for browser console testing
 if (typeof window !== 'undefined') {
-  (window as unknown as Record<string, unknown>).proxyEmails = {
+  (window as any).proxyEmails = {
     send: sendEmailViaProxy,
     sendNotification: sendSellerNotificationViaProxy,
     test: async (email: string) => {

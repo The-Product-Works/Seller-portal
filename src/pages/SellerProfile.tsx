@@ -81,7 +81,7 @@ export default function SellerProfile() {
   useEffect(() => {
     loadSellerProfile();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [checkProxyHealth]);
+  }, []);
 
   async function loadSellerProfile() {
     setLoading(true);
@@ -367,19 +367,18 @@ export default function SellerProfile() {
       if (result.success) {
         toast({ title: "Email Sent", description: `Direct email sent to ${seller.email}` });
       }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addDebugLog(`❌ Direct email error: ${errorMessage}`);
+    } catch (error: any) {
+      addDebugLog(`❌ Direct email error: ${error.message}`);
       setEmailResults(prev => ({
         ...prev,
-        direct: { success: false, message: errorMessage }
+        direct: { success: false, message: error.message }
       }));
     } finally {
       setEmailDebugLoading(false);
     }
   };
 
-  const testNotificationType = async (type: string, testFunction: () => Promise<Record<string, unknown>>) => {
+  const testNotificationType = async (type: string, testFunction: () => Promise<any>) => {
     if (!seller?.id || !seller?.email) {
       toast({ title: "Error", description: "Seller information not available", variant: "destructive" });
       return;
@@ -405,12 +404,11 @@ export default function SellerProfile() {
       if (result.success) {
         toast({ title: "Notification Sent", description: `${type} email sent successfully` });
       }
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      addDebugLog(`❌ ${type} notification error: ${errorMessage}`);
+    } catch (error: any) {
+      addDebugLog(`❌ ${type} notification error: ${error.message}`);
       setEmailResults(prev => ({
         ...prev,
-        [type]: { success: false, message: errorMessage }
+        [type]: { success: false, message: error.message }
       }));
     } finally {
       setEmailDebugLoading(false);
