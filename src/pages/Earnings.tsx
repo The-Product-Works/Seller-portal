@@ -173,8 +173,7 @@ export default function Earnings() {
 
     if (!orderItems?.length) {
       console.log("⚠️ No order items found for this seller");
-      setPendingItems([]);
-      setSettledItems([]);
+      setPayoutItems([]);
       return;
     }
 

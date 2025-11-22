@@ -273,10 +273,6 @@ export function Navbar() {
                   <AlertCircle className="w-4 h-4 mr-2" />
                   Verification Status
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => navigate('/test-notifications')}>
-                  <Bell className="w-4 h-4 mr-2" />
-                  Test Notifications
-                </DropdownMenuItem>
                 </>
                 )}
                 <DropdownMenuSeparator />

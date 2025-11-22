@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Search, Filter, Star, Image as ImageIcon, TrendingUp, Package } from "lucide-react";
+import { Search, Filter, Star, Image as ImageIcon, TrendingUp, Package, Flag } from "lucide-react";
 import heroImage from "@/assets/hero-protimart.jpg";
+import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
+import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 
 interface SellerListing {
   listing_id: string;
@@ -45,6 +47,8 @@ export default function Landing() {
   const [listings, setListings] = useState<SellerListing[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
+  const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
+  const [sellerId, setSellerId] = useState<string | null>(null);
 
   // 🔹 Filters
   const [search, setSearch] = useState("");
@@ -54,6 +58,7 @@ export default function Landing() {
 
   useEffect(() => {
     loadData();
+    getAuthenticatedSellerId().then(id => setSellerId(id));
   }, []);
 
   // 🔹 Fetch all active seller listings & brands (public)
@@ -132,11 +137,32 @@ export default function Landing() {
   }, [listings, search, filterBrand, minPrice, maxPrice]);
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
+    <>
+      <SellerRaiseDispute
+        isOpen={raiseDisputeOpen}
+        onClose={() => setRaiseDisputeOpen(false)}
+        sellerId={sellerId || ""}
+        context={{
+          type: "platform",
+        }}
+      />
+      <div className="min-h-screen bg-background">
+        <Navbar />
 
-      {/* 🏞 Hero Section */}
-      <div className="relative h-[500px] mt-16">
+        {/* Raise Dispute Button */}
+        <div className="fixed bottom-6 right-6 z-50">
+          <Button
+            onClick={() => setRaiseDisputeOpen(true)}
+            size="lg"
+            className="shadow-lg flex items-center gap-2"
+          >
+            <Flag className="h-4 w-4" />
+            Raise Dispute
+          </Button>
+        </div>
+
+        {/* 🏞 Hero Section */}
+        <div className="relative h-[500px] mt-16">
         <img src={heroImage} alt="ProtiMart Hero" className="w-full h-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent flex items-center">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -304,6 +330,7 @@ export default function Landing() {
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }

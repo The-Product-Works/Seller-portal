@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Star, TrendingUp, TrendingDown, MessageSquare, Filter, Send, Mail, Phone, MessageCircle } from "lucide-react";
+import { Star, TrendingUp, TrendingDown, MessageSquare, Filter, Send, Mail, Phone, MessageCircle, Flag } from "lucide-react";
+import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -84,12 +85,15 @@ export default function CustomerFeedback() {
   const [newQuestion, setNewQuestion] = useState("");
   const [selectedProduct, setSelectedProduct] = useState("");
   const [products, setProducts] = useState<Array<{listing_id: string; seller_title: string}>>([]);
+  const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
+  const [sellerId, setSellerId] = useState<string | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
     loadCustomerFeedback();
     loadAdminQuestions();
     loadSellerProducts();
+    getAuthenticatedSellerId().then(id => setSellerId(id));
   }, [filterRating, sortBy]);
 
   const loadSellerProducts = useCallback(async () => {
@@ -367,20 +371,38 @@ export default function CustomerFeedback() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center mb-8">
-        <div>
-          <h1 className="text-3xl font-bold">Customer Feedback Center</h1>
-          <p className="text-gray-600 mt-1">Manage reviews, questions, and communicate with customers</p>
-        </div>
-        <Dialog open={showContactDialog} onOpenChange={setShowContactDialog}>
-          <DialogTrigger asChild>
-            <Button className="gap-2">
-              <Mail className="h-4 w-4" />
-              Contact Admin
+    <>
+      <SellerRaiseDispute
+        isOpen={raiseDisputeOpen}
+        onClose={() => setRaiseDisputeOpen(false)}
+        sellerId={sellerId || ""}
+        context={{
+          type: "platform",
+        }}
+      />
+      <div className="container mx-auto p-6 space-y-6">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold">Customer Feedback Center</h1>
+            <p className="text-gray-600 mt-1">Manage reviews, questions, and communicate with customers</p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => setRaiseDisputeOpen(true)}
+              variant="outline"
+              className="flex items-center gap-2"
+            >
+              <Flag className="h-4 w-4" />
+              Raise Dispute
             </Button>
-          </DialogTrigger>
-          <DialogContent>
+            <Dialog open={showContactDialog} onOpenChange={setShowContactDialog}>
+              <DialogTrigger asChild>
+                <Button className="gap-2">
+                  <Mail className="h-4 w-4" />
+                  Contact Admin
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
             <DialogHeader>
               <DialogTitle>Contact Admin</DialogTitle>
               <DialogDescription>Send a message to our support team</DialogDescription>
@@ -411,8 +433,9 @@ export default function CustomerFeedback() {
               </div>
             </div>
           </DialogContent>
-        </Dialog>
-      </div>
+            </Dialog>
+          </div>
+        </div>
 
       <Tabs defaultValue="reviews" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
@@ -731,6 +754,7 @@ export default function CustomerFeedback() {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </>
   );
 }
