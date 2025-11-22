@@ -180,20 +180,80 @@ export default function Earnings() {
     console.log('📦 Found order items:', orderItems.length);
     const orderItemIds = orderItems.map(item => item.order_item_id);
 
-    const { data, error } = await supabase
+    // First get basic payout items (to ensure table works)
+    const { data: payoutData, error: payoutError } = await supabase
       .from("seller_payout_items")
       .select("*")
       .in("order_item_id", orderItemIds)
       .order("created_at", { ascending: false })
       .limit(100);
 
-    if (error) {
-      console.error("❌ Error fetching payout items:", error);
+    if (payoutError) {
+      console.error("❌ Error fetching payout items:", payoutError);
       return;
     }
 
-    console.log('✅ Payout items found:', data?.length || 0, data);
-    setPayoutItems(data as unknown as PayoutItemWithDetails[]);
+    if (!payoutData?.length) {
+      setPayoutItems([]);
+      return;
+    }
+
+    // Now enrich with product and order data
+    const enrichedData = await Promise.all(
+      payoutData.map(async (item) => {
+        console.log('🔍 Enriching item with order_id:', item.order_id);
+        
+        // Get order details - just order_id since that's what we have
+        const { data: orderData, error: orderError } = await supabase
+          .from("orders")
+          .select("order_id")
+          .eq("order_id", item.order_id)
+          .single();
+
+        if (orderError) {
+          console.error('❌ Order fetch error for order_id', item.order_id, ':', orderError);
+        } else {
+          console.log('✅ Order data fetched:', orderData);
+        }
+
+        // Get order item details
+        const { data: orderItemData, error: orderItemError } = await supabase
+          .from("order_items")
+          .select(`
+            quantity,
+            price_per_unit,
+            seller_product_listings(
+              seller_title,
+              global_products(product_name)
+            )
+          `)
+          .eq("order_item_id", item.order_item_id)
+          .single();
+
+        if (orderItemError) {
+          console.error('❌ Order item fetch error for order_item_id', item.order_item_id, ':', orderItemError);
+        } else {
+          console.log('✅ Order item data fetched:', orderItemData);
+        }
+
+        const result = {
+          ...item,
+          orders: orderData ? { order_number: orderData.order_id } : null,
+          order_items: orderItemData
+        };
+        
+        console.log('📦 Final enriched item:', { 
+          order_id: item.order_id, 
+          has_order_data: !!orderData,
+          order_number: orderData?.order_id 
+        });
+        
+        return result;
+      })
+    );
+
+    console.log('✅ Payout items with product data:', enrichedData.length);
+    setPayoutItems(enrichedData as unknown as PayoutItemWithDetails[]);
   };
 
   const handleRefresh = () => {
@@ -523,13 +583,13 @@ export default function Earnings() {
                             </TableCell>
                             <TableCell>
                               <div className="max-w-xs">
-                                <p className="text-sm truncate">
+                                <p className="text-sm font-medium truncate">
                                   {item.order_items?.seller_product_listings?.global_products?.product_name ||
                                     item.order_items?.seller_product_listings?.seller_title ||
-                                    "Unknown Product"}
+                                    "Product Item"}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  Qty: {item.order_items?.quantity || 0}
+                                  Quantity: {item.order_items?.quantity || 0} × ₹{(item.order_items?.price_per_unit || 0).toFixed(2)}
                                 </p>
                               </div>
                             </TableCell>
@@ -607,13 +667,13 @@ export default function Earnings() {
                             </TableCell>
                             <TableCell>
                               <div className="max-w-xs">
-                                <p className="text-sm truncate">
+                                <p className="text-sm font-medium truncate">
                                   {item.order_items?.seller_product_listings?.global_products?.product_name ||
                                     item.order_items?.seller_product_listings?.seller_title ||
-                                    "Unknown Product"}
+                                    "Product Item"}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  Qty: {item.order_items?.quantity || 0}
+                                  Quantity: {item.order_items?.quantity || 0}  {(item.order_items?.price_per_unit || 0).toFixed(2)}
                                 </p>
                               </div>
                             </TableCell>
@@ -690,13 +750,13 @@ export default function Earnings() {
                             </TableCell>
                             <TableCell>
                               <div className="max-w-xs">
-                                <p className="text-sm truncate">
+                                <p className="text-sm font-medium truncate">
                                   {item.order_items?.seller_product_listings?.global_products?.product_name ||
                                     item.order_items?.seller_product_listings?.seller_title ||
-                                    "Unknown Product"}
+                                    "Product Item"}
                                 </p>
                                 <p className="text-xs text-muted-foreground">
-                                  Qty: {item.order_items?.quantity || 0}
+                                  Quantity: {item.order_items?.quantity || 0}  {(item.order_items?.price_per_unit || 0).toFixed(2)}
                                 </p>
                               </div>
                             </TableCell>
@@ -746,3 +806,5 @@ export default function Earnings() {
     </div>
   );
 }
+
+

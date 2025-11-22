@@ -17,6 +17,7 @@ export interface NewOrderReceivedData {
   buyerName: string;
   shippingAddress: string;
   dashboardUrl?: string;
+  orderDetailsUrl?: string; // Direct link to order details page
 }
 
 export function generateNewOrderReceivedEmail(
@@ -154,22 +155,31 @@ export function generateNewOrderReceivedEmail(
                 </p>
               </div>
 
-              <!-- CTA Button -->
-              ${
-                data.dashboardUrl
-                  ? `
+              <!-- CTA Buttons -->
               <table width="100%" cellpadding="0" cellspacing="0" style="margin: 30px 0;">
                 <tr>
                   <td align="center">
-                    <a href="${data.dashboardUrl}" style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: bold; font-size: 16px;">
-                      View Order Details
+                    ${
+                      data.orderDetailsUrl
+                        ? `
+                    <a href="${data.orderDetailsUrl}" style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: bold; font-size: 16px; margin-right: 10px;">
+                      📦 View Order Details
                     </a>
+                        `
+                        : ""
+                    }
+                    ${
+                      data.dashboardUrl
+                        ? `
+                    <a href="${data.dashboardUrl}" style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: bold; font-size: 16px;">
+                      🏠 Go to Dashboard
+                    </a>
+                        `
+                        : ""
+                    }
                   </td>
                 </tr>
               </table>
-              `
-                  : ""
-              }
 
               <p style="margin: 20px 0 0 0; font-size: 14px; color: #6b7280;">
                 Thank you for being a valued seller on ProtiMart!

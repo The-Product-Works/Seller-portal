@@ -1,14 +1,15 @@
 /**
  * Seller Email Notification Helpers
  * Easy-to-use functions for sending all seller notifications
+ * Updated to use direct Resend API for Gmail delivery
  */
 
-import { sendEmail } from '@/lib/notifications';
+import { sendSellerNotificationToGmail, type AlertType } from '@/lib/notifications/resend-direct';
 
-// Define EmailResult type locally since it's not exported from notifications
+// Define EmailResult type
 interface EmailResult {
   success: boolean;
-  notificationId?: string;
+  messageId?: string;
   error?: string;
 }
 
@@ -61,15 +62,13 @@ export async function sendNewOrderNotification(
 ): Promise<EmailResult> {
   const html = generateNewOrderReceivedEmail(data);
 
-  return await sendEmail({
-    recipientEmail: sellerEmail,
-    recipientId: sellerId,
-    recipientType: 'seller',
-    alertType: 'new_order_received',
-    subject: `🎉 New Order #${data.orderNumber} Received!`,
-    htmlContent: html,
-    relatedOrderId: data.orderNumber,
-  });
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `🎉 New Order #${data.orderNumber} Received!`,
+    html,
+    'new_order_received',
+    { orderId: data.orderNumber }
+  );
 }
 
 /**
@@ -83,15 +82,13 @@ export async function sendOrderCancelledNotification(
 ): Promise<EmailResult> {
   const html = generateOrderCancelledEmail(data);
 
-  return await sendEmail({
-    recipientEmail: sellerEmail,
-    recipientId: sellerId,
-    recipientType: 'seller',
-    alertType: 'order_canceled_by_buyer',
-    subject: `Order #${data.orderNumber} Cancelled by Buyer`,
-    htmlContent: html,
-    relatedOrderId: data.orderNumber,
-  });
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `Order #${data.orderNumber} Cancelled by Buyer`,
+    html,
+    'order_canceled_by_buyer',
+    { orderId: data.orderNumber }
+  );
 }
 
 /**
@@ -105,15 +102,13 @@ export async function sendReturnRequestNotification(
 ): Promise<EmailResult> {
   const html = generateReturnRequestEmail(data);
 
-  return await sendEmail({
-    recipientEmail: sellerEmail,
-    recipientId: sellerId,
-    recipientType: 'seller',
-    alertType: 'return_request_received',
-    subject: `🔄 Return Request for Order #${data.orderNumber}`,
-    htmlContent: html,
-    relatedOrderId: data.orderNumber,
-  });
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `🔄 Return Request for Order #${data.orderNumber}`,
+    html,
+    'return_request_received',
+    { orderId: data.orderNumber }
+  );
 }
 
 /**
@@ -127,16 +122,13 @@ export async function sendRefundCompletedNotification(
 ): Promise<EmailResult> {
   const html = generateRefundCompletedEmail(data);
 
-  return await sendEmail({
-    recipientEmail: sellerEmail,
-    recipientId: sellerId,
-    recipientType: 'seller',
-    alertType: 'seller_refund_completed',
-    subject: `✅ Refund Completed for Order #${data.orderNumber}`,
-    htmlContent: html,
-    relatedOrderId: data.orderNumber,
-    transactionId: data.refundId,
-  });
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `✅ Refund Completed for Order #${data.orderNumber}`,
+    html,
+    'seller_refund_completed',
+    { orderId: data.orderNumber, transactionId: data.refundId }
+  );
 }
 
 /**
@@ -150,14 +142,12 @@ export async function sendLowStockAlert(
 ): Promise<EmailResult> {
   const html = generateLowStockAlertEmail(data);
 
-  return await sendEmail({
-    recipientEmail: sellerEmail,
-    recipientId: sellerId,
-    recipientType: 'seller',
-    alertType: 'low_stock_alert',
-    subject: `⚠️ Low Stock Alert: ${data.productName}`,
-    htmlContent: html,
-  });
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `⚠️ Low Stock Alert: ${data.productName}`,
+    html,
+    'low_stock_alert'
+  );
 }
 
 /**
@@ -171,14 +161,12 @@ export async function sendOutOfStockAlert(
 ): Promise<EmailResult> {
   const html = generateOutOfStockEmail(data);
 
-  return await sendEmail({
-    recipientEmail: sellerEmail,
-    recipientId: sellerId,
-    recipientType: 'seller',
-    alertType: 'product_out_of_stock',
-    subject: `🚫 URGENT: ${data.productName} is Out of Stock`,
-    htmlContent: html,
-  });
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `🚫 URGENT: ${data.productName} is Out of Stock`,
+    html,
+    'product_out_of_stock'
+  );
 }
 
 /**
@@ -192,14 +180,12 @@ export async function sendAccountApprovedNotification(
 ): Promise<EmailResult> {
   const html = generateAccountApprovedEmail(data);
 
-  return await sendEmail({
-    recipientEmail: sellerEmail,
-    recipientId: sellerId,
-    recipientType: 'seller',
-    alertType: 'account_approved',
-    subject: `🎉 Congratulations! Your Seller Account is Approved`,
-    htmlContent: html,
-  });
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `🎉 Congratulations! Your Seller Account is Approved`,
+    html,
+    'account_approved'
+  );
 }
 
 /**
@@ -215,15 +201,13 @@ export async function sendNewReviewNotification(
 
   const ratingEmoji = data.rating >= 4 ? '⭐' : data.rating >= 3 ? '😊' : '📝';
 
-  return await sendEmail({
-    recipientEmail: sellerEmail,
-    recipientId: sellerId,
-    recipientType: 'seller',
-    alertType: 'new_review_rating',
-    subject: `${ratingEmoji} New ${data.rating}-Star Review for ${data.productName}`,
-    htmlContent: html,
-    relatedOrderId: data.orderNumber,
-  });
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `${ratingEmoji} New ${data.rating}-Star Review for ${data.productName}`,
+    html,
+    'new_review_rating',
+    { orderId: data.orderNumber }
+  );
 }
 
 /**
@@ -237,15 +221,13 @@ export async function sendPayoutProcessedNotification(
 ): Promise<EmailResult> {
   const html = generatePayoutProcessedEmail(data);
 
-  return await sendEmail({
-    recipientEmail: sellerEmail,
-    recipientId: sellerId,
-    recipientType: 'seller',
-    alertType: 'payout_processed',
-    subject: `💰 Payout of ₹${data.netAmount.toFixed(2)} Processed Successfully`,
-    htmlContent: html,
-    transactionId: data.payoutId,
-  });
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `💰 Payout of ₹${data.netAmount.toFixed(2)} Processed Successfully`,
+    html,
+    'payout_processed',
+    { transactionId: data.payoutId }
+  );
 }
 
 // Export all data types for easy importing
