@@ -1,5 +1,6 @@
 // src/services/real-time-notifications.ts
 import { supabase } from '@/integrations/supabase/client';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { 
   sendLowStockAlert, 
   sendOutOfStockAlert,
@@ -26,7 +27,7 @@ export interface NotificationConfig {
 export class RealTimeNotificationService {
   private static instance: RealTimeNotificationService;
   private config: NotificationConfig | null = null;
-  private subscriptions: { [key: string]: any } = {};
+  private subscriptions: { [key: string]: RealtimeChannel } = {};
   private isActive = false;
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
@@ -254,7 +255,13 @@ export class RealTimeNotificationService {
           if (!this.isActive) return;
           
           console.log('🎉 New order item detected:', payload.new);
-          const orderItem = payload.new as any;
+          const orderItem = payload.new as {
+            order_id: string;
+            seller_id: string;
+            quantity: number;
+            price_per_unit: number;
+            [key: string]: unknown;
+          };
           
           // Skip if specific seller monitoring and this isn't their order
           if (this.config!.sellerId !== 'ALL' && orderItem.seller_id !== this.config!.sellerId) {
@@ -304,8 +311,14 @@ export class RealTimeNotificationService {
         async (payload) => {
           if (!this.isActive) return;
           
-          const oldOrderItem = payload.old as any;
-          const newOrderItem = payload.new as any;
+          const oldOrderItem = payload.old as { status: string; [key: string]: unknown };
+          const newOrderItem = payload.new as {
+            order_id: string;
+            seller_id: string;
+            status: string;
+            listing_id: string;
+            [key: string]: unknown;
+          };
           
           // Skip if specific seller monitoring and this isn't their order
           if (this.config!.sellerId !== 'ALL' && newOrderItem.seller_id !== this.config!.sellerId) {
@@ -374,8 +387,14 @@ export class RealTimeNotificationService {
         async (payload) => {
           if (!this.isActive) return;
           
-          const oldListing = payload.old as any;
-          const newListing = payload.new as any;
+          const oldListing = payload.old as { total_stock_quantity: number; [key: string]: unknown };
+          const newListing = payload.new as {
+            id: string;
+            seller_id: string;
+            total_stock_quantity: number;
+            title?: string;
+            [key: string]: unknown;
+          };
           
           // Skip if specific seller monitoring and this isn't their product
           if (this.config!.sellerId !== 'ALL' && newListing.seller_id !== this.config!.sellerId) {
@@ -570,8 +589,12 @@ export class RealTimeNotificationService {
         async (payload) => {
           if (!this.isActive) return;
           
-          const oldSeller = payload.old as any;
-          const newSeller = payload.new as any;
+          const oldSeller = payload.old as { verification_status: string; [key: string]: unknown };
+          const newSeller = payload.new as {
+            id: string;
+            verification_status: string;
+            [key: string]: unknown;
+          };
           
           // Check if account was approved
           if (oldSeller.verification_status !== 'approved' && newSeller.verification_status === 'approved') {
