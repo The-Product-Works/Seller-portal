@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Email Test Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .test-box { border: 1px solid #ddd; padding: 20px; margin: 10px 0; border-radius: 8px; }
+        .success { background: #f0f8ff; border-color: #4CAF50; }
+        .error { background: #ffeaea; border-color: #f44336; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        button:hover { background: #0056b3; }
+        input { padding: 8px; margin: 5px; border: 1px solid #ddd; border-radius: 4px; width: 300px; }
+        pre { background: #f5f5f5; padding: 10px; border-radius: 4px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔧 Email System Debug Tool</h1>
+    
+    <div class="test-box">
+        <h3>1. Check Proxy Server Status</h3>
+        <button onclick="checkProxyHealth()">Check Proxy Health</button>
+        <div id="proxy-status"></div>
+    </div>
+    
+    <div class="test-box">
+        <h3>2. Test Direct Email (via Proxy)</h3>
+        <input type="email" id="test-email" placeholder="Enter email address" value="22052204@kiit.ac.in">
+        <button onclick="testDirectEmail()">Send Test Email</button>
+        <div id="email-result"></div>
+    </div>
+    
+    <div class="test-box">
+        <h3>3. Test Seller Notification</h3>
+        <button onclick="testSellerNotification()">Test Low Stock Alert</button>
+        <div id="notification-result"></div>
+    </div>
+    
+    <div class="test-box">
+        <h3>4. Real-Time Monitoring Toggle</h3>
+        <div style="background: #f0f8ff; padding: 15px; border-radius: 8px; margin: 10px 0;">
+            <p><strong>🚀 NEW:</strong> Turn on real-time notifications to automatically send emails when database events occur!</p>
+        </div>
+        <button onclick="toggleRealTimeMonitoring()" id="realtime-toggle">Enable Real-Time Monitoring</button>
+        <div id="realtime-status"></div>
+    </div>
+
+    <div class="test-box">
+        <h3>5. Quick Real-Time Test</h3>
+        <div style="background: #e8f5e9; padding: 15px; border-radius: 8px; margin: 10px 0;">
+            <p><strong>🚀 QUICK TEST:</strong> Create database events to trigger real-time emails!</p>
+        </div>
+        <button onclick="testRealTimeEvents()" id="realtime-test">Create Test Events</button>
+        <div id="realtime-test-status"></div>
+    </div>
+
+    <div class="test-box">
+        <h3>6. Debug Logs</h3>
+        <button onclick="clearLogs()">Clear Logs</button>
+        <pre id="debug-logs"></pre>
+    </div>
+
+    <script>
+        function log(message) {
+            const logs = document.getElementById('debug-logs');
+            const timestamp = new Date().toLocaleTimeString();
+            logs.textContent += `[${timestamp}] ${message}\n`;
+            logs.scrollTop = logs.scrollHeight;
+        }
+        
+        function clearLogs() {
+            document.getElementById('debug-logs').textContent = '';
+        }
+        
+        async function checkProxyHealth() {
+            const status = document.getElementById('proxy-status');
+            status.innerHTML = '<p>🔄 Checking proxy server...</p>';
+            
+            try {
+                log('Checking proxy server health...');
+                const response = await fetch('http://localhost:3001/api/health');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    status.innerHTML = `<div class="success"><p>✅ Proxy server is healthy</p><pre>${JSON.stringify(data, null, 2)}</pre></div>`;
+                    log('✅ Proxy server health check passed');
+                } else {
+                    status.innerHTML = `<div class="error"><p>❌ Proxy server error</p><pre>${JSON.stringify(data, null, 2)}</pre></div>`;
+                    log('❌ Proxy server health check failed');
+                }
+            } catch (error) {
+                status.innerHTML = `<div class="error"><p>❌ Cannot connect to proxy server</p><p>Error: ${error.message}</p></div>`;
+                log(`❌ Proxy connection error: ${error.message}`);
+            }
+        }
+        
+        async function testDirectEmail() {
+            const email = document.getElementById('test-email').value;
+            const result = document.getElementById('email-result');
+            
+            if (!email) {
+                result.innerHTML = '<div class="error">Please enter an email address</div>';
+                return;
+            }
+            
+            result.innerHTML = '<p>📧 Sending email...</p>';
+            log(`Sending test email to: ${email}`);
+            
+            try {
+                const response = await fetch('http://localhost:3001/api/send-email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        to: [email],
+                        subject: '🧪 Direct Email Test',
+                        html: `
+                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                <h1 style="color: #22c55e;">✅ Direct Email Test Successful!</h1>
+                                <p>This email was sent directly via proxy server at ${new Date().toLocaleString()}</p>
+                                <p><strong>From:</strong> Email Debug Tool</p>
+                                <p><strong>To:</strong> ${email}</p>
+                            </div>
+                        `
+                    })
+                });
+                
+                const data = await response.json();
+                log(`Direct email response: ${JSON.stringify(data)}`);
+                
+                if (response.ok) {
+                    result.innerHTML = `<div class="success"><p>✅ Email sent successfully!</p><pre>${JSON.stringify(data, null, 2)}</pre></div>`;
+                    log('✅ Direct email sent successfully');
+                } else {
+                    result.innerHTML = `<div class="error"><p>❌ Email failed</p><pre>${JSON.stringify(data, null, 2)}</pre></div>`;
+                    log(`❌ Direct email failed: ${JSON.stringify(data)}`);
+                }
+            } catch (error) {
+                result.innerHTML = `<div class="error"><p>❌ Request failed</p><p>Error: ${error.message}</p></div>`;
+                log(`❌ Direct email request error: ${error.message}`);
+            }
+        }
+        
+        async function testSellerNotification() {
+            const result = document.getElementById('notification-result');
+            result.innerHTML = '<p>📧 Testing seller notification...</p>';
+            log('Testing seller notification via frontend service...');
+            
+            try {
+                // This would normally be called from your React app
+                const response = await fetch('http://localhost:3001/api/send-email', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        to: ['22052204@kiit.ac.in'],
+                        subject: '⚠️ Low Stock Alert - Test Product',
+                        html: `
+                            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                                <div style="background: linear-gradient(135deg, #f59e0b, #d97706); color: white; padding: 20px; text-align: center; border-radius: 8px;">
+                                    <h1 style="margin: 0; font-size: 24px;">⚠️ Low Stock Alert</h1>
+                                    <p style="margin: 10px 0 0 0; opacity: 0.9;">Immediate attention required</p>
+                                </div>
+                                <div style="padding: 20px; background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; margin-top: 20px;">
+                                    <h2 style="color: #92400e; margin-top: 0;">Product Running Low</h2>
+                                    <p><strong>📦 Product:</strong> Test Product</p>
+                                    <p><strong>📊 Current Stock:</strong> 5 units</p>
+                                    <p><strong>🎯 Threshold:</strong> 10 units</p>
+                                    <p><strong>⚡ Action Required:</strong> Restock soon to avoid stockouts</p>
+                                </div>
+                                <div style="text-align: center; padding-top: 20px; color: #64748b; font-size: 12px;">
+                                    <p>🚀 Seller Portal - Inventory Management System</p>
+                                </div>
+                            </div>
+                        `
+                    })
+                });
+                
+                const data = await response.json();
+                log(`Seller notification response: ${JSON.stringify(data)}`);
+                
+                if (response.ok) {
+                    result.innerHTML = `<div class="success"><p>✅ Seller notification sent!</p><pre>${JSON.stringify(data, null, 2)}</pre></div>`;
+                    log('✅ Seller notification sent successfully');
+                } else {
+                    result.innerHTML = `<div class="error"><p>❌ Seller notification failed</p><pre>${JSON.stringify(data, null, 2)}</pre></div>`;
+                    log(`❌ Seller notification failed: ${JSON.stringify(data)}`);
+                }
+            } catch (error) {
+                result.innerHTML = `<div class="error"><p>❌ Request failed</p><p>Error: ${error.message}</p></div>`;
+                log(`❌ Seller notification request error: ${error.message}`);
+            }
+        }
+        
+        async function toggleRealTimeMonitoring() {
+            const button = document.getElementById('realtime-toggle');
+            const status = document.getElementById('realtime-status');
+            
+            button.disabled = true;
+            button.textContent = 'Processing...';
+            status.innerHTML = '<p>🔄 Toggling real-time monitoring...</p>';
+            
+            try {
+                log('Toggling real-time notification monitoring...');
+                
+                // Check current status first
+                const checkResponse = await fetch('http://localhost:3001/api/realtime-status');
+                const currentStatus = await checkResponse.json();
+                
+                const isCurrentlyActive = currentStatus.monitoring || false;
+                const action = isCurrentlyActive ? 'stop' : 'start';
+                
+                // Toggle monitoring
+                const response = await fetch(`http://localhost:3001/api/realtime-${action}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        sellerId: 'demo-seller-123',
+                        config: {
+                            monitorOrders: true,
+                            monitorInventory: true,
+                            monitorReviews: true,
+                            monitorPayouts: true,
+                            monitorReturns: true,
+                            monitorAccount: true
+                        }
+                    })
+                });
+                
+                const data = await response.json();
+                log(`Real-time monitoring toggle response: ${JSON.stringify(data)}`);
+                
+                if (response.ok) {
+                    const newState = action === 'start' ? 'active' : 'inactive';
+                    status.innerHTML = `<div class="success">
+                        <p>✅ Real-time monitoring is now <strong>${newState}</strong></p>
+                        <p>📧 Email: 22052204@kiit.ac.in</p>
+                        <p>🎯 Monitoring: ${action === 'start' ? 'All notification types' : 'Disabled'}</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>`;
+                    button.textContent = action === 'start' ? 'Disable Real-Time Monitoring' : 'Enable Real-Time Monitoring';
+                    log(`✅ Real-time monitoring ${action}ed successfully`);
+                } else {
+                    status.innerHTML = `<div class="error">
+                        <p>❌ Failed to ${action} real-time monitoring</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>`;
+                    button.textContent = 'Toggle Real-Time Monitoring';
+                    log(`❌ Real-time monitoring ${action} failed: ${JSON.stringify(data)}`);
+                }
+            } catch (error) {
+                status.innerHTML = `<div class="error">
+                    <p>❌ Error toggling real-time monitoring</p>
+                    <p>Error: ${error.message}</p>
+                    <p><small>Make sure the proxy server is running on port 3001</small></p>
+                </div>`;
+                button.textContent = 'Toggle Real-Time Monitoring';
+                log(`❌ Real-time monitoring toggle error: ${error.message}`);
+            } finally {
+                button.disabled = false;
+            }
+        }
+        
+        async function testRealTimeEvents() {
+            const button = document.getElementById('realtime-test');
+            const status = document.getElementById('realtime-test-status');
+            
+            button.disabled = true;
+            button.textContent = 'Creating Test Events...';
+            status.innerHTML = '<p>🧪 Creating database events to test real-time notifications...</p>';
+            
+            try {
+                log('Testing real-time events by creating database changes...');
+                
+                // Simulate creating various database events that would trigger notifications
+                const testEvents = [
+                    {
+                        type: 'order_item',
+                        description: 'New order item (should trigger new order notification)',
+                        data: {
+                            seller_id: 'demo-seller-123',
+                            order_id: 'demo-order-' + Date.now(),
+                            quantity: 2,
+                            price_per_unit: 149.99,
+                            status: 'confirmed'
+                        }
+                    },
+                    {
+                        type: 'low_stock',
+                        description: 'Low stock event (should trigger inventory alert)',
+                        data: {
+                            seller_id: 'demo-seller-123',
+                            product_name: 'Test Product',
+                            current_stock: 5,
+                            threshold: 10
+                        }
+                    },
+                    {
+                        type: 'account_approved',
+                        description: 'Account approval (should trigger approval notification)',
+                        data: {
+                            seller_id: 'demo-seller-123',
+                            verification_status: 'approved',
+                            approved_at: new Date().toISOString()
+                        }
+                    }
+                ];
+                
+                let results = [];
+                
+                for (const event of testEvents) {
+                    log(`Creating ${event.type} event: ${event.description}`);
+                    
+                    // Send webhook to proxy server to simulate the event
+                    const response = await fetch('http://localhost:3001/api/realtime-webhook', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            eventType: event.type,
+                            data: event.data
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    results.push({
+                        event: event.type,
+                        success: response.ok,
+                        result: result
+                    });
+                    
+                    log(`${event.type} event: ${response.ok ? '✅ Success' : '❌ Failed'} - ${JSON.stringify(result)}`);
+                    
+                    // Small delay between events
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+                
+                // Summary
+                const successCount = results.filter(r => r.success).length;
+                const totalCount = results.length;
+                
+                status.innerHTML = `<div class="${successCount === totalCount ? 'success' : 'warning'}">
+                    <p><strong>Test Events Created:</strong> ${successCount}/${totalCount} successful</p>
+                    <p>📧 <strong>Check your email (22052204@kiit.ac.in)</strong> for real-time notifications!</p>
+                    <div style="text-align: left; margin-top: 10px;">
+                        ${results.map(r => 
+                            `<p>• ${r.event}: ${r.success ? '✅' : '❌'} ${r.result.message || 'No message'}</p>`
+                        ).join('')}
+                    </div>
+                    <p style="margin-top: 15px; font-size: 12px; color: #666;">Note: Real-time monitoring must be ACTIVE for emails to be sent.</p>
+                </div>`;
+                
+                log(`✅ Test events completed: ${successCount}/${totalCount} successful`);
+                
+            } catch (error) {
+                status.innerHTML = `<div class="error">
+                    <p>❌ Failed to create test events</p>
+                    <p>Error: ${error.message}</p>
+                    <p><small>Make sure the proxy server is running and real-time monitoring is enabled.</small></p>
+                </div>`;
+                log(`❌ Test events failed: ${error.message}`);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Create Test Events';
+            }
+        }
+        
+        // Auto-check proxy health on page load
+        window.addEventListener('load', checkProxyHealth);
+    </script>
+</body>
+</html>
