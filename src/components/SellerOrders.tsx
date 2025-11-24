@@ -4,6 +4,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -56,6 +63,9 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
   const [selectedOrderForTracking, setSelectedOrderForTracking] = useState<string | null>(null);
   const [showOrderTrackingDialog, setShowOrderTrackingDialog] = useState(false);
   const [selectedOrderForOrderTracking, setSelectedOrderForOrderTracking] = useState<string | null>(null);
+  const [showReturnStatusDialog, setShowReturnStatusDialog] = useState(false);
+  const [selectedOrderItemId, setSelectedOrderItemId] = useState<string | null>(null);
+  const [returnStatusData, setReturnStatusData] = useState<Record<string, unknown> | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -226,6 +236,70 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
       toast({
         title: "Error",
         description: "Failed to process return request",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleManageReturnStatus = async (orderItemId: string) => {
+    try {
+      // Fetch return data for this order item
+      const { data, error } = await supabase
+        .from("order_returns")
+        .select("*")
+        .eq("order_item_id", orderItemId)
+        .single();
+
+      if (error) {
+        toast({
+          title: "Error",
+          description: "No return request found for this order",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      setReturnStatusData(data);
+      setSelectedOrderItemId(orderItemId);
+      setShowReturnStatusDialog(true);
+    } catch (error) {
+      console.error("Error fetching return data:", error);
+    }
+  };
+
+  const handleUpdateReturnStatus = async (newStatus: string) => {
+    if (!returnStatusData) return;
+
+    try {
+      const { error } = await supabase
+        .from("order_returns")
+        .update({
+          status: newStatus,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("return_id", returnStatusData.return_id);
+
+      if (error) {
+        toast({
+          title: "Error updating status",
+          description: error.message,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      toast({
+        title: "Status updated",
+        description: `Return status changed to ${newStatus}`,
+      });
+
+      setReturnStatusData({ ...returnStatusData, status: newStatus });
+      loadOrders();
+    } catch (error) {
+      console.error("Error updating return status:", error);
+      toast({
+        title: "Error",
+        description: "Failed to update return status",
         variant: "destructive",
       });
     }
@@ -413,18 +487,29 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
                   </Button>
                 )}
                 {order.status === "return_requested" && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setSelectedReturnId(order.id);
-                      setShowQCDialog(true);
-                    }}
-                    className="text-green-600 border-green-200 hover:bg-green-50"
-                  >
-                    <CheckCircle2 className="h-4 w-4 mr-1" />
-                    Quality Check
-                  </Button>
+                  <>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedReturnId(order.id);
+                        setShowQCDialog(true);
+                      }}
+                      className="text-green-600 border-green-200 hover:bg-green-50"
+                    >
+                      <CheckCircle2 className="h-4 w-4 mr-1" />
+                      Quality Check
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => handleManageReturnStatus(order.id)}
+                      className="text-blue-600 border-blue-200 hover:bg-blue-50"
+                    >
+                      <RotateCcw className="h-4 w-4 mr-1" />
+                      Manage Return
+                    </Button>
+                  </>
                 )}
               </div>
             </div>
@@ -457,6 +542,80 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
           }}
         />
       )}
+
+      {/* Return Status Management Dialog */}
+      <AlertDialog open={showReturnStatusDialog} onOpenChange={setShowReturnStatusDialog}>
+        <AlertDialogContent className="max-w-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Manage Return Status</AlertDialogTitle>
+            <AlertDialogDescription>
+              Update the status of this return request. Each status represents a different stage in the return process.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {returnStatusData && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Current Status</p>
+                  <Badge className={getStatusColor(returnStatusData.status)}>
+                    {returnStatusData.status.replace('_', ' ').toUpperCase()}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Initiated At</p>
+                  <p className="text-sm">{new Date(returnStatusData.initiated_at).toLocaleDateString()}</p>
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-500">Pending Refund Amount</p>
+                  <p className="text-sm font-semibold text-orange-600">
+                    ₹{orders.find(o => o.id === selectedOrderItemId)?.total_amount?.toFixed(2) || '0.00'}
+                  </p>
+                </div>
+              </div>
+              
+              <div>
+                <p className="text-sm font-medium text-gray-500 mb-2">Return Reason</p>
+                <p className="text-sm bg-gray-50 p-3 rounded">{returnStatusData.reason}</p>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Update Status</label>
+                <Select
+                  value={returnStatusData.status}
+                  onValueChange={handleUpdateReturnStatus}
+                >
+                  <SelectTrigger className="w-full mt-2">
+                    <SelectValue placeholder="Select new status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="initiated">Initiated</SelectItem>
+                    <SelectItem value="seller_review">Seller Review</SelectItem>
+                    <SelectItem value="pickup_scheduled">Pickup Scheduled</SelectItem>
+                    <SelectItem value="picked_up">Picked Up</SelectItem>
+                    <SelectItem value="quality_check">Quality Check</SelectItem>
+                    <SelectItem value="approved">Approved</SelectItem>
+                    <SelectItem value="rejected">Rejected</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500 mt-2">
+                  Status changes will be tracked and the customer will be notified.
+                </p>
+              </div>
+
+              {returnStatusData.notes && (
+                <div>
+                  <p className="text-sm font-medium text-gray-500 mb-2">Notes</p>
+                  <p className="text-sm bg-gray-50 p-3 rounded">{returnStatusData.notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel>Close</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Cancel Order Dialog */}
       <AlertDialog open={!!cancelingOrderId} onOpenChange={(open) => {

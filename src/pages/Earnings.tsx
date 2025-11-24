@@ -85,6 +85,7 @@ export default function Earnings() {
   const [balance, setBalance] = useState<SellerBalance | null>(null);
   const [transactions, setTransactions] = useState<TransactionWithDetails[]>([]);
   const [payoutItems, setPayoutItems] = useState<PayoutItemWithDetails[]>([]);
+  const [pendingRefunds, setPendingRefunds] = useState<Record<string, unknown>[]>([]);
   const [isDisputeOpen, setIsDisputeOpen] = useState(false);
   const { toast } = useToast();
 
@@ -104,6 +105,7 @@ export default function Earnings() {
         fetchBalance(id),
         fetchTransactions(id),
         fetchPayoutItems(id),
+        fetchPendingRefunds(id),
       ]);
     } catch (error) {
       console.error("Error initializing earnings page:", error);
@@ -254,6 +256,38 @@ export default function Earnings() {
 
     console.log('✅ Payout items with product data:', enrichedData.length);
     setPayoutItems(enrichedData as unknown as PayoutItemWithDetails[]);
+  };
+
+  const fetchPendingRefunds = async (id: string) => {
+    console.log('💸 Fetching pending refunds for seller:', id);
+    const { data, error } = await supabase
+      .from("order_returns")
+      .select(`
+        return_id,
+        reason,
+        status,
+        initiated_at,
+        order_item_id,
+        order_items!inner(
+          order_item_id,
+          quantity,
+          price_per_unit,
+          seller_product_listings(
+            seller_title
+          )
+        )
+      `)
+      .eq("seller_id", id)
+      .not("status", "in", "(refunded,completed)")
+      .order("initiated_at", { ascending: false });
+
+    if (error) {
+      console.error("❌ Error fetching pending refunds:", error);
+      return;
+    }
+
+    console.log('✅ Pending refunds found:', data?.length || 0);
+    setPendingRefunds(data || []);
   };
 
   const handleRefresh = () => {
@@ -568,6 +602,7 @@ export default function Earnings() {
                           <TableHead>Product</TableHead>
                           <TableHead className="text-right">Subtotal</TableHead>
                           <TableHead className="text-right">Fees</TableHead>
+                          <TableHead className="text-right">Pending Refund</TableHead>
                           <TableHead className="text-right">Net Earning</TableHead>
                           <TableHead>Settlement Date</TableHead>
                         </TableRow>
@@ -599,6 +634,20 @@ export default function Earnings() {
                             <TableCell className="text-right text-red-600">
                               -₹{(item.allocated_razorpay_fee + item.allocated_razorpay_tax).toFixed(2)}
                             </TableCell>
+                            <TableCell className="text-right">
+                              {(() => {
+                                const refund = pendingRefunds.find(r => r.order_item_id === item.order_item_id);
+                                if (refund) {
+                                  const refundAmount = (refund.order_items?.quantity || 0) * (refund.order_items?.price_per_unit || 0);
+                                  return (
+                                    <Badge variant="destructive" className="text-xs">
+                                      -₹{refundAmount.toFixed(2)}
+                                    </Badge>
+                                  );
+                                }
+                                return <span className="text-muted-foreground">-</span>;
+                              })()}
+                            </TableCell>
                             <TableCell className="text-right font-medium text-green-600">
                               ₹{calculateNetEarning(item).toFixed(2)}
                             </TableCell>
@@ -612,13 +661,24 @@ export default function Earnings() {
                         ))}
                       </TableBody>
                     </Table>
-                    <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-md">
+                    <div className="mt-4 p-4 bg-orange-50 border border-orange-200 rounded-md space-y-2">
                       <p className="text-sm font-medium text-orange-800">
                         Total Pending: ₹
                         {pendingItems
                           .reduce((sum, item) => sum + calculateNetEarning(item), 0)
                           .toFixed(2)}
                       </p>
+                      {pendingRefunds.length > 0 && (
+                        <p className="text-sm font-medium text-red-600">
+                          Total Pending Refunds: ₹
+                          {pendingRefunds
+                            .reduce((sum, refund) => {
+                              const amount = (refund.order_items?.quantity || 0) * (refund.order_items?.price_per_unit || 0);
+                              return sum + amount;
+                            }, 0)
+                            .toFixed(2)} ({pendingRefunds.length} return{pendingRefunds.length > 1 ? 's' : ''})
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
@@ -652,8 +712,9 @@ export default function Earnings() {
                           <TableHead>Product</TableHead>
                           <TableHead className="text-right">Subtotal</TableHead>
                           <TableHead className="text-right">Fees</TableHead>
+                          <TableHead className="text-right">Pending Refund</TableHead>
                           <TableHead className="text-right">Net Earning</TableHead>
-                          <TableHead>Settled Date</TableHead>
+                          <TableHead>Settlement Date</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
