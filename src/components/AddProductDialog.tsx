@@ -123,6 +123,7 @@ export default function AddProductDialog({
   const [galleryImages, setGalleryImages] = useState<ImageFile[]>([]);
   const [certificateFiles, setCertificateFiles] = useState<File[]>([]);
   const [trustCertificateFiles, setTrustCertificateFiles] = useState<File[]>([]);
+  const [nutritionPhoto, setNutritionPhoto] = useState<File | null>(null);
   
   interface CertificateData {
     name: string;
@@ -169,6 +170,7 @@ export default function AddProductDialog({
       setGalleryImages([]);
       setCertificateFiles([]);
       setTrustCertificateFiles([]);
+      setNutritionPhoto(null);
       setSellerCertifications([]);
       setTransparency({ third_party_tested: false });
     }
@@ -454,6 +456,47 @@ export default function AddProductDialog({
       return;
     }
 
+    // Validate mandatory nutritional information
+    const hasNutritionInfo = variants.some(v => v.nutritional_info && Object.keys(v.nutritional_info).length > 0);
+    if (!hasNutritionInfo) {
+      toast({
+        title: "Nutrition information required",
+        description: "Please provide nutritional information for at least one variant",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate mandatory images
+    if (productImages.length === 0 && (!isEditing || galleryImages.filter(img => img.isExisting).length === 0)) {
+      toast({
+        title: "Product images required",
+        description: "Please upload at least one product image",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate FSSAI certificate
+    if (certificateFiles.length === 0) {
+      toast({
+        title: "FSSAI certificate required",
+        description: "Please upload your FSSAI certificate",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate nutrition photo
+    if (!nutritionPhoto) {
+      toast({
+        title: "Nutrition photo required",
+        description: "Please upload a nutrition information photo",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       setLoading(true);
 
@@ -461,6 +504,11 @@ export default function AddProductDialog({
       const filesToUpload = isEditing 
         ? galleryImages.filter(img => !img.isExisting && img.file).map(img => img.file!)
         : productImages;
+
+      // Upload nutrition photo
+      const uploadedNutritionPhoto = nutritionPhoto 
+        ? await uploadFile(nutritionPhoto, sellerId, "product-images")
+        : null;
 
       // Upload files
       const uploadedImages = await Promise.all(
@@ -747,6 +795,36 @@ export default function AddProductDialog({
               .eq("image_url", primaryImageUrl);
           }
         }
+
+        // Insert nutrition photo if provided
+        if (uploadedNutritionPhoto) {
+          const { error: nutritionImageError } = await supabase.from("listing_images").insert({
+            listing_id: listing.listing_id,
+            image_url: uploadedNutritionPhoto,
+            sort_order: existingImages.length + uploadedImages.length,
+            type: 'nutrition'
+          });
+
+          if (nutritionImageError) {
+            console.error("❌ Error uploading nutrition image:", nutritionImageError);
+            throw new Error(`Failed to upload nutrition image: ${nutritionImageError.message}`);
+          }
+        }
+
+        // Insert FSSAI certificates
+        for (let i = 0; i < uploadedCerts.length; i++) {
+          const { error: certImageError } = await supabase.from("listing_images").insert({
+            listing_id: listing.listing_id,
+            image_url: uploadedCerts[i],
+            sort_order: existingImages.length + uploadedImages.length + (uploadedNutritionPhoto ? 1 : 0) + i,
+            type: 'fssai'
+          });
+
+          if (certImageError) {
+            console.error("❌ Error uploading FSSAI certificate:", certImageError);
+            throw new Error(`Failed to upload FSSAI certificate: ${certImageError.message}`);
+          }
+        }
       } else {
         // For new products, handle all images normally
         // Insert new images
@@ -761,6 +839,36 @@ export default function AddProductDialog({
           if (imageError) {
             console.error("❌ RLS ERROR on listing_images:", imageError);
             throw new Error(`Failed to upload image: ${imageError.message}`);
+          }
+        }
+
+        // Insert nutrition photo
+        if (uploadedNutritionPhoto) {
+          const { error: nutritionImageError } = await supabase.from("listing_images").insert({
+            listing_id: listing.listing_id,
+            image_url: uploadedNutritionPhoto,
+            sort_order: uploadedImages.length,
+            type: 'nutrition'
+          });
+
+          if (nutritionImageError) {
+            console.error("❌ Error uploading nutrition image:", nutritionImageError);
+            throw new Error(`Failed to upload nutrition image: ${nutritionImageError.message}`);
+          }
+        }
+
+        // Insert FSSAI certificates
+        for (let i = 0; i < uploadedCerts.length; i++) {
+          const { error: certImageError } = await supabase.from("listing_images").insert({
+            listing_id: listing.listing_id,
+            image_url: uploadedCerts[i],
+            sort_order: uploadedImages.length + (uploadedNutritionPhoto ? 1 : 0) + i,
+            type: 'fssai'
+          });
+
+          if (certImageError) {
+            console.error("❌ Error uploading FSSAI certificate:", certImageError);
+            throw new Error(`Failed to upload FSSAI certificate: ${certImageError.message}`);
           }
         }
       }
@@ -832,6 +940,7 @@ export default function AddProductDialog({
     setGalleryImages([]);
     setCertificateFiles([]);
     setTrustCertificateFiles([]);
+    setNutritionPhoto(null);
     setStatus("draft");
   }
 
@@ -1352,6 +1461,19 @@ export default function AddProductDialog({
               }}
               maxImages={10}
             />
+
+            <div className="space-y-2 mt-6 pt-6 border-t">
+              <Label>Nutrition Information Photo *</Label>
+              <Input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setNutritionPhoto(e.target.files?.[0] || null)}
+                required
+              />
+              {nutritionPhoto && (
+                <p className="text-sm text-muted-foreground">Selected: {nutritionPhoto.name}</p>
+              )}
+            </div>
 
             <div className="space-y-2 mt-6 pt-6 border-t">
               <Label>Certificates</Label>

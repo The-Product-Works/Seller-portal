@@ -696,7 +696,7 @@ export default function OrderDetails() {
       try {
         const { error: returnError } = await supabase
           .from("order_returns")
-          .update({ status: "refunded", updated_at: new Date().toISOString() })
+          .update({ status: "completed", updated_at: new Date().toISOString() })
           .eq("return_id", returnId);
 
         if (returnError) throw returnError;

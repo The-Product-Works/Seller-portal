@@ -194,6 +194,7 @@ CREATE TABLE public.listing_images (
   alt_text character varying,
   is_primary boolean DEFAULT false,
   sort_order integer DEFAULT 0,
+  type text CHECK (type = ANY (ARRAY['product'::text, 'nutrition'::text, 'fssai'::text])),
   created_at timestamp with time zone DEFAULT now(),
   CONSTRAINT listing_images_pkey PRIMARY KEY (image_id),
   CONSTRAINT listing_images_listing_id_fkey FOREIGN KEY (listing_id) REFERENCES public.seller_product_listings(listing_id),
@@ -291,7 +292,7 @@ CREATE TABLE public.order_returns (
   seller_id uuid NOT NULL,
   reason text NOT NULL,
   return_type text DEFAULT 'refund'::text CHECK (return_type = ANY (ARRAY['replacement'::text, 'refund'::text])),
-  status text NOT NULL DEFAULT 'initiated'::text CHECK (status = ANY (ARRAY['initiated'::text, 'seller_review'::text, 'pickup_scheduled'::text, 'picked_up'::text, 'quality_check'::text, 'approved'::text, 'rejected'::text, 'refunded'::text, 'completed'::text])),
+  status text NOT NULL DEFAULT 'initiated'::text CHECK (status = ANY (ARRAY['initiated'::text, 'seller_review'::text, 'pickup_scheduled'::text, 'picked_up'::text, 'quality_check'::text, 'approved'::text, 'rejected'::text, 'completed'::text])),
   initiated_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   notes text,
@@ -403,6 +404,7 @@ CREATE TABLE public.product_images (
   url text NOT NULL,
   sort_order integer DEFAULT 0,
   seller_id uuid,
+  type text NOT NULL CHECK (type = ANY (ARRAY['product'::text, 'nutrition'::text, 'fssai'::text])),
   CONSTRAINT product_images_pkey PRIMARY KEY (image_id),
   CONSTRAINT product_images_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(product_id),
   CONSTRAINT product_images_seller_id_fkey FOREIGN KEY (seller_id) REFERENCES auth.users(id)
@@ -497,6 +499,7 @@ CREATE TABLE public.products (
   updated_at timestamp without time zone DEFAULT now(),
   stock_quantity integer DEFAULT 0,
   image_url text,
+  nutritional_info jsonb NOT NULL,
   CONSTRAINT products_pkey PRIMARY KEY (product_id),
   CONSTRAINT products_seller_id_fkey FOREIGN KEY (seller_id) REFERENCES public.users(id),
   CONSTRAINT products_category_id_fkey FOREIGN KEY (category_id) REFERENCES public.categories(category_id)

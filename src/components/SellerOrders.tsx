@@ -23,6 +23,7 @@ import {
 import { ShoppingCart, X, Clock, CheckCircle, XCircle, RotateCcw, Truck, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { createOrderItemRefund } from "@/lib/order-item-helpers";
 import { ReturnQCDialog } from "@/components/ReturnQCDialog";
 import { ReturnTrackingDialog } from "@/components/ReturnTrackingDialog";
 import { OrderTrackingDialog } from "@/components/OrderTrackingDialog";
@@ -271,6 +272,41 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
     if (!returnStatusData) return;
 
     try {
+      // If approving return, create a refund record
+      if (newStatus === 'approved' && returnStatusData.status !== 'approved') {
+        // Get the order item details to calculate refund amount
+        const { data: orderItemData, error: orderItemError } = await supabase
+          .from("order_items")
+          .select("price_per_unit, quantity, seller_id")
+          .eq("order_item_id", returnStatusData.order_item_id)
+          .single();
+
+        if (orderItemError) {
+          toast({
+            title: "Error",
+            description: "Could not fetch order details for refund calculation",
+            variant: "destructive",
+          });
+          return;
+        }
+
+        const refundAmount = (orderItemData.price_per_unit || 0) * (orderItemData.quantity || 0);
+
+        // Create refund record
+        await createOrderItemRefund(
+          returnStatusData.order_item_id,
+          refundAmount,
+          orderItemData.seller_id,
+          'original',
+          returnStatusData.return_id
+        );
+
+        toast({
+          title: "Refund initiated",
+          description: `Refund of ₹${refundAmount.toFixed(2)} has been initiated`,
+        });
+      }
+
       const { error } = await supabase
         .from("order_returns")
         .update({
@@ -319,6 +355,25 @@ export function SellerOrders({ sellerId, limit = 10, statusFilter = "all" }: Sel
         return "bg-red-100 text-red-800";
       case "return_requested":
         return "bg-orange-100 text-orange-800";
+      // Return statuses
+      case "initiated":
+        return "bg-yellow-100 text-yellow-800";
+      case "seller_review":
+        return "bg-blue-100 text-blue-800";
+      case "pickup_scheduled":
+        return "bg-purple-100 text-purple-800";
+      case "picked_up":
+        return "bg-indigo-100 text-indigo-800";
+      case "quality_check":
+        return "bg-cyan-100 text-cyan-800";
+      case "approved":
+        return "bg-green-100 text-green-800";
+      case "rejected":
+        return "bg-red-100 text-red-800";
+      case "refunded":
+        return "bg-emerald-100 text-emerald-800";
+      case "completed":
+        return "bg-gray-100 text-gray-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
