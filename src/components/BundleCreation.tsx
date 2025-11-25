@@ -31,11 +31,21 @@ interface Listing {
   seller_title: string;
   base_price: number;
   listing_images?: Array<{ image_url: string; is_primary: boolean }>;
+  total_stock_quantity: number;
+}
+
+interface Variant {
+  variant_id: string;
+  variant_name: string;
+  price: number;
+  sku?: string;
+  stock_quantity: number;
 }
 
 interface SelectedListingItem {
   listing: Listing;
   quantity: number;
+  variant?: Variant;
 }
 
 interface BundleData {
@@ -44,6 +54,7 @@ interface BundleData {
   description?: string;
   discount_percentage?: number;
   status?: 'draft' | 'active';
+  total_stock_quantity?: number;
 }
 
 interface BundleCreationProps {
@@ -60,7 +71,10 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
   const [description, setDescription] = useState("");
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [selectedListingId, setSelectedListingId] = useState<string>("");
+  const [variants, setVariants] = useState<Variant[]>([]);
+  const [selectedVariantId, setSelectedVariantId] = useState<string>("");
   const [quantity, setQuantity] = useState<number>(1);
+  const [bundleStock, setBundleStock] = useState<number>(0);
   const [status, setStatus] = useState<"draft" | "active">("draft");
   const [showPreview, setShowPreview] = useState(false);
   const { toast } = useToast();
@@ -72,6 +86,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
         setBundleName(editingBundle.bundle_name as string);
         setDescription((editingBundle.description as string) || "");
         setDiscountPercentage((editingBundle.discount_percentage as number) || 0);
+        setBundleStock((editingBundle.total_stock_quantity as number) || 0);
         setStatus((editingBundle.status as "draft" | "active") || "draft");
         // Load bundle items
         await loadBundleItems();
@@ -80,6 +95,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
         setBundleName("");
         setDescription("");
         setDiscountPercentage(0);
+        setBundleStock(0);
         setSelectedItems([]);
         setStatus("draft");
       }
@@ -92,7 +108,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
     try {
       const { data, error } = await supabase
         .from("bundle_items")
-        .select("listing_id, quantity")
+        .select("listing_id, quantity, variant_id, allocation_percentage")
         .eq("bundle_id", editingBundle.bundle_id);
 
       if (error) throw error;
@@ -103,13 +119,27 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
           data.map(async (item) => {
             const { data: listing } = await supabase
               .from("seller_product_listings")
-              .select("listing_id, seller_title, base_price, listing_images(image_url, is_primary)")
+              .select("listing_id, seller_title, base_price, total_stock_quantity, listing_images(image_url, is_primary)")
               .eq("listing_id", item.listing_id)
               .single();
 
+            let variant: Variant | undefined;
+            if (item.variant_id) {
+              const { data: variantData } = await supabase
+                .from("listing_variants")
+                .select("variant_id, variant_name, price, sku, stock_quantity")
+                .eq("variant_id", item.variant_id)
+                .single();
+
+              if (variantData) {
+                variant = variantData;
+              }
+            }
+
             return {
-              listing: listing || { listing_id: item.listing_id, seller_title: "Unknown", base_price: 0 },
+              listing: listing || { listing_id: item.listing_id, seller_title: "Unknown", base_price: 0, total_stock_quantity: 0 },
               quantity: item.quantity,
+              variant,
             };
           })
         );
@@ -129,6 +159,33 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    const fetchVariants = async () => {
+      if (!selectedListingId) {
+        setVariants([]);
+        setSelectedVariantId("");
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("listing_variants")
+        .select("variant_id, variant_name, price, sku, stock_quantity")
+        .eq("listing_id", selectedListingId)
+        .eq("is_available", true);
+
+      if (!error && data) {
+        setVariants(data);
+        if (data.length === 1) {
+          setSelectedVariantId(data[0].variant_id);
+        } else {
+          setSelectedVariantId("");
+        }
+      }
+    };
+
+    fetchVariants();
+  }, [selectedListingId]);
 
   const loadListings = async () => {
     try {
@@ -150,6 +207,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
           listing_id,
           seller_title,
           base_price,
+          total_stock_quantity,
           listing_images(image_url, is_primary)
         `
         )
@@ -171,15 +229,19 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
   };
 
   const addListingToBundle = () => {
-    console.log("addListingToBundle called");
-    console.log("selectedListingId:", selectedListingId);
-    console.log("quantity:", quantity);
-    console.log("listings:", listings);
-    
     if (!selectedListingId) {
       toast({
         title: "Error",
         description: "Please select a product",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (variants.length > 0 && !selectedVariantId) {
+      toast({
+        title: "Error",
+        description: "Please select a variant",
         variant: "destructive",
       });
       return;
@@ -195,8 +257,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
     }
 
     const listing = listings.find((l) => l.listing_id === selectedListingId);
-    console.log("Found listing:", listing);
-    
+
     if (!listing) {
       toast({
         title: "Error",
@@ -206,26 +267,33 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
       return;
     }
 
-    // Check if already added
+    const selectedVariant = variants.find(v => v.variant_id === selectedVariantId);
+
+    // Check if already added (same listing AND same variant)
     const existingIndex = selectedItems.findIndex(
-      (item) => item.listing.listing_id === selectedListingId
+      (item) => item.listing.listing_id === selectedListingId &&
+        ((!item.variant && !selectedVariantId) || (item.variant?.variant_id === selectedVariantId))
     );
 
     if (existingIndex >= 0) {
       const updatedItems = [...selectedItems];
       updatedItems[existingIndex].quantity = quantity;
       setSelectedItems(updatedItems);
-      console.log("Updated existing item, new selectedItems:", updatedItems);
     } else {
       const newItems = [
         ...selectedItems,
-        { listing, quantity },
+        {
+          listing,
+          quantity,
+          variant: selectedVariant
+        },
       ];
       setSelectedItems(newItems);
-      console.log("Added new item, new selectedItems:", newItems);
     }
 
     setSelectedListingId("");
+    setSelectedVariantId("");
+    setVariants([]);
     setQuantity(1);
   };
 
@@ -235,7 +303,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
 
   const calculateTotalPrice = () => {
     const originalPrice = selectedItems.reduce(
-      (sum, item) => sum + item.listing.base_price * item.quantity,
+      (sum, item) => sum + (item.variant?.price || item.listing.base_price) * item.quantity,
       0
     );
     const discountAmount = (originalPrice * discountPercentage) / 100;
@@ -256,7 +324,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
       .replace(/\s+/g, "-")
       .replace(/[^a-z0-9-]/g, "")
       .substring(0, 40);
-    
+
     // Add timestamp to make slug unique
     const timestamp = Date.now().toString(36); // Convert timestamp to base36 for shorter string
     return `${baseSlug}-${timestamp}`;
@@ -264,7 +332,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
 
   const handleSubmit = async (submitStatus: "draft" | "active" = status) => {
     console.log("handleSubmit called with status:", submitStatus);
-    
+
     if (selectedItems.length < 2) {
       toast({
         title: "Error",
@@ -283,12 +351,27 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
       return;
     }
 
+    // Validate stock
+    for (const item of selectedItems) {
+      const requiredStock = item.quantity * bundleStock;
+      const availableStock = item.variant ? item.variant.stock_quantity : item.listing.total_stock_quantity;
+
+      if (requiredStock > availableStock) {
+        toast({
+          title: "Insufficient Stock",
+          description: `Not enough stock for ${item.listing.seller_title}${item.variant ? ` (${item.variant.variant_name})` : ''}. Required: ${requiredStock}, Available: ${availableStock}`,
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     try {
       setLoading(true);
       console.log("Getting authenticated seller ID...");
       const sellerId = await getAuthenticatedSellerId();
       console.log("Seller ID:", sellerId);
-      
+
       if (!sellerId) {
         const errorMsg = "Seller not authenticated - no seller ID found";
         console.error(errorMsg);
@@ -296,7 +379,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
       }
 
       const originalPrice = selectedItems.reduce(
-        (sum, item) => sum + item.listing.base_price * item.quantity,
+        (sum, item) => sum + (item.variant?.price || item.listing.base_price) * item.quantity,
         0
       );
       const finalPrice = calculateTotalPrice();
@@ -310,6 +393,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
         base_price: originalPrice,
         discounted_price: finalPrice,
         discount_percentage: discountPercentage,
+        total_stock_quantity: bundleStock,
         total_items: totalItems,
         status: submitStatus,
         published_at: submitStatus === "active" ? new Date().toISOString() : null,
@@ -364,11 +448,18 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
       }
 
       // Add/update bundle items
-      const bundleItems = selectedItems.map((item) => ({
-        bundle_id: bundle.bundle_id,
-        listing_id: item.listing.listing_id,
-        quantity: item.quantity,
-      }));
+      const bundleItems = selectedItems.map((item) => {
+        const itemPrice = (item.variant?.price || item.listing.base_price) * item.quantity;
+        const allocation = originalPrice > 0 ? (itemPrice / originalPrice) * 100 : 0;
+
+        return {
+          bundle_id: bundle.bundle_id,
+          listing_id: item.listing.listing_id,
+          quantity: item.quantity,
+          variant_id: item.variant?.variant_id || null,
+          allocation_percentage: allocation
+        };
+      });
 
       console.log("Bundle items payload:", bundleItems);
 
@@ -392,8 +483,11 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
       setBundleName("");
       setDescription("");
       setDiscountPercentage(0);
+      setBundleStock(0);
       setSelectedItems([]);
       setSelectedListingId("");
+      setSelectedVariantId("");
+      setVariants([]);
       setQuantity(1);
       setStatus("draft");
       onClose();
@@ -461,6 +555,21 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
                 </SelectContent>
               </Select>
 
+              {variants.length > 0 && (
+                <Select value={selectedVariantId} onValueChange={setSelectedVariantId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select variant" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {variants.map((variant) => (
+                      <SelectItem key={variant.variant_id} value={variant.variant_id}>
+                        {variant.variant_name} - ₹{variant.price}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+
               <div className="flex gap-2">
                 <div className="flex-1">
                   <Label className="text-xs text-muted-foreground">Quantity</Label>
@@ -504,10 +613,13 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
                           <Package className="w-8 h-8 text-muted-foreground" />
                         )}
                         <div>
-                          <p className="font-medium text-sm">{item.listing.seller_title}</p>
+                          <p className="font-medium text-sm">
+                            {item.listing.seller_title}
+                            {item.variant && <span className="text-muted-foreground ml-1">({item.variant.variant_name})</span>}
+                          </p>
                           <p className="text-xs text-muted-foreground">
-                            ₹{item.listing.base_price} × {item.quantity} = ₹
-                            {(item.listing.base_price * item.quantity).toFixed(2)}
+                            ₹{item.variant?.price || item.listing.base_price} × {item.quantity} = ₹
+                            {((item.variant?.price || item.listing.base_price) * item.quantity).toFixed(2)}
                           </p>
                         </div>
                       </div>
@@ -525,19 +637,33 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
             </div>
           )}
 
-          {/* Discount */}
-          <div className="grid gap-2 border-t pt-4">
-            <Label htmlFor="discount">Discount Percentage (%) *</Label>
-            <Input
-              id="discount"
-              type="number"
-              min="0"
-              max="100"
-              value={discountPercentage}
-              onChange={(e) =>
-                setDiscountPercentage(Math.max(0, Math.min(100, Number(e.target.value) || 0)))
-              }
-            />
+          {/* Discount and Stock */}
+          <div className="grid grid-cols-2 gap-4 border-t pt-4">
+            <div className="grid gap-2">
+              <Label htmlFor="discount">Discount Percentage (%) *</Label>
+              <Input
+                id="discount"
+                type="number"
+                min="0"
+                max="100"
+                value={discountPercentage}
+                onChange={(e) =>
+                  setDiscountPercentage(Math.max(0, Math.min(100, Number(e.target.value) || 0)))
+                }
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="bundle-stock">Bundle Stock *</Label>
+              <Input
+                id="bundle-stock"
+                type="number"
+                min="0"
+                value={bundleStock}
+                onChange={(e) =>
+                  setBundleStock(Math.max(0, Number(e.target.value) || 0))
+                }
+              />
+            </div>
           </div>
 
           {/* Price Summary */}
@@ -549,7 +675,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
                   <span className="font-medium">
                     ₹
                     {selectedItems
-                      .reduce((sum, item) => sum + item.listing.base_price * item.quantity, 0)
+                      .reduce((sum, item) => sum + (item.variant?.price || item.listing.base_price) * item.quantity, 0)
                       .toFixed(2)}
                   </span>
                 </div>
@@ -560,7 +686,7 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
                       -₹
                       {(
                         (selectedItems.reduce(
-                          (sum, item) => sum + item.listing.base_price * item.quantity,
+                          (sum, item) => sum + (item.variant?.price || item.listing.base_price) * item.quantity,
                           0
                         ) *
                           discountPercentage) /
@@ -614,16 +740,16 @@ export function BundleCreation({ open, onClose, editingBundle }: BundleCreationP
         bundle={
           bundleName.trim() && selectedItems.length > 0
             ? {
-                bundle_name: bundleName,
-                description: description,
-                base_price: selectedItems.reduce((sum, item) => sum + item.listing.base_price * item.quantity, 0),
-                discounted_price: selectedItems.reduce((sum, item) => sum + item.listing.base_price * item.quantity, 0) * (1 - (discountPercentage / 100)),
-                discount_percentage: discountPercentage,
-                total_items: selectedItems.reduce((sum, item) => sum + item.quantity, 0),
-                status: status,
-                published_at: new Date().toISOString(),
-                items: selectedItems,
-              }
+              bundle_name: bundleName,
+              description: description,
+              base_price: selectedItems.reduce((sum, item) => sum + (item.variant?.price || item.listing.base_price) * item.quantity, 0),
+              discounted_price: selectedItems.reduce((sum, item) => sum + (item.variant?.price || item.listing.base_price) * item.quantity, 0) * (1 - (discountPercentage / 100)),
+              discount_percentage: discountPercentage,
+              total_items: selectedItems.reduce((sum, item) => sum + item.quantity, 0),
+              status: status,
+              published_at: new Date().toISOString(),
+              items: selectedItems,
+            }
             : null
         }
       />

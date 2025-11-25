@@ -17,6 +17,10 @@ interface BundleItem {
     listing_images?: Array<{ image_url: string }>;
   };
   quantity: number;
+  variant?: {
+    variant_name: string;
+    price: number;
+  };
 }
 
 interface BundlePreviewData {
@@ -49,8 +53,8 @@ export function BundlePreviewModal({
     bundle.discount_percentage ||
     (bundle.base_price && bundle.discounted_price
       ? Math.round(
-          ((bundle.base_price - bundle.discounted_price) / bundle.base_price) * 100
-        )
+        ((bundle.base_price - bundle.discounted_price) / bundle.base_price) * 100
+      )
       : 0);
 
   const savings =
@@ -101,7 +105,7 @@ export function BundlePreviewModal({
               <div className="space-y-2">
                 <div className="flex items-baseline gap-2">
                   {bundle.discounted_price &&
-                  bundle.discounted_price < bundle.base_price ? (
+                    bundle.discounted_price < bundle.base_price ? (
                     <>
                       <span className="text-3xl font-bold text-blue-600">
                         ₹{bundle.discounted_price.toFixed(2)}
@@ -163,12 +167,13 @@ export function BundlePreviewModal({
                       <div className="flex-1 min-w-0">
                         <p className="font-medium truncate">
                           {item.listing.seller_title}
+                          {item.variant && <span className="text-muted-foreground ml-1">({item.variant.variant_name})</span>}
                         </p>
                         <p className="text-sm text-muted-foreground">
-                          Qty: {item.quantity} × ₹{item.listing.base_price.toFixed(2)}
+                          Qty: {item.quantity} × ₹{(item.variant?.price || item.listing.base_price).toFixed(2)}
                         </p>
                         <p className="text-sm font-semibold text-blue-600 mt-1">
-                          ₹{(item.quantity * item.listing.base_price).toFixed(2)}
+                          ₹{(item.quantity * (item.variant?.price || item.listing.base_price)).toFixed(2)}
                         </p>
                       </div>
 
