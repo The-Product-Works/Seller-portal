@@ -67,19 +67,29 @@ export function ProtectedRoute({ children, requiresKYC = false }: ProtectedRoute
   if (requiresKYC) {
     const current = location.pathname.toLowerCase();
     
+    // Allow access to customer-feedback even with pending KYC
+    if (current.includes("customer-feedback")) {
+      return (
+        <>
+          <Navbar />
+          <main className="pt-16">{children}</main>
+        </>
+      );
+    }
+    
     if (!kycStatus) {
       // No KYC record yet → redirect to KYC page
       if (!current.includes("kyc")) {
         return <Navigate to="/kyc" replace />;
       }
-    } else if (kycStatus === "rejected") {
-      // Rejected → redirect to KYC page
+    } else if (kycStatus === "rejected" || kycStatus === "failed" || kycStatus === "revoked") {
+      // Rejected/Failed/Revoked → redirect to KYC page for resubmission
       if (!current.includes("kyc")) {
         return <Navigate to="/kyc" replace />;
       }
     } else if (kycStatus === "pending") {
-      // Pending → can only access SellerVerification or KYC page
-      if (!current.includes("seller-verification") && !current.includes("kyc")) {
+      // Pending → can only access SellerVerification, KYC page, or Customer Feedback
+      if (!current.includes("seller-verification") && !current.includes("kyc") && !current.includes("customer-feedback")) {
         return <Navigate to="/seller-verification" replace />;
       }
     }

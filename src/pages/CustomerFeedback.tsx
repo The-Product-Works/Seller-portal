@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -35,12 +35,18 @@ import {
 interface ProductReview {
   review_id: string;
   listing_id: string;
+  buyer_id: string;
   rating: number;
-  review_title: string;
-  review_text: string;
+  review_title: string | null;
+  review_text: string | null;
   created_at: string;
-  is_verified_purchase: boolean;
-  helpful_count: number;
+  is_verified_purchase: boolean | null;
+  helpful_count: number | null;
+  not_helpful_count: number | null;
+  status: string | null;
+  moderation_notes: string | null;
+  updated_at: string;
+  images: string[] | null;
   product_title: string;
   product_category: string;
   product_price: number;
@@ -77,6 +83,8 @@ export default function CustomerFeedback() {
   const [loading, setLoading] = useState(true);
   const [filterRating, setFilterRating] = useState<string>("all");
   const [filterProduct, setFilterProduct] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [searchTerm, setSearchTerm] = useState<string>("");
   const [sortBy, setSortBy] = useState<string>("newest");
   const [adminQuestions, setAdminQuestions] = useState<AdminQuestion[]>([]);
   const [showContactDialog, setShowContactDialog] = useState(false);
@@ -94,7 +102,60 @@ export default function CustomerFeedback() {
     loadAdminQuestions();
     loadSellerProducts();
     getAuthenticatedSellerId().then(id => setSellerId(id));
-  }, [filterRating, sortBy]);
+  }, [loadAdminQuestions, loadCustomerFeedback, loadSellerProducts]);
+
+  // Filter and sort reviews
+  const filteredReviews = useMemo(() => {
+    const filtered = reviews.filter(review => {
+      // Rating filter
+      if (filterRating !== "all" && review.rating !== parseInt(filterRating)) {
+        return false;
+      }
+      
+      // Status filter
+      if (filterStatus !== "all" && review.status !== filterStatus) {
+        return false;
+      }
+      
+      // Product filter
+      if (filterProduct !== "all" && review.listing_id !== filterProduct) {
+        return false;
+      }
+      
+      // Search filter
+      if (searchTerm.trim()) {
+        const search = searchTerm.toLowerCase();
+        const matchesTitle = review.review_title?.toLowerCase().includes(search);
+        const matchesText = review.review_text?.toLowerCase().includes(search);
+        const matchesProduct = review.product_title?.toLowerCase().includes(search);
+        if (!matchesTitle && !matchesText && !matchesProduct) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'newest':
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        case 'oldest':
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case 'highest_rated':
+          return b.rating - a.rating;
+        case 'lowest_rated':
+          return a.rating - b.rating;
+        case 'most_helpful':
+          return (b.helpful_count || 0) - (a.helpful_count || 0);
+        default:
+          return 0;
+      }
+    });
+
+    return filtered;
+  }, [reviews, filterRating, filterStatus, filterProduct, searchTerm, sortBy]);
 
   const loadSellerProducts = useCallback(async () => {
     try {
@@ -204,6 +265,8 @@ export default function CustomerFeedback() {
     setLoading(true);
     try {
       const sellerId = await getAuthenticatedSellerId();
+      console.log("Authenticated seller ID:", sellerId); // Debug log
+      
       if (!sellerId) {
         toast({
           title: "Authentication Error",
@@ -213,74 +276,131 @@ export default function CustomerFeedback() {
         return;
       }
 
+      // First, check what listings this seller has
+      const { data: sellerListings, error: listingsError } = await supabase
+        .from("seller_product_listings")
+        .select("listing_id, seller_title, base_price, discounted_price")
+        .eq("seller_id", sellerId)
+        .eq("status", "active");
+
+      console.log("🔍 Seller listings query result:", { sellerListings, listingsError });
+      console.log("📊 Seller ID being used:", sellerId);
+      console.log("🏪 Found", sellerListings?.length || 0, "listings for seller");
+
+      if (listingsError) {
+        console.error("❌ Error fetching seller listings:", listingsError);
+      }
+
       // Get reviews for seller's products
-      let query = supabase
-        .from("product_reviews")
-        .select(`
-          review_id,
-          listing_id,
-          rating,
-          review_title,
-          review_text,
-          created_at,
-          is_verified_purchase,
-          helpful_count,
-          seller_product_listings!inner(
-            seller_title,
-            seller_id,
-            base_price,
-            listing_images(image_url)
-          )
-        `)
-        .eq("seller_product_listings.seller_id", sellerId)
-        .eq("status", "approved");
+      let reviewsData: Array<{
+        review_id: string;
+        listing_id: string;
+        buyer_id: string;
+        rating: number;
+        review_title: string | null;
+        review_text: string | null;
+        created_at: string;
+        is_verified_purchase: boolean | null;
+        helpful_count: number | null;
+        not_helpful_count: number | null;
+        status: string | null;
+        moderation_notes: string | null;
+        updated_at: string | null;
+        images?: string[];
+      }> = [];
+      let error: Error | null = null;
 
-      // Apply rating filter
-      if (filterRating !== "all") {
-        query = query.eq("rating", parseInt(filterRating));
+      if (sellerListings && sellerListings.length > 0) {
+        // If seller has listings, get reviews for those listings
+        const listingIds = sellerListings.map(l => l.listing_id);
+        console.log("🔗 Listing IDs to search for reviews:", listingIds);
+        
+        const { data: reviews, error: reviewsError } = await supabase
+          .from("product_reviews")
+          .select(`
+            review_id,
+            listing_id,
+            buyer_id,
+            rating,
+            review_title,
+            review_text,
+            created_at,
+            is_verified_purchase,
+            helpful_count,
+            not_helpful_count,
+            status,
+            moderation_notes,
+            updated_at
+          `)
+          .in("listing_id", listingIds)
+          .eq("status", "approved");
+
+        reviewsData = reviews || [];
+        error = reviewsError;
+        
+        console.log("📝 Reviews query result:", { reviews: reviewsData, error: reviewsError });
+        console.log("⭐ Found", reviewsData.length, "reviews for seller's listings");
+
+        // If we have reviews, fetch their images separately
+        if (reviewsData.length > 0) {
+          const reviewIds = reviewsData.map(r => r.review_id);
+          console.log("🖼️ Fetching images for review IDs:", reviewIds);
+          
+          const { data: reviewImages, error: imagesError } = await supabase
+            .from("review_images")
+            .select("review_id, image_url")
+            .in("review_id", reviewIds);
+
+          console.log("🖼️ Review images query result:", { reviewImages, imagesError });
+
+          // Group images by review_id
+          const imagesByReviewId: { [key: string]: string[] } = {};
+          if (reviewImages) {
+            reviewImages.forEach(img => {
+              if (!imagesByReviewId[img.review_id]) {
+                imagesByReviewId[img.review_id] = [];
+              }
+              imagesByReviewId[img.review_id].push(img.image_url);
+            });
+          }
+
+          // Add images to reviews
+          reviewsData = reviewsData.map(review => ({
+            ...review,
+            images: imagesByReviewId[review.review_id] || []
+          }));
+        }
+      } else {
+        console.log("⚠️ Seller has no listings, no reviews to show");
+        reviewsData = [];
       }
 
-      // Apply sorting
-      if (sortBy === "newest") {
-        query = query.order("created_at", { ascending: false });
-      } else if (sortBy === "oldest") {
-        query = query.order("created_at", { ascending: true });
-      } else if (sortBy === "highest_rated") {
-        query = query.order("rating", { ascending: false });
-      } else if (sortBy === "lowest_rated") {
-        query = query.order("rating", { ascending: true });
-      } else if (sortBy === "most_helpful") {
-        query = query.order("helpful_count", { ascending: false });
-      }
-
-      const { data: reviewsData, error } = await query;
-
-      if (error) {
-        console.error("Error fetching reviews:", error);
-        toast({
-          title: "Error",
-          description: "Failed to load customer feedback",
-          variant: "destructive",
-        });
-        return;
-      }
-
-      // Transform data
-      const formattedReviews: ProductReview[] = (reviewsData || []).map((review) => ({
-        review_id: review.review_id,
-        listing_id: review.listing_id,
-        rating: review.rating,
-        review_title: review.review_title || "",
-        review_text: review.review_text || "",
-        created_at: review.created_at,
-        is_verified_purchase: review.is_verified_purchase || false,
-        helpful_count: review.helpful_count || 0,
-        product_title: review.seller_product_listings?.seller_title || "Unknown Product",
-        product_category: "Product",
-        product_price: review.seller_product_listings?.base_price || 0,
-        product_image: review.seller_product_listings?.listing_images?.[0]?.image_url,
-        buyer_name: "Anonymous" // Privacy protection
-      }));
+      // Transform data and add product information
+      const formattedReviews: ProductReview[] = reviewsData.map((review) => {
+        const product = sellerListings?.find(l => l.listing_id === review.listing_id);
+        
+        return {
+          review_id: review.review_id,
+          listing_id: review.listing_id,
+          buyer_id: review.buyer_id,
+          rating: review.rating,
+          review_title: review.review_title || "",
+          review_text: review.review_text || "",
+          created_at: review.created_at,
+          is_verified_purchase: review.is_verified_purchase || false,
+          helpful_count: review.helpful_count || 0,
+          not_helpful_count: review.not_helpful_count || 0,
+          status: review.status || "pending",
+          moderation_notes: review.moderation_notes,
+          updated_at: review.updated_at,
+          images: review.images,
+          product_title: product?.seller_title || "Unknown Product",
+          product_category: "Product",
+          product_price: product?.discounted_price || product?.base_price || 0,
+          product_image: null, // We don't have images in the listings query
+          buyer_name: "Anonymous" // Privacy protection
+        };
+      });
 
       setReviews(formattedReviews);
 
@@ -334,7 +454,7 @@ export default function CustomerFeedback() {
     } finally {
       setLoading(false);
     }
-  }, [filterRating, sortBy, toast]);
+  }, [toast]);
 
   const renderStars = (rating: number) => {
     return (
@@ -445,7 +565,16 @@ export default function CustomerFeedback() {
         </TabsList>
 
         <TabsContent value="reviews" className="space-y-6">
-          <div className="flex gap-4 flex-wrap">
+          <div className="flex gap-4 flex-wrap items-center">
+            <div className="flex-1 min-w-64">
+              <Input
+                placeholder="Search reviews by title, content, or product name..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full"
+              />
+            </div>
+            
             <Select value={filterRating} onValueChange={setFilterRating}>
               <SelectTrigger className="w-40">
                 <SelectValue placeholder="Filter by rating" />
@@ -457,6 +586,18 @@ export default function CustomerFeedback() {
                 <SelectItem value="3">3 Stars</SelectItem>
                 <SelectItem value="2">2 Stars</SelectItem>
                 <SelectItem value="1">1 Star</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Select value={filterStatus} onValueChange={setFilterStatus}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Filter by status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
             
@@ -492,27 +633,56 @@ export default function CustomerFeedback() {
           <Card>
             <CardHeader>
               <CardTitle>Customer Reviews</CardTitle>
+              {/* Debug Info - Always Visible */}
+              <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-800">
+                  <strong>🔍 Debug Info:</strong><br/>
+                  Seller ID: {sellerId || 'Not authenticated'}<br/>
+                  Products loaded: {products.length}<br/>
+                  Reviews loaded: {reviews.length}<br/>
+                  Filtered reviews: {filteredReviews.length}<br/>
+                  Loading: {loading ? 'Yes' : 'No'}
+                </p>
+              </div>
             </CardHeader>
             <CardContent>
-              {(() => {
-                const filteredReviews = reviews.filter(review => {
-                  if (filterProduct !== "all" && review.listing_id !== filterProduct) {
-                    return false;
-                  }
-                  return true;
-                });
-
-                return filteredReviews.length === 0 ? (
+              {console.log("🎯 Rendering reviews section")}
+              {console.log("📊 Current state:", {
+                reviews: reviews.length,
+                filteredReviews: filteredReviews.length,
+                loading,
+                sellerId,
+                products: products.length,
+                filterRating,
+                filterStatus,
+                filterProduct,
+                searchTerm,
+                sortBy
+              })}
+              {filteredReviews.length === 0 ? (
                   <div className="text-center py-8">
                     <MessageSquare className="mx-auto h-12 w-12 text-gray-400" />
                     <h3 className="mt-2 text-sm font-medium text-gray-900">No reviews yet</h3>
                     <p className="mt-1 text-sm text-gray-500">
                       Your customer reviews will appear here once you receive them.
                     </p>
+                    <p className="mt-2 text-xs text-gray-400">
+                      Check browser console for debug information.
+                    </p>
+                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <p className="text-sm text-blue-800">
+                        <strong>Debug Info:</strong><br/>
+                        Seller ID: {sellerId || 'Not found'}<br/>
+                        Products loaded: {products.length}<br/>
+                        Reviews loaded: {reviews.length}
+                      </p>
+                    </div>
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {filteredReviews.map((review) => (
+                    {filteredReviews.map((review) => {
+                      console.log("🎯 Rendering review:", review);
+                      return (
                       <div key={review.review_id} className="border border-gray-200 rounded-lg p-4 hover:shadow-lg transition-shadow">
                         {/* Product Info Header */}
                         <div className="flex gap-4 mb-4">
@@ -541,6 +711,9 @@ export default function CustomerFeedback() {
                                   ✓ Verified Purchase
                                 </Badge>
                               )}
+                              <Badge variant={(review.status || 'pending') === 'approved' ? 'default' : (review.status || 'pending') === 'pending' ? 'secondary' : 'destructive'} className="text-xs">
+                                {review.status || 'pending'}
+                              </Badge>
                             </div>
                             <div className="flex items-center gap-2">
                               {renderStars(review.rating)}
@@ -553,28 +726,84 @@ export default function CustomerFeedback() {
                         </div>
 
                         {/* Review Content */}
-                        <div className="bg-gray-50 rounded p-3">
-                          {review.review_title && (
-                            <h4 className="font-semibold text-gray-900 mb-2">{review.review_title}</h4>
+                        <div className="bg-gray-50 rounded p-4 space-y-3">
+                          {/* Review Header with Listing ID */}
+                          <div className="flex justify-between items-start">
+                            <div className="text-xs text-gray-500">
+                              <strong>Listing ID:</strong> {review.listing_id}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              <strong>Review ID:</strong> {review.review_id}
+                            </div>
+                          </div>
+
+                          {/* Review Title */}
+                          {review.review_title && review.review_title.trim() && (
+                            <h4 className="font-semibold text-gray-900 text-lg">{review.review_title}</h4>
                           )}
-                          
-                          {review.review_text && (
-                            <p className="text-gray-700 text-sm leading-relaxed mb-2">{review.review_text}</p>
+
+                          {/* Review Text */}
+                          {review.review_text && review.review_text.trim() && (
+                            <p className="text-gray-700 text-sm leading-relaxed">{review.review_text}</p>
                           )}
+
+                          {/* If no title or text, show a placeholder */}
+                          {(!review.review_title || !review.review_title.trim()) && (!review.review_text || !review.review_text.trim()) && (
+                            <div className="text-center py-4 text-gray-500">
+                              <p className="text-sm">This review has no content.</p>
+                              <p className="text-xs mt-1">Rating: {review.rating} stars</p>
+                            </div>
+                          )}
+
+                          {/* Review Images */}
+                          {review.images && review.images.length > 0 && (
+                            <div className="mt-3">
+                              <p className="text-xs font-medium text-gray-600 mb-2">Review Images:</p>
+                              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                                {review.images.map((imageUrl, index) => (
+                                  <div key={index} className="relative">
+                                    <img
+                                      src={imageUrl}
+                                      alt={`Review image ${index + 1}`}
+                                      className="w-full h-20 object-cover rounded border cursor-pointer hover:opacity-80 transition-opacity"
+                                      onClick={() => window.open(imageUrl, '_blank')}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Helpful/Not Helpful Counts */}
+                          <div className="flex items-center gap-4 pt-2 border-t border-gray-200">
+                            <div className="flex items-center gap-1 text-sm">
+                              <span className="text-green-600">👍</span>
+                              <span className="font-medium">{review.helpful_count || 0}</span>
+                              <span className="text-gray-600">helpful</span>
+                            </div>
+                            <div className="flex items-center gap-1 text-sm">
+                              <span className="text-red-600">👎</span>
+                              <span className="font-medium">{review.not_helpful_count || 0}</span>
+                              <span className="text-gray-600">not helpful</span>
+                            </div>
+                          </div>
                         </div>
 
                         {/* Footer Stats */}
                         <div className="flex justify-between items-center mt-3 text-xs text-muted-foreground">
                           <span>Customer: {review.buyer_name}</span>
-                          {review.helpful_count > 0 && (
-                            <span>👍 {review.helpful_count} found helpful</span>
-                          )}
+                          <div className="text-xs text-gray-500">
+                            Status: <Badge variant={(review.status || 'pending') === 'approved' ? 'default' : (review.status || 'pending') === 'pending' ? 'secondary' : 'destructive'} className="text-xs ml-1">
+                              {review.status || 'pending'}
+                            </Badge>
+                          </div>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )
-              })}
+              }
             </CardContent>
           </Card>
         </TabsContent>
@@ -743,7 +972,7 @@ export default function CustomerFeedback() {
                         <div 
                           className="bg-yellow-400 h-2 rounded-full transition-all duration-300"
                           style={{ width: `${Math.min(Math.max(percentage, 5), 100)}%` }}
-                        ></div>
+                        />
                       </div>
                       <span className="text-sm text-muted-foreground w-12">{count}</span>
                     </div>

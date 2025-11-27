@@ -2,7 +2,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { 
   Home, BarChart2, Boxes, ClipboardList, 
   Megaphone, Wallet, UserCircle, LogOut, 
-  Heart, Bell, Shield, AlertCircle 
+  Heart, Bell, Shield, AlertCircle, Menu, X 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -34,6 +34,7 @@ export function Navbar() {
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [pendingVerifications, setPendingVerifications] = useState(0);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const sellerNavItems: NavItem[] = [
     { title: "Home", path: "/landing", icon: Home },
@@ -60,18 +61,39 @@ export function Navbar() {
     checkNotifications();
   }, [isAdmin]);
 
+  // Close mobile menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const nav = document.querySelector('nav');
+      if (nav && !nav.contains(event.target as Node)) {
+        setMobileMenuOpen(false);
+      }
+    };
+
+    if (mobileMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [mobileMenuOpen]);
+
   const loadProfile = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data } = await supabase
           .from("sellers")
-          .select("id,name")
+          .select("id,name,business_name")
           .eq("user_id", user.id)
-          .single();
+          .limit(1)
+          .maybeSingle();
 
         if (data) {
-          setUsername(data.name || "Seller");
+          // Use seller's name, business name, or extract from email
+          const sellerName = data.business_name || data.name || user.email?.split('@')[0] || "Seller";
+          setUsername(sellerName);
           // try to load profile photo from seller_documents
           const { data: docs } = await supabase
             .from('seller_documents')
@@ -80,10 +102,20 @@ export function Navbar() {
             .eq('doc_type', 'profile')
             .limit(1);
           if (docs && docs.length > 0) setProfilePhoto(docs[0].storage_path);
+        } else {
+          // Fallback to email username if no seller data
+          setUsername(user.email?.split('@')[0] || "Seller");
         }
       }
     } catch (error) {
       console.error("Error loading profile:", error);
+      // Fallback to user email username on error
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        setUsername(user?.email?.split('@')[0] || "Seller");
+      } catch {
+        setUsername("Seller");
+      }
     }
   };
 
@@ -95,7 +127,8 @@ export function Navbar() {
           .from("user_roles")
           .select("role_id")
           .eq("user_id", user.id)
-          .single();
+          .limit(1)
+          .maybeSingle();
 
         setIsAdmin(data?.role_id === "admin");
       }
@@ -112,7 +145,8 @@ export function Navbar() {
           .from("sellers")
           .select("verification_status")
           .eq("user_id", user.id)
-          .single();
+          .limit(1)
+          .maybeSingle();
 
         setKycStatus(data?.verification_status || null);
       }
@@ -182,7 +216,9 @@ export function Navbar() {
           <div className="hidden md:flex items-center gap-1">
             {(isAdmin ? adminNavItems : sellerNavItems).map((item) => {
               const isKYCVerified = isAdmin || kycStatus === "approved" || kycStatus === "verified";
-              const isDisabled = !isAdmin && !isKYCVerified;
+              // Allow customer feedback even with pending KYC
+              const isCustomerFeedback = item.path === "/customer-feedback";
+              const isDisabled = !isAdmin && !isKYCVerified && !isCustomerFeedback;
               
               if (isDisabled) {
                 return (
@@ -229,8 +265,71 @@ export function Navbar() {
             })}
           </div>
 
+          {/* Mobile Menu */}
+          {mobileMenuOpen && (
+            <div className="md:hidden absolute top-16 left-0 right-0 bg-background border-b shadow-lg">
+              <div className="px-4 py-2 space-y-1">
+                {(isAdmin ? adminNavItems : sellerNavItems).map((item) => {
+                  const isKYCVerified = isAdmin || kycStatus === "approved" || kycStatus === "verified";
+                  const isCustomerFeedback = item.path === "/customer-feedback";
+                  const isDisabled = !isAdmin && !isKYCVerified && !isCustomerFeedback;
+                  
+                  if (isDisabled) {
+                    return (
+                      <div
+                        key={item.path}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg text-muted-foreground/50 cursor-not-allowed opacity-60"
+                      >
+                        <item.icon className="w-4 h-4" />
+                        <span className="text-sm">{item.title}</span>
+                        {item.badge ? (
+                          <span className="px-1.5 py-0.5 text-xs font-medium bg-red-500 text-white rounded-full">
+                            {item.badge}
+                          </span>
+                        ) : null}
+                      </div>
+                    );
+                  }
+                  
+                  return (
+                    <NavLink
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => setMobileMenuOpen(false)}
+                      className={({ isActive }) =>
+                        `flex items-center gap-2 px-4 py-2 rounded-lg transition-smooth ${
+                          isActive
+                            ? "bg-primary/10 text-primary font-medium"
+                            : "text-foreground hover:bg-muted"
+                        }`
+                      }
+                    >
+                      <item.icon className="w-4 h-4" />
+                      <span className="text-sm">{item.title}</span>
+                      {item.badge ? (
+                        <span className="px-1.5 py-0.5 text-xs font-medium bg-red-500 text-white rounded-full">
+                          {item.badge}
+                        </span>
+                      ) : null}
+                    </NavLink>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Right Side */}
           <div className="flex items-center gap-3">
+            {/* Mobile Menu Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="md:hidden"
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            >
+              {mobileMenuOpen ? <X className="w-4 h-4" /> : <Menu className="w-4 h-4" />}
+            </Button>
+
             {/* Notifications */}
             <Button variant="ghost" size="icon" asChild>
               <NavLink to={isAdmin ? "/admin/verifications" : "/notifications"} className="relative">

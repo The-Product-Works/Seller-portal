@@ -174,7 +174,7 @@ export default function Dashboard() {
         .from("sellers")
         .select("verification_status, gstin_verified, pan_verified, aadhaar_verified")
         .eq("id", authSellerId)
-        .single();
+        .maybeSingle();
 
       if (seller) {
         setKycStatus(seller.verification_status);

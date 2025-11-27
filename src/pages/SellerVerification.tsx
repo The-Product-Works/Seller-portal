@@ -56,6 +56,12 @@ export default function SellerVerification() {
       setSeller(sellerData);
       setStatus(sellerData.verification_status || "pending");
 
+      // Redirect failed/revoked sellers to KYC page for resubmission
+      if (sellerData.verification_status === "failed" || sellerData.verification_status === "revoked") {
+        navigate("/kyc");
+        return;
+      }
+
       // load seller docs (aadhaar, pan, selfie)
       const { data: sellerDocs } = await supabase
         .from("seller_documents")
@@ -164,10 +170,18 @@ export default function SellerVerification() {
                   </div>
                 )}
 
-                {!["approved", "verified", "rejected"].includes(status) && !adminMessage && (
+                {!["approved", "verified", "rejected", "failed", "revoked"].includes(status) && !adminMessage && (
                   <div className="p-3 bg-blue-50 border rounded">
                     <p className="text-sm text-blue-900">
                       Admin will check KYC information and verify your seller account. Please check back later.
+                    </p>
+                  </div>
+                )}
+
+                {(status === "failed" || status === "revoked") && !adminMessage && (
+                  <div className="p-3 bg-red-50 border rounded">
+                    <p className="text-sm text-red-900">
+                      Your verification has been {status}. Reason: not correct data. Please resubmit your KYC information.
                     </p>
                   </div>
                 )}
@@ -203,8 +217,8 @@ export default function SellerVerification() {
                     <Button variant="secondary" onClick={() => navigate("/dashboard")}>
                       <CheckCircle className="h-4 w-4 mr-1" /> Verified - Go to Dashboard
                     </Button>
-                  ) : status === "rejected" ? (
-                    <Button variant="secondary" onClick={() => navigate("/KYC")}>
+                  ) : status === "rejected" || status === "failed" || status === "revoked" ? (
+                    <Button variant="secondary" onClick={() => navigate("/kyc")}>
                       <XCircle className="h-4 w-4 mr-1" /> Resubmit KYC
                     </Button>
                   ) : (

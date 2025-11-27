@@ -226,6 +226,60 @@ export async function createBrand(brandName: string) {
 }
 
 /**
+ * Create new category
+ */
+export async function createCategory(categoryName: string) {
+  let slug = categoryName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  // Handle duplicate category names
+  let counter = 0;
+  let categoryToInsert = categoryName;
+
+  while (true) {
+    const { data: existing, error: checkError } = await supabase
+      .from("categories")
+      .select("category_id")
+      .eq("name", categoryToInsert)
+      .maybeSingle();
+
+    if (checkError) throw checkError;
+
+    if (!existing) {
+      break; // Category name is unique, we can use it
+    }
+
+    counter++;
+    categoryToInsert = `${categoryName} (${counter})`;
+    slug = categoryToInsert
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  }
+
+  const { data, error } = await supabase
+    .from("categories")
+    .insert({
+      name: categoryToInsert,
+      slug: slug,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Error creating category:", error);
+    console.error("Data being inserted:", {
+      name: categoryToInsert,
+      slug: slug,
+    });
+    throw error;
+  }
+  return data;
+}
+
+/**
  * Get all allergens
  */
 export async function getAllergens() {

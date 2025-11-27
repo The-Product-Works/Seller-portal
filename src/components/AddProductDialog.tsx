@@ -31,6 +31,7 @@ import {
   generateUniqueSlug,
   getAllGlobalProducts,
   getAllBrands,
+  createCategory,
 } from "@/lib/inventory-helpers";
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import { ProductForm, VariantForm, TransparencyForm } from "@/types/inventory.types";
@@ -97,6 +98,7 @@ export default function AddProductDialog({
   const [brands, setBrands] = useState<Brand[]>([]);
   const [selectedBrand, setSelectedBrand] = useState<Brand | null>(null);
   
+  const [categorySearch, setCategorySearch] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   
@@ -116,13 +118,17 @@ export default function AddProductDialog({
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [sellerCommission, setSellerCommission] = useState<number>(0); // Additional commission seller adds on top of 2%
   const [status, setStatus] = useState<"draft" | "active">("draft");
-  const [showPreview, setShowPreview] = useState(false);
-  const [showImageManager, setShowImageManager] = useState(false);
+  const [showBrandInput, setShowBrandInput] = useState(false);
+  const [showCategoryInput, setShowCategoryInput] = useState(false);
+  const [showProductInput, setShowProductInput] = useState(false);
   
   const [productImages, setProductImages] = useState<File[]>([]);
   const [galleryImages, setGalleryImages] = useState<ImageFile[]>([]);
   const [certificateFiles, setCertificateFiles] = useState<File[]>([]);
   const [trustCertificateFiles, setTrustCertificateFiles] = useState<File[]>([]);
+  
+  const [showPreview, setShowPreview] = useState(false);
+  const [showImageManager, setShowImageManager] = useState(false);
   
   interface CertificateData {
     name: string;
@@ -304,20 +310,26 @@ export default function AddProductDialog({
   }
 
   async function handleCreateGlobalProduct() {
-    if (!globalProductSearch.trim()) {
-      toast({ title: "Enter a product name", variant: "destructive" });
+    const productName = globalProductSearch.trim();
+    
+    if (!productName) {
+      toast({
+        title: "Product name required",
+        description: "Please enter a product name",
+        variant: "destructive",
+      });
       return;
     }
     
     try {
       console.log("Creating global product with:", {
-        productName: globalProductSearch,
+        productName: productName,
         brandId: selectedBrand?.brand_id || "",
         categoryId: selectedCategory
       });
       
       const newProduct = await createGlobalProduct(
-        globalProductSearch,
+        productName,
         selectedBrand?.brand_id || "",
         selectedCategory
       );
@@ -339,6 +351,7 @@ export default function AddProductDialog({
         setGlobalProducts([formattedProduct, ...globalProducts]);
       }
       setGlobalProductSearch(""); // Clear search field
+      setShowProductInput(false); // Hide input
       
       // Check if this was an existing product or newly created
       const isExisting = globalProducts.some(p => 
@@ -365,26 +378,67 @@ export default function AddProductDialog({
   }
 
   async function handleCreateBrand() {
-    if (!brandSearch.trim()) {
-      toast({ title: "Enter a brand name", variant: "destructive" });
+    const brandName = brandSearch.trim();
+    
+    if (!brandName) {
+      toast({
+        title: "Brand name required",
+        description: "Please enter a brand name",
+        variant: "destructive",
+      });
       return;
     }
     
     try {
-      console.log("Creating brand with name:", brandSearch);
-      const newBrand = await createBrand(brandSearch);
+      console.log("Creating brand with name:", brandName);
+      const newBrand = await createBrand(brandName);
       console.log("Brand created successfully:", newBrand);
       
       setSelectedBrand(newBrand);
       // Add to brands list so it appears in dropdown
       setBrands([newBrand, ...brands]);
       setBrandSearch(""); // Clear search field
+      setShowBrandInput(false); // Hide input
       toast({ title: "Brand created successfully" });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
       console.error("Brand creation failed:", error);
       toast({
         title: "Error creating brand",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function handleCreateCategory() {
+    const categoryName = categorySearch.trim();
+    
+    if (!categoryName) {
+      toast({
+        title: "Category name required",
+        description: "Please enter a category name",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    try {
+      console.log("Creating category with name:", categoryName);
+      const newCategory = await createCategory(categoryName);
+      console.log("Category created successfully:", newCategory);
+      
+      setSelectedCategory(newCategory.category_id);
+      // Add to categories list so it appears in dropdown
+      setCategories([newCategory, ...categories]);
+      setCategorySearch(""); // Clear search field
+      setShowCategoryInput(false); // Hide input
+      toast({ title: "Category created successfully" });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+      console.error("Category creation failed:", error);
+      toast({
+        title: "Error creating category",
         description: errorMessage,
         variant: "destructive",
       });
@@ -858,7 +912,7 @@ export default function AddProductDialog({
           <TabsContent value="basic" className="space-y-4">
             {/* Brand Selection */}
             <div className="space-y-2">
-              <Label>Brand <span className="text-red-500">*</span></Label>
+              <Label>Brand Name *</Label>
               <div className="flex gap-2">
                 <Select 
                   value={selectedBrand?.brand_id || ""} 
@@ -881,18 +935,39 @@ export default function AddProductDialog({
                 <Button 
                   variant="outline" 
                   size="icon"
-                  onClick={() => {
-                    const newBrandName = prompt("Brand name:");
-                    if (newBrandName) {
-                      setBrandSearch(newBrandName);
-                      handleCreateBrand();
-                    }
-                  }}
-                  title="Create a new brand"
+                  onClick={() => setShowBrandInput(!showBrandInput)}
+                  title="Add new brand"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+              {showBrandInput && (
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    value={brandSearch}
+                    onChange={(e) => setBrandSearch(e.target.value)}
+                    placeholder="Enter brand name"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleCreateBrand();
+                      }
+                    }}
+                  />
+                  <Button onClick={handleCreateBrand} size="sm">
+                    Add
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setShowBrandInput(false);
+                      setBrandSearch("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
               {selectedBrand && (
                 <p className="text-xs text-muted-foreground">
                   Selected: {selectedBrand.name}
@@ -927,18 +1002,39 @@ export default function AddProductDialog({
                 <Button 
                   variant="outline" 
                   size="icon"
-                  onClick={() => {
-                    const newProductName = prompt("Product name:");
-                    if (newProductName) {
-                      setGlobalProductSearch(newProductName);
-                      handleCreateGlobalProduct();
-                    }
-                  }}
-                  title="Create a new product"
+                  onClick={() => setShowProductInput(!showProductInput)}
+                  title="Add new product"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
               </div>
+              {showProductInput && (
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    value={globalProductSearch}
+                    onChange={(e) => setGlobalProductSearch(e.target.value)}
+                    placeholder="Enter product name"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleCreateGlobalProduct();
+                      }
+                    }}
+                  />
+                  <Button onClick={handleCreateGlobalProduct} size="sm">
+                    Add
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setShowProductInput(false);
+                      setGlobalProductSearch("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
               {selectedGlobalProduct && (
                 <p className="text-xs text-muted-foreground">
                   Selected: {selectedGlobalProduct.product_name}
@@ -949,18 +1045,55 @@ export default function AddProductDialog({
             {/* Category */}
             <div className="space-y-2">
               <Label>Category</Label>
-              <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.category_id} value={cat.category_id}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((cat) => (
+                      <SelectItem key={cat.category_id} value={cat.category_id}>
+                        {cat.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button 
+                  variant="outline" 
+                  size="icon"
+                  onClick={() => setShowCategoryInput(!showCategoryInput)}
+                  title="Add new category"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+              {showCategoryInput && (
+                <div className="flex gap-2 mt-2">
+                  <Input
+                    value={categorySearch}
+                    onChange={(e) => setCategorySearch(e.target.value)}
+                    placeholder="Enter category name"
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        handleCreateCategory();
+                      }
+                    }}
+                  />
+                  <Button onClick={handleCreateCategory} size="sm">
+                    Add
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      setShowCategoryInput(false);
+                      setCategorySearch("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              )}
             </div>
 
             {/* Seller Title */}

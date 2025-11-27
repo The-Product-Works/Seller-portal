@@ -64,6 +64,35 @@ export function ReturnQCDialog({
       return;
     }
 
+    // Check if the return is in an allowed state for seller updates
+    try {
+      const { data: returnData, error: returnError } = await supabase
+        .from("order_returns")
+        .select("status")
+        .eq("return_id", returnId)
+        .single();
+
+      if (returnError) throw returnError;
+
+      const allowedStates = ["initiated", "seller_review", "pickup_scheduled", "picked_up", "quality_check", "approved", "rejected", "completed"];
+      if (!allowedStates.includes(returnData.status)) {
+        toast({
+          title: "Access Denied",
+          description: `Cannot perform QC for return with status '${returnData.status}'. Only returns in specific workflow states can be updated by sellers.`,
+          variant: "destructive",
+        });
+        return;
+      }
+    } catch (error) {
+      console.error("Error checking return status:", error);
+      toast({
+        title: "Error",
+        description: "Failed to verify return status. Please try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
       // Insert QC record

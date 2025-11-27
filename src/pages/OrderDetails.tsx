@@ -556,6 +556,19 @@ export default function OrderDetails() {
 
   const handleReturnQC = async (returnId: string, result: "passed" | "failed") => {
     try {
+      // First check if the return is in an allowed state for seller updates
+      const returnItem = orderReturns.find(r => r.return_id === returnId);
+      const allowedStates = ["initiated", "seller_review", "pickup_scheduled", "picked_up", "quality_check", "approved", "rejected", "completed"];
+      
+      if (!returnItem || !allowedStates.includes(returnItem.status)) {
+        toast({
+          title: "Access Denied",
+          description: `Cannot perform QC on return with status '${returnItem?.status}'. Only returns in specific workflow states can be updated by sellers.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
       const sellerId = await getAuthenticatedSellerId();
 
       try {
@@ -610,6 +623,19 @@ export default function OrderDetails() {
   };
 
   const handleReturnCourierAssignment = async (returnId: string) => {
+    // First check if the return is in an allowed state for seller updates
+    const returnItem = orderReturns.find(r => r.return_id === returnId);
+    const allowedStates = ["initiated", "seller_review", "pickup_scheduled", "picked_up", "quality_check", "approved", "rejected", "completed"];
+    
+    if (!returnItem || !allowedStates.includes(returnItem.status)) {
+      toast({
+        title: "Access Denied",
+        description: `Cannot assign courier for return with status '${returnItem?.status}'. Only returns in specific workflow states can be updated by sellers.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     if (!courierDetails.consignmentNumber.trim()) {
       toast({
         title: "Missing Information",
@@ -672,6 +698,19 @@ export default function OrderDetails() {
   };
 
   const handleInitiateRefund = async (returnId: string) => {
+    // First check if the return is in an allowed state for seller updates
+    const returnItem = orderReturns.find(r => r.return_id === returnId);
+    const allowedStates = ["initiated", "seller_review", "pickup_scheduled", "picked_up", "quality_check", "approved", "rejected", "completed"];
+    
+    if (!returnItem || !allowedStates.includes(returnItem.status)) {
+      toast({
+        title: "Access Denied",
+        description: `Cannot initiate refund for return with status '${returnItem?.status}'. Only returns in specific workflow states can be updated by sellers.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
     try {
       const sellerId = await getAuthenticatedSellerId();
 
@@ -1094,49 +1133,62 @@ export default function OrderDetails() {
 
                               {/* Return Actions */}
                               <div className="flex gap-2 flex-wrap">
-                                {returnItem.status === "initiated" && (
+                                {/* Only show actions if return is in allowed states for seller updates */}
+                                {["initiated", "seller_review", "pickup_scheduled", "picked_up", "quality_check", "approved", "rejected", "completed"].includes(returnItem.status) && (
                                   <>
-                                    <Button 
-                                      size="sm" 
-                                      onClick={() => {
-                                        setSelectedReturnId(returnItem.return_id);
-                                        setReturnCourierDialogOpen(true);
-                                      }}
-                                    >
-                                      Assign Pickup
-                                    </Button>
-                                    <Button 
-                                      size="sm" 
-                                      variant="outline"
-                                      onClick={() => {
-                                        setSelectedReturnId(returnItem.return_id);
-                                        setReturnQCDialogOpen(true);
-                                      }}
-                                    >
-                                      Start QC
-                                    </Button>
+                                    {returnItem.status === "initiated" && (
+                                      <>
+                                        <Button 
+                                          size="sm" 
+                                          onClick={() => {
+                                            setSelectedReturnId(returnItem.return_id);
+                                            setReturnCourierDialogOpen(true);
+                                          }}
+                                        >
+                                          Assign Pickup
+                                        </Button>
+                                        <Button 
+                                          size="sm" 
+                                          variant="outline"
+                                          onClick={() => {
+                                            setSelectedReturnId(returnItem.return_id);
+                                            setReturnQCDialogOpen(true);
+                                          }}
+                                        >
+                                          Start QC
+                                        </Button>
+                                      </>
+                                    )}
+                                    
+                                    {returnItem.status === "picked_up" && !qcRecord && (
+                                      <Button 
+                                        size="sm"
+                                        onClick={() => {
+                                          setSelectedReturnId(returnItem.return_id);
+                                          setReturnQCDialogOpen(true);
+                                        }}
+                                      >
+                                        Perform QC
+                                      </Button>
+                                    )}
+                                    
+                                    {returnItem.status === "approved" && (
+                                      <Button 
+                                        size="sm" 
+                                        onClick={() => handleInitiateRefund(returnItem.return_id)}
+                                      >
+                                        Initiate Refund
+                                      </Button>
+                                    )}
                                   </>
                                 )}
-                                
-                                {returnItem.status === "picked_up" && !qcRecord && (
-                                  <Button 
-                                    size="sm"
-                                    onClick={() => {
-                                      setSelectedReturnId(returnItem.return_id);
-                                      setReturnQCDialogOpen(true);
-                                    }}
-                                  >
-                                    Perform QC
-                                  </Button>
-                                )}
-                                
-                                {returnItem.status === "approved" && (
-                                  <Button 
-                                    size="sm" 
-                                    onClick={() => handleInitiateRefund(returnItem.return_id)}
-                                  >
-                                    Initiate Refund
-                                  </Button>
+
+                                {/* Show message if return is not in allowed states */}
+                                {!["initiated", "seller_review", "pickup_scheduled", "picked_up", "quality_check", "approved", "rejected", "completed"].includes(returnItem.status) && (
+                                  <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded border border-amber-200 w-full">
+                                    <AlertTriangle className="h-3 w-3 inline mr-1" />
+                                    Return status '{returnItem.status}' is not eligible for seller updates. Only returns in specific workflow states can be managed by sellers.
+                                  </div>
                                 )}
                               </div>
                             </div>

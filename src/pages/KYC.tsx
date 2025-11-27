@@ -23,12 +23,10 @@ import { useDocumentUpload } from "@/hooks/useDocumentUpload";
 const kycSchema = z.object({
   aadhaarNumber: z
     .string()
-    .regex(/^[2-9]{1}[0-9]{11}$/, "Invalid Aadhaar number")
-    .optional(),
+    .regex(/^[2-9]{1}[0-9]{11}$/, "Invalid Aadhaar number"),
   panNumber: z
     .string()
-    .regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, "Invalid PAN number")
-    .optional(),
+    .regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, "Invalid PAN number"),
   gstin: z
     .string()
     .regex(
@@ -39,12 +37,12 @@ const kycSchema = z.object({
   bankAccountNumber: z
     .string()
     .min(9, "Invalid account number")
-    .max(18, "Invalid account number")
-    .optional(),
+    .max(18, "Invalid account number"),
   bankIfscCode: z
     .string()
-    .regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, "Invalid IFSC code")
-    .optional(),
+    .regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, "Invalid IFSC code"),
+  bankName: z.string().min(1, "Bank name is required"),
+  bankAccountHolderName: z.string().min(1, "Account holder name is required"),
 });
 
 // ✅ Business types (match EXACTLY Supabase enum)
@@ -246,11 +244,13 @@ export default function KYC() {
 
     try {
       const validation = kycSchema.safeParse({
-        aadhaarNumber: formData.aadhaarNumber || undefined,
-        panNumber: formData.panNumber || undefined,
+        aadhaarNumber: formData.aadhaarNumber,
+        panNumber: formData.panNumber,
         gstin: formData.gstin || undefined,
-        bankAccountNumber: formData.bankAccountNumber || undefined,
-        bankIfscCode: formData.bankIfscCode || undefined,
+        bankAccountNumber: formData.bankAccountNumber,
+        bankIfscCode: formData.bankIfscCode,
+        bankName: formData.bankName,
+        bankAccountHolderName: formData.bankAccountHolderName,
       });
 
       if (!validation.success) {
@@ -294,16 +294,6 @@ export default function KYC() {
       const isIndividual = safeBusinessType === "individual";
 
       if (!seller) {
-        if (!selfiePhoto || !aadhaarPhoto || !panPhoto) {
-          toast({
-            title: "Missing photos",
-            description: "Please upload Selfie, Aadhaar and PAN photos",
-            variant: "destructive",
-          });
-          setSubmitting(false);
-          return;
-        }
-
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -434,14 +424,12 @@ export default function KYC() {
         }
 
         toast({
-          title: "Welcome! 🎉",
+          title: `Hi ${user.email?.split('@')[0] || 'Seller'}, welcome to Protimart! 🎉`,
           description: "Your KYC has been submitted successfully. Documents are under review.",
         });
         navigate("/seller-verification");
         return;
       }
-
-      // Update user phone in auth
       const {
         data: { user: currentUser },
       } = await supabase.auth.getUser();
@@ -551,7 +539,7 @@ export default function KYC() {
         });
       }
 
-      toast({ title: "Resubmitted", description: "Your KYC has been resubmitted for review. Thank you for updating your information." });
+      toast({ title: "Resubmitting KYC", description: "Your KYC has been resubmitted for review. Thank you for updating your information." });
       navigate("/seller-verification");
     } catch (err: unknown) {
       let errorMessage = "Failed to submit KYC";
@@ -581,8 +569,8 @@ export default function KYC() {
         <Card className="w-full max-w-md text-center">
           <CardHeader>
             <CheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-            <CardTitle className="text-2xl">KYC Verified</CardTitle>
-            <CardDescription>Your account is verified.</CardDescription>
+            <CardTitle className="text-2xl">KYC Approved</CardTitle>
+            <CardDescription>Your KYC has been approved by admin. You can now access the dashboard.</CardDescription>
           </CardHeader>
           <CardContent>
             <Button onClick={() => navigate("/dashboard")}>
@@ -593,6 +581,9 @@ export default function KYC() {
       </div>
     );
 
+  // Show warning message for failed/revoked status but allow resubmission
+  const showRevocationWarning = kycStatus === "failed" || kycStatus === "revoked";
+
   return (
     <div className="min-h-screen bg-background py-12 px-4">
       <div className="max-w-4xl mx-auto">
@@ -600,6 +591,16 @@ export default function KYC() {
           <CardHeader>
             <CardTitle className="text-3xl">Complete KYC Verification</CardTitle>
             <CardDescription>Provide accurate information</CardDescription>
+            {showRevocationWarning && (
+              <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <div className="flex items-center gap-2 text-red-800">
+                  <X className="w-5 h-5" />
+                  <span className="font-semibold">Verification Status Revoked</span>
+                </div>
+                <p className="text-red-700 mt-1">Your verification has been revoked. Reason: not correct data</p>
+                <p className="text-red-600 text-sm mt-2">Please update your information below and resubmit.</p>
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="kyc">
@@ -619,7 +620,7 @@ export default function KYC() {
                     <div className="grid md:grid-cols-3 gap-6">
                       {/* Selfie */}
                       <div className="space-y-2">
-                        <Label htmlFor="selfie-upload">Selfie Photo *</Label>
+                        <Label>Selfie Photo *</Label>
                         {uploadedDocuments.selfie || selfiePhoto ? (
                           <div className="relative border-2 border-dashed rounded-lg p-2">
                             <img
@@ -645,11 +646,9 @@ export default function KYC() {
                           </div>
                         ) : (
                           <div className="space-y-2">
-                            <input
-                              id="selfie-upload"
+                            <Input
                               type="file"
                               accept="image/*"
-                              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 console.log("Selfie file selected:", file?.name, file?.size, file?.type);
@@ -666,7 +665,7 @@ export default function KYC() {
 
                       {/* Aadhaar */}
                       <div className="space-y-2">
-                        <Label>Aadhaar Photo</Label>
+                        <Label>Aadhaar Photo *</Label>
                         {uploadedDocuments.aadhaar || aadhaarPhoto ? (
                           <div className="relative border-2 border-dashed rounded-lg p-2">
                             <img
@@ -691,19 +690,25 @@ export default function KYC() {
                             </button>
                           </div>
                         ) : (
-                          <Input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) =>
-                              setAadhaarPhoto(e.target.files?.[0] || null)
-                            }
-                          />
+                          <div className="space-y-2">
+                            <Input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) =>
+                                setAadhaarPhoto(e.target.files?.[0] || null)
+                              }
+                              required
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Upload a clear Aadhaar photo (required)
+                            </p>
+                          </div>
                         )}
                       </div>
 
                       {/* PAN */}
                       <div className="space-y-2">
-                        <Label>PAN Photo</Label>
+                        <Label>PAN Photo *</Label>
                         {uploadedDocuments.pan || panPhoto ? (
                           <div className="relative border-2 border-dashed rounded-lg p-2">
                             <img
@@ -728,13 +733,19 @@ export default function KYC() {
                             </button>
                           </div>
                         ) : (
-                          <Input
-                            type="file"
-                            accept="image/*"
-                            onChange={(e) =>
-                              setPanPhoto(e.target.files?.[0] || null)
-                            }
-                          />
+                          <div className="space-y-2">
+                            <Input
+                              type="file"
+                              accept="image/*"
+                              onChange={(e) =>
+                                setPanPhoto(e.target.files?.[0] || null)
+                              }
+                              required
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Upload a clear PAN photo (required)
+                            </p>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -923,7 +934,7 @@ export default function KYC() {
                     </div>
 
                     <div>
-                      <Label>Bank Name</Label>
+                      <Label>Bank Name *</Label>
                       <Input
                         value={formData.bankName}
                         onChange={(e) =>
@@ -932,11 +943,17 @@ export default function KYC() {
                             bankName: e.target.value,
                           })
                         }
+                        required
                       />
+                      {errors.bankName && (
+                        <p className="text-sm text-destructive">
+                          {errors.bankName}
+                        </p>
+                      )}
                     </div>
 
                     <div>
-                      <Label>Account Number</Label>
+                      <Label>Account Number *</Label>
                       <Input
                         value={formData.bankAccountNumber}
                         onChange={(e) =>
@@ -945,6 +962,7 @@ export default function KYC() {
                             bankAccountNumber: e.target.value,
                           })
                         }
+                        required
                       />
                       {errors.bankAccountNumber && (
                         <p className="text-sm text-destructive">
@@ -954,7 +972,7 @@ export default function KYC() {
                     </div>
 
                     <div>
-                      <Label>IFSC Code</Label>
+                      <Label>IFSC Code *</Label>
                       <Input
                         value={formData.bankIfscCode}
                         onChange={(e) =>
@@ -963,6 +981,7 @@ export default function KYC() {
                             bankIfscCode: e.target.value.toUpperCase(),
                           })
                         }
+                        required
                       />
                       {errors.bankIfscCode && (
                         <p className="text-sm text-destructive">
@@ -972,7 +991,7 @@ export default function KYC() {
                     </div>
 
                     <div>
-                      <Label>Account Holder Name</Label>
+                      <Label>Account Holder Name *</Label>
                       <Input
                         value={formData.bankAccountHolderName}
                         onChange={(e) =>
@@ -981,7 +1000,13 @@ export default function KYC() {
                             bankAccountHolderName: e.target.value,
                           })
                         }
+                        required
                       />
+                      {errors.bankAccountHolderName && (
+                        <p className="text-sm text-destructive">
+                          {errors.bankAccountHolderName}
+                        </p>
+                      )}
                     </div>
 
                     <div>
@@ -1003,7 +1028,7 @@ export default function KYC() {
                       {submitting && (
                         <Loader2 className="animate-spin h-4 w-4 mr-2" />
                       )}
-                      Submit KYC
+                      {showRevocationWarning ? "Resubmit KYC" : "Submit KYC"}
                     </Button>
                   </div>
                 </form>

@@ -7,10 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Search, Filter, Star, Image as ImageIcon, TrendingUp, Package, Flag } from "lucide-react";
-import heroImage from "@/assets/hero-protimart.jpg";
+import { Search, Filter, Star, Image as ImageIcon, TrendingUp, Package, Flag, ChevronLeft, ChevronRight } from "lucide-react";
 import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
+import { ImageViewer } from "@/components/ImageViewer";
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
+import heroImage from "@/assets/hero-protimart.jpg";
 
 interface SellerListing {
   listing_id: string;
@@ -35,6 +36,15 @@ interface SellerListing {
     image_url: string;
     is_primary: boolean;
   }>;
+  listing_variants?: Array<{
+    variant_id: string;
+    variant_name: string;
+    size: string | null;
+    flavor: string | null;
+    price: number;
+    stock_quantity: number;
+    is_available: boolean;
+  }>;
 }
 
 interface Brand {
@@ -55,6 +65,39 @@ export default function Landing() {
   const [filterBrand, setFilterBrand] = useState<string>("");
   const [minPrice, setMinPrice] = useState<number | "">("");
   const [maxPrice, setMaxPrice] = useState<number | "">("");
+
+  // Variant selection state
+  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+
+  // Image carousel state
+  const [currentImageIndexes, setCurrentImageIndexes] = useState<Record<string, number>>({});
+
+  // Image viewer state
+  const [imageViewerOpen, setImageViewerOpen] = useState(false);
+  const [viewerImages, setViewerImages] = useState<Array<{ image_url: string; is_primary?: boolean }>>([]);
+  const [viewerInitialIndex, setViewerInitialIndex] = useState(0);
+
+  // Image navigation functions
+  const nextImage = (listingId: string, totalImages: number) => {
+    setCurrentImageIndexes(prev => ({
+      ...prev,
+      [listingId]: ((prev[listingId] || 0) + 1) % totalImages
+    }));
+  };
+
+  const prevImage = (listingId: string, totalImages: number) => {
+    setCurrentImageIndexes(prev => ({
+      ...prev,
+      [listingId]: prev[listingId] === 0 ? totalImages - 1 : (prev[listingId] || 0) - 1
+    }));
+  };
+
+  // Open image viewer
+  const openImageViewer = (images: Array<{ image_url: string; is_primary?: boolean }>, initialIndex: number) => {
+    setViewerImages(images);
+    setViewerInitialIndex(initialIndex);
+    setImageViewerOpen(true);
+  };
 
   useEffect(() => {
     loadData();
@@ -91,6 +134,15 @@ export default function Landing() {
             listing_images (
               image_url,
               is_primary
+            ),
+            listing_variants (
+              variant_id,
+              variant_name,
+              size,
+              flavor,
+              price,
+              stock_quantity,
+              is_available
             )
           `
           )
@@ -137,7 +189,7 @@ export default function Landing() {
   }, [listings, search, filterBrand, minPrice, maxPrice]);
 
   return (
-    <>
+    <div>
       <SellerRaiseDispute
         isOpen={raiseDisputeOpen}
         onClose={() => setRaiseDisputeOpen(false)}
@@ -244,46 +296,113 @@ export default function Landing() {
           <h2 className="text-2xl font-bold gradient-text">All Products</h2>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 py-6">
-          {loading ? (
-            [...Array(8)].map((_, i) => (
-              <Card key={i} className="animate-pulse">
-                <div className="h-48 bg-muted rounded-t-lg" />
-                <CardContent className="p-4 space-y-3">
-                  <div className="h-4 bg-muted rounded" />
-                  <div className="h-4 bg-muted rounded w-3/4" />
-                </CardContent>
-              </Card>
-            ))
-          ) : filteredListings.length === 0 ? (
-            <div className="text-muted-foreground text-center col-span-full py-8">
-              <Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <p>No products found</p>
-            </div>
-          ) : (
-            filteredListings.map((listing) => {
-              const primaryImage = listing.listing_images?.find((img) => img.is_primary);
+        <div className="overflow-x-auto pb-4">
+          <div className="flex gap-6 min-w-max">
+            {loading ? (
+              [...Array(8)].map((_, i) => (
+                <Card key={i} className="animate-pulse flex-shrink-0 w-80">
+                  <div className="h-48 bg-muted rounded-t-lg" />
+                  <CardContent className="p-4 space-y-3">
+                    <div className="h-4 bg-muted rounded" />
+                    <div className="h-4 bg-muted rounded w-3/4" />
+                  </CardContent>
+                </Card>
+              ))
+            ) : filteredListings.length === 0 ? (
+              <div className="text-muted-foreground text-center col-span-full py-8">
+                <Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                <p>No products found</p>
+              </div>
+            ) : (
+              filteredListings.map((listing) => {
+              const images = listing.listing_images || [];
+              const currentImageIndex = currentImageIndexes[listing.listing_id] || 0;
+              const currentImage = images[currentImageIndex] || images[0];
+              
               const brandName = listing.global_products?.brands?.name || "Unknown Brand";
               const productName = listing.seller_title || listing.global_products?.product_name || "Untitled";
               const discount = listing.discount_percentage || 0;
-              const displayPrice = listing.discounted_price || listing.base_price;
+              
+              // Get selected variant or first available
+              const selectedVariantId = selectedVariants[listing.listing_id];
+              const selectedVariant = selectedVariantId 
+                ? listing.listing_variants?.find(v => v.variant_id === selectedVariantId)
+                : listing.listing_variants?.find(v => v.is_available && v.stock_quantity > 0);
+              
+              // Use variant price if available, otherwise listing price
+              const displayPrice = selectedVariant ? selectedVariant.price : (listing.discounted_price || listing.base_price);
+              const originalPrice = selectedVariant ? selectedVariant.price : listing.base_price;
 
               return (
                 <Card
                   key={listing.listing_id}
-                  className="group hover:shadow-lg transition cursor-pointer"
+                  className="group hover:shadow-lg transition cursor-pointer flex-shrink-0 w-80"
                   onClick={() => navigate(`/listing/${listing.listing_id}`)}
                 >
                   <div className="h-48 bg-muted flex items-center justify-center overflow-hidden rounded-t-lg relative">
-                    {primaryImage?.image_url ? (
+                    {currentImage?.image_url ? (
                       <img
-                        src={primaryImage.image_url}
+                        src={currentImage.image_url}
                         alt={productName}
-                        className="object-cover w-full h-full transition-transform group-hover:scale-105"
+                        className="object-cover w-full h-full transition-transform group-hover:scale-105 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openImageViewer(images, currentImageIndex);
+                        }}
                       />
                     ) : (
                       <ImageIcon className="w-12 h-12 text-muted-foreground" />
                     )}
+                    
+                    {/* Image Navigation */}
+                    {images.length > 1 && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            prevImage(listing.listing_id, images.length);
+                          }}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 transition-colors opacity-0 group-hover:opacity-100"
+                          aria-label="Previous image"
+                        >
+                          <ChevronLeft className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            nextImage(listing.listing_id, images.length);
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 transition-colors opacity-0 group-hover:opacity-100"
+                          aria-label="Next image"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                        
+                        {/* Image Indicators */}
+                        <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                          {images.slice(0, 5).map((_, index) => (
+                            <button
+                              key={index}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setCurrentImageIndexes(prev => ({
+                                  ...prev,
+                                  [listing.listing_id]: index
+                                }));
+                              }}
+                              className={`w-2 h-2 rounded-full transition-colors ${
+                                index === currentImageIndex ? 'bg-white' : 'bg-white/50'
+                              }`}
+                              aria-label={`Go to image ${index + 1}`}
+                            />
+                          ))}
+                          {images.length > 5 && (
+                            <span className="text-white text-xs ml-1">+{images.length - 5}</span>
+                          )}
+                        </div>
+                      </>
+                    )}
+                    
                     {discount > 0 && (
                       <Badge className="absolute top-2 right-2 bg-red-500">
                         {discount}% OFF
@@ -298,12 +417,49 @@ export default function Landing() {
                     <p className="text-sm text-muted-foreground line-clamp-2">
                       {listing.seller_description}
                     </p>
+                    
+                    {/* Variant Selection */}
+                    {listing.listing_variants && listing.listing_variants.length > 1 && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium text-muted-foreground">Variants:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {listing.listing_variants
+                            .filter(v => v.is_available && v.stock_quantity > 0)
+                            .slice(0, 4) // Show max 4 variants
+                            .map((variant) => (
+                            <button
+                              key={variant.variant_id}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedVariants(prev => ({
+                                  ...prev,
+                                  [listing.listing_id]: variant.variant_id
+                                }));
+                              }}
+                              className={`text-xs px-2 py-1 rounded border transition-colors ${
+                                selectedVariant?.variant_id === variant.variant_id
+                                  ? 'bg-primary text-primary-foreground border-primary'
+                                  : 'bg-background hover:bg-muted border-border'
+                              }`}
+                            >
+                              {variant.variant_name || `${variant.size || ''} ${variant.flavor || ''}`.trim() || 'Variant'}
+                            </button>
+                          ))}
+                          {listing.listing_variants.filter(v => v.is_available && v.stock_quantity > 0).length > 4 && (
+                            <span className="text-xs text-muted-foreground px-2 py-1">
+                              +{listing.listing_variants.filter(v => v.is_available && v.stock_quantity > 0).length - 4} more
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="flex items-center justify-between mt-2">
                       <div className="flex items-baseline gap-2">
                         <span className="text-xl font-bold text-primary">₹{displayPrice}</span>
-                        {discount > 0 && (
+                        {discount > 0 && originalPrice !== displayPrice && (
                           <span className="text-sm text-muted-foreground line-through">
-                            ₹{listing.base_price}
+                            ₹{originalPrice}
                           </span>
                         )}
                       </div>
@@ -318,9 +474,9 @@ export default function Landing() {
                         Health Score: {listing.health_score}/100
                       </Badge>
                     )}
-                    {listing.total_stock_quantity < 10 && listing.total_stock_quantity > 0 && (
+                    {selectedVariant && selectedVariant.stock_quantity < 10 && selectedVariant.stock_quantity > 0 && (
                       <p className="text-xs text-orange-500">
-                        Only {listing.total_stock_quantity} left in stock!
+                        Only {selectedVariant.stock_quantity} left in stock!
                       </p>
                     )}
                   </CardContent>
@@ -331,6 +487,15 @@ export default function Landing() {
         </div>
       </div>
       </div>
-    </>
-  );
+
+      {/* Image Viewer */}
+      <ImageViewer
+        images={viewerImages}
+        initialIndex={viewerInitialIndex}
+        isOpen={imageViewerOpen}
+        onClose={() => setImageViewerOpen(false)}
+      />
+    </div>
+  </div>
+);
 }

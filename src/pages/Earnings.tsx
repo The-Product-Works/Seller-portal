@@ -183,7 +183,14 @@ export default function Earnings() {
     // First get basic payout items (to ensure table works)
     const { data: payoutData, error: payoutError } = await supabase
       .from("seller_payout_items")
-      .select("*")
+      .select(`
+        *,
+        payments(
+          amount,
+          razorpay_fee,
+          razorpay_tax
+        )
+      `)
       .in("order_item_id", orderItemIds)
       .order("created_at", { ascending: false })
       .limit(100);
@@ -265,6 +272,39 @@ export default function Earnings() {
 
   const calculateNetEarning = (item: PayoutItemWithDetails) => {
     return item.item_subtotal - item.allocated_razorpay_fee - item.allocated_razorpay_tax;
+  };
+
+  // Recalculate fees proportionally for display (without changing database)
+  const recalculateProportionalFees = (item: PayoutItemWithDetails) => {
+    // If we have payment data, recalculate fees proportionally
+    if (item.payments) {
+      const totalOrderAmount = item.payments.amount || 0;
+      const totalRazorpayFee = item.payments.razorpay_fee || 0;
+      const totalRazorpayTax = item.payments.razorpay_tax || 0;
+
+      if (totalOrderAmount > 0) {
+        const proportion = item.item_subtotal / totalOrderAmount;
+        const correctFee = totalRazorpayFee * proportion;
+        const correctTax = totalRazorpayTax * proportion;
+
+        return {
+          allocated_razorpay_fee: correctFee,
+          allocated_razorpay_tax: correctTax,
+          isRecalculated: true
+        };
+      }
+    }
+
+    // Fallback to stored values if no payment data
+    return {
+      allocated_razorpay_fee: item.allocated_razorpay_fee,
+      allocated_razorpay_tax: item.allocated_razorpay_tax,
+      isRecalculated: false
+    };
+  };
+
+  const getCorrectedFees = (item: PayoutItemWithDetails) => {
+    return recalculateProportionalFees(item);
   };
 
   const getTransactionIcon = (type: string) => {
@@ -597,10 +637,27 @@ export default function Earnings() {
                               ₹{item.item_subtotal.toFixed(2)}
                             </TableCell>
                             <TableCell className="text-right text-red-600">
-                              -₹{(item.allocated_razorpay_fee + item.allocated_razorpay_tax).toFixed(2)}
+                              {(() => {
+                                const correctedFees = getCorrectedFees(item);
+                                const totalFees = correctedFees.allocated_razorpay_fee + correctedFees.allocated_razorpay_tax;
+                                return (
+                                  <div className="flex items-center justify-end gap-1">
+                                    <span>-₹{totalFees.toFixed(2)}</span>
+                                    {correctedFees.isRecalculated && (
+                                      <span className="text-xs text-blue-600 font-medium" title="Fee recalculated proportionally">
+                                        *
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </TableCell>
                             <TableCell className="text-right font-medium text-green-600">
-                              ₹{calculateNetEarning(item).toFixed(2)}
+                              {(() => {
+                                const correctedFees = getCorrectedFees(item);
+                                const netEarning = item.item_subtotal - correctedFees.allocated_razorpay_fee - correctedFees.allocated_razorpay_tax;
+                                return `₹${netEarning.toFixed(2)}`;
+                              })()}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-orange-600 border-orange-600">
@@ -616,7 +673,10 @@ export default function Earnings() {
                       <p className="text-sm font-medium text-orange-800">
                         Total Pending: ₹
                         {pendingItems
-                          .reduce((sum, item) => sum + calculateNetEarning(item), 0)
+                          .reduce((sum, item) => {
+                            const correctedFees = getCorrectedFees(item);
+                            return sum + (item.item_subtotal - correctedFees.allocated_razorpay_fee - correctedFees.allocated_razorpay_tax);
+                          }, 0)
                           .toFixed(2)}
                       </p>
                     </div>
@@ -681,10 +741,27 @@ export default function Earnings() {
                               ₹{item.item_subtotal.toFixed(2)}
                             </TableCell>
                             <TableCell className="text-right text-red-600">
-                              -₹{(item.allocated_razorpay_fee + item.allocated_razorpay_tax).toFixed(2)}
+                              {(() => {
+                                const correctedFees = getCorrectedFees(item);
+                                const totalFees = correctedFees.allocated_razorpay_fee + correctedFees.allocated_razorpay_tax;
+                                return (
+                                  <div className="flex items-center justify-end gap-1">
+                                    <span>-₹{totalFees.toFixed(2)}</span>
+                                    {correctedFees.isRecalculated && (
+                                      <span className="text-xs text-blue-600 font-medium" title="Fee recalculated proportionally">
+                                        *
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </TableCell>
                             <TableCell className="text-right font-medium text-green-600">
-                              ₹{calculateNetEarning(item).toFixed(2)}
+                              {(() => {
+                                const correctedFees = getCorrectedFees(item);
+                                const netEarning = item.item_subtotal - correctedFees.allocated_razorpay_fee - correctedFees.allocated_razorpay_tax;
+                                return `₹${netEarning.toFixed(2)}`;
+                              })()}
                             </TableCell>
                             <TableCell>
                               <Badge variant="outline" className="text-green-600 border-green-600">
@@ -700,7 +777,10 @@ export default function Earnings() {
                       <p className="text-sm font-medium text-green-800">
                         Total Settled: ₹
                         {settledItems
-                          .reduce((sum, item) => sum + calculateNetEarning(item), 0)
+                          .reduce((sum, item) => {
+                            const correctedFees = getCorrectedFees(item);
+                            return sum + (item.item_subtotal - correctedFees.allocated_razorpay_fee - correctedFees.allocated_razorpay_tax);
+                          }, 0)
                           .toFixed(2)}
                       </p>
                     </div>
@@ -790,6 +870,14 @@ export default function Earnings() {
             </Card>
           </TabsContent>
         </Tabs>
+        
+        {/* Fee Recalculation Notice */}
+        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
+          <p className="text-sm text-blue-800">
+            <strong>Note:</strong> Fees marked with <span className="text-blue-600 font-medium">*</span> have been recalculated proportionally 
+            based on each item's contribution to the total order amount. This ensures fair fee distribution across all sellers in multi-seller orders.
+          </p>
+        </div>
       </div>
 
       {/* Dispute Dialog */}

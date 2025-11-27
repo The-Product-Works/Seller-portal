@@ -48,7 +48,8 @@ export async function getAuthenticatedSellerId(): Promise<string | null> {
       .from("sellers")
       .select("id")
       .eq("user_id", auth.user.id)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (sellerError) {
       console.error("Error fetching seller:", sellerError);
@@ -78,7 +79,8 @@ export async function getAuthenticatedSellerProfile(): Promise<Record<string, un
       .from("sellers")
       .select("*")
       .eq("user_id", auth.user.id)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (sellerError) {
       console.error("Error fetching seller profile:", sellerError);
