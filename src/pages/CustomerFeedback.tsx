@@ -115,7 +115,8 @@ export default function CustomerFeedback() {
     };
 
     initializeData();
-  }, []); // Remove function dependencies to prevent infinite re-renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Functions are memoized with useCallback, no need for dependencies
 
   // Filter and sort reviews
   const filteredReviews = useMemo(() => {
@@ -467,7 +468,7 @@ export default function CustomerFeedback() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [toast]); // toast is stable from useToast hook
 
   const renderStars = (rating: number) => {
     return (
@@ -970,7 +971,6 @@ export default function CustomerFeedback() {
                       <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
                         <div 
                           className="bg-yellow-400 h-2 rounded-full transition-all duration-300"
-                          // eslint-disable-next-line react/style-prop-object
                           style={{ width: `${Math.min(Math.max(percentage, 5), 100)}%` }}
                         />
                       </div>
