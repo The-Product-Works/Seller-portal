@@ -98,22 +98,35 @@ export default function CustomerFeedback() {
   const { toast } = useToast();
 
   useEffect(() => {
-    loadCustomerFeedback();
-    loadAdminQuestions();
-    loadSellerProducts();
-    getAuthenticatedSellerId().then(id => setSellerId(id));
-  }, [loadAdminQuestions, loadCustomerFeedback, loadSellerProducts]);
+    const initializeData = async () => {
+      try {
+        const id = await getAuthenticatedSellerId();
+        setSellerId(id);
+        
+        // Load data in parallel
+        await Promise.allSettled([
+          loadCustomerFeedback(),
+          loadAdminQuestions(),
+          loadSellerProducts()
+        ]);
+      } catch (error) {
+        console.error("Error initializing customer feedback data:", error);
+      }
+    };
+
+    initializeData();
+  }, []); // Remove function dependencies to prevent infinite re-renders
 
   // Filter and sort reviews
   const filteredReviews = useMemo(() => {
     const filtered = reviews.filter(review => {
       // Rating filter
-      if (filterRating !== "all" && review.rating !== parseInt(filterRating)) {
+      if (filterRating !== "all" && (review.rating || 0) !== parseInt(filterRating)) {
         return false;
       }
       
       // Status filter
-      if (filterStatus !== "all" && review.status !== filterStatus) {
+      if (filterStatus !== "all" && (review.status || "") !== filterStatus) {
         return false;
       }
       
@@ -140,13 +153,13 @@ export default function CustomerFeedback() {
     filtered.sort((a, b) => {
       switch (sortBy) {
         case 'newest':
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
         case 'oldest':
-          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
         case 'highest_rated':
-          return b.rating - a.rating;
+          return (b.rating || 0) - (a.rating || 0);
         case 'lowest_rated':
-          return a.rating - b.rating;
+          return (a.rating || 0) - (b.rating || 0);
         case 'most_helpful':
           return (b.helpful_count || 0) - (a.helpful_count || 0);
         default:
@@ -407,12 +420,12 @@ export default function CustomerFeedback() {
       // Calculate statistics
       const totalReviews = formattedReviews.length;
       const averageRating = totalReviews > 0 
-        ? formattedReviews.reduce((sum, review) => sum + review.rating, 0) / totalReviews 
+        ? formattedReviews.reduce((sum, review) => sum + (review.rating || 0), 0) / totalReviews 
         : 0;
 
       const ratingDistribution: { [key: number]: number } = {};
       for (let i = 1; i <= 5; i++) {
-        ratingDistribution[i] = formattedReviews.filter(r => r.rating === i).length;
+        ratingDistribution[i] = formattedReviews.filter(r => (r.rating || 0) === i).length;
       }
 
       const verifiedPurchases = formattedReviews.filter(r => r.is_verified_purchase).length;
@@ -454,7 +467,7 @@ export default function CustomerFeedback() {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, []);
 
   const renderStars = (rating: number) => {
     return (
@@ -646,19 +659,6 @@ export default function CustomerFeedback() {
               </div>
             </CardHeader>
             <CardContent>
-              {console.log("🎯 Rendering reviews section")}
-              {console.log("📊 Current state:", {
-                reviews: reviews.length,
-                filteredReviews: filteredReviews.length,
-                loading,
-                sellerId,
-                products: products.length,
-                filterRating,
-                filterStatus,
-                filterProduct,
-                searchTerm,
-                sortBy
-              })}
               {filteredReviews.length === 0 ? (
                   <div className="text-center py-8">
                     <MessageSquare className="mx-auto h-12 w-12 text-gray-400" />
@@ -681,7 +681,6 @@ export default function CustomerFeedback() {
                 ) : (
                   <div className="space-y-6">
                     {filteredReviews.map((review) => {
-                      console.log("🎯 Rendering review:", review);
                       return (
                       <div key={review.review_id} className="border border-gray-200 rounded-lg p-4 hover:shadow-lg transition-shadow">
                         {/* Product Info Header */}
@@ -971,6 +970,7 @@ export default function CustomerFeedback() {
                       <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
                         <div 
                           className="bg-yellow-400 h-2 rounded-full transition-all duration-300"
+                          // eslint-disable-next-line react/style-prop-object
                           style={{ width: `${Math.min(Math.max(percentage, 5), 100)}%` }}
                         />
                       </div>
