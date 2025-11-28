@@ -104,6 +104,35 @@ export function ProductImageGalleryCard({
           <Package className="h-16 w-16 text-muted-foreground" />
         </div>
       )}
+
+      {/* Horizontal Thumbnail Scroller */}
+      {hasMultipleImages && (
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+          <div className="flex gap-2 overflow-x-auto scrollbar-hide">
+            {validImages.map((image, index) => (
+              <button
+                key={image.image_id}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCurrentImageIndex(index);
+                }}
+                className={`flex-shrink-0 w-12 h-12 rounded border-2 overflow-hidden transition-all ${
+                  index === currentImageIndex
+                    ? 'border-white shadow-lg scale-110'
+                    : 'border-white/50 hover:border-white/75'
+                }`}
+                title={`View image ${index + 1}`}
+              >
+                <img
+                  src={image.image_url}
+                  alt={`${productName} ${index + 1}`}
+                  className="w-full h-full object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

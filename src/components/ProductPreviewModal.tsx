@@ -226,30 +226,36 @@ export function ProductPreviewModal({
               <div>
                 <h3 className="font-semibold mb-2">Available Variants</h3>
                 <div className="space-y-2">
-                  {product.variants.map((variant, idx) => (
-                    <div
-                      key={idx}
-                      className="border rounded-lg p-3 flex justify-between items-center"
-                    >
-                      <div>
-                        <p className="font-medium">
-                          {variant.variant_name || 'Variant'}
-                          {variant.size && ` (${variant.size})`}
-                          {variant.flavor && ` - ${variant.flavor}`}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Stock: {variant.stock_quantity} | Price: ₹{variant.price}
-                          {variant.manufacture_date && ` | Mfg: ${new Date(variant.manufacture_date).toLocaleDateString()}`}
-                        </p>
-                        {variant.nutritional_info &&
-                          Object.keys(variant.nutritional_info).length > 0 && (
-                            <p className="text-xs text-blue-600 mt-1">
-                              ✓ Nutritional info available
-                            </p>
-                          )}
+                  {product.variants.map((variant, idx) => {
+                    const isSelected = selectedVariant?.variant_id === `variant-${variant.variant_name}`;
+                    return (
+                      <div
+                        key={idx}
+                        className={`border rounded-lg p-3 flex justify-between items-center ${
+                          isSelected ? 'ring-2 ring-blue-500 bg-blue-50' : ''
+                        }`}
+                      >
+                        <div>
+                          <p className="font-medium">
+                            {variant.variant_name || 'Variant'}
+                            {variant.size && ` (${variant.size})`}
+                            {variant.flavor && ` - ${variant.flavor}`}
+                            {isSelected && <Badge variant="default" className="ml-2">Selected</Badge>}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            Stock: {variant.stock_quantity} | Price: ₹{variant.price}
+                            {variant.manufacture_date && ` | Mfg: ${new Date(variant.manufacture_date).toLocaleDateString()}`}
+                          </p>
+                          {variant.nutritional_info &&
+                            Object.keys(variant.nutritional_info).length > 0 && (
+                              <p className="text-xs text-blue-600 mt-1">
+                                ✓ Nutritional info available
+                              </p>
+                            )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
