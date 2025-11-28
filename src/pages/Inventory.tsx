@@ -34,8 +34,7 @@ import AddProductDialog from "@/components/AddProductDialog";
 import { ImageManager } from "@/components/ImageManager";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
 import { SimpleRestockDialog } from "@/components/SimpleRestockDialog";
-// Temporarily disabled for debugging
-// import BundleRestockDialog from "@/components/BundleRestockDialog";
+import BundleRestockDialog from "@/components/BundleRestockDialog";
 import { ProductDetailModal } from "@/components/ProductDetailModal";
 import { ProductImageGalleryCard } from "@/components/ProductImageGalleryCard";
 import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
@@ -140,8 +139,7 @@ export default function Inventory() {
   const { toast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
   const [listings, setListings] = useState<ListingWithDetails[]>([]);
-  // Temporarily disabled for debugging
-  // const [bundles, setBundles] = useState<BundleWithDetails[]>([]);
+  const [bundles, setBundles] = useState<BundleWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
   const [sellerId, setSellerId] = useState<string | null>(null);
 
@@ -149,9 +147,8 @@ export default function Inventory() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [editingListing, setEditingListing] = useState<ListingWithDetails | null>(null);
   const [imageManagerOpen, setImageManagerOpen] = useState(false);
-  // Temporarily disabled for debugging
-  // const [bundleDialogOpen, setBundleDialogOpen] = useState(false);
-  // const [editingBundle, setEditingBundle] = useState<Record<string, unknown> | null>(null);
+  const [bundleDialogOpen, setBundleDialogOpen] = useState(false);
+  const [editingBundle, setEditingBundle] = useState<Record<string, unknown> | null>(null);
   const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
 
   // Delete confirmation
@@ -169,8 +166,8 @@ export default function Inventory() {
     isBundle?: boolean;
   } | null>(null);
 
-  // Bundle restock dialog - Temporarily disabled for debugging
-  // const [bundleRestockTarget, setBundleRestockTarget] = useState<Omit<BundleWithDetails, 'itemType'> | null>(null);
+  // Bundle restock dialog
+  const [bundleRestockTarget, setBundleRestockTarget] = useState<Omit<BundleWithDetails, 'itemType'> | null>(null);
 
   // Product/Bundle detail modal
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -273,7 +270,7 @@ export default function Inventory() {
         console.warn("Continuing without bundles due to error");
       }
 
-      // setBundles((bundlesData as Array<Record<string, unknown>>) || []);
+      setBundles((bundlesData as Array<Record<string, unknown>>) || []);
     } catch (bundleErr) {
       console.error("Unexpected error loading bundles:", bundleErr);
       // Continue without bundles
@@ -769,8 +766,7 @@ export default function Inventory() {
     }
   }
 
-  // Temporarily disabled for debugging
-  // async function handleDeleteBundle(bundleId: string) {
+  async function handleDeleteBundle(bundleId: string) {
   //   if (!sellerId) return;
 
   //   try {
@@ -823,6 +819,7 @@ export default function Inventory() {
   //     setDeleteTarget(null);
   //   }
   // }
+}
 
   function applyFilters() {
     if (tempPriceMin > 0 || tempPriceMax < 10000) {
@@ -876,8 +873,7 @@ export default function Inventory() {
     // Combine products and bundles
     const combinedItems = [
       ...listings.map(l => ({ ...l, itemType: 'product' })),
-      // Temporarily disable bundles for debugging
-      // ...bundles.map(b => ({ ...b, itemType: 'bundle' }))
+      ...bundles.map(b => ({ ...b, itemType: 'bundle' }))
     ];
 
     let result = [...combinedItems];
@@ -1037,11 +1033,10 @@ export default function Inventory() {
             <Images className="h-4 w-4 mr-2" />
             Manage Images
           </Button>
-          {/* Temporarily disable bundle creation for debugging */}
-          {/* <Button variant="outline" onClick={() => setBundleDialogOpen(true)}>
+          <Button variant="outline" onClick={() => setBundleDialogOpen(true)}>
             <Package className="h-4 w-4 mr-2" />
             Create Bundle
-          </Button> */}
+          </Button>
           <Button onClick={() => {
             setEditingListing(null); // Clear any editing state for new product
             setAddDialogOpen(true);
@@ -1232,113 +1227,112 @@ export default function Inventory() {
         ) : (
           filteredListings.map((item: ListingWithDetails | BundleWithDetails) => {
             // Handle both products and bundles
-            // Temporarily disable bundle rendering for debugging
-            // if (item.itemType === 'bundle') {
-            //   const bundle = item as BundleWithDetails;
-            //   console.log("Rendering bundle:", bundle.bundle_id, bundle.bundle_name);
-            //   const bundleName = bundle.bundle_name;
-            //   const discount = bundle.discount_percentage || 0;
+            if (item.itemType === 'bundle') {
+              const bundle = item as BundleWithDetails;
+              console.log("Rendering bundle:", bundle.bundle_id, bundle.bundle_name);
+              const bundleName = bundle.bundle_name;
+              const discount = bundle.discount_percentage || 0;
 
-            //   return (
-            //     <Card key={bundle.bundle_id} className="overflow-hidden border-primary/20">
-            //       <div className="relative">
-            //         <div className="aspect-square bg-muted relative">
-            //           {/* Bundle Product Images Scroller */}
-            //           <BundleImageScroller bundle={bundle} />
-            //         </div>
-            //         <div className="absolute top-2 right-2 flex gap-2">
-            //           <Badge
-            //             variant={
-            //               bundle.status === "active"
-            //                 ? "default"
-            //                 : bundle.status === "draft"
-            //                 ? "secondary"
-            //                 : "outline"
-            //             }
-            //           >
-            //             {bundle.status}
-            //           </Badge>
-            //           {discount > 0 && (
-            //             <Badge variant="destructive">{discount}% OFF</Badge>
-            //           )}
-            //           <Badge className="bg-primary/80">Bundle</Badge>
-            //         </div>
-            //       </div>
+              return (
+                <Card key={bundle.bundle_id} className="overflow-hidden border-primary/20">
+                  <div className="relative">
+                    <div className="aspect-square bg-muted relative">
+                      {/* Bundle Product Images Scroller */}
+                      <BundleImageScroller bundle={bundle} />
+                    </div>
+                    <div className="absolute top-2 right-2 flex gap-2">
+                      <Badge
+                        variant={
+                          bundle.status === "active"
+                            ? "default"
+                            : bundle.status === "draft"
+                            ? "secondary"
+                            : "outline"
+                        }
+                      >
+                        {bundle.status}
+                      </Badge>
+                      {discount > 0 && (
+                        <Badge variant="destructive">{discount}% OFF</Badge>
+                      )}
+                      <Badge className="bg-primary/80">Bundle</Badge>
+                    </div>
+                  </div>
 
-            //       <CardContent className="p-4">
-            //         <div className="space-y-2">
-            //           <h3 className="font-semibold text-lg line-clamp-2">
-            //             {bundleName}
-            //           </h3>
+                  <CardContent className="p-4">
+                    <div className="space-y-2">
+                      <h3 className="font-semibold text-lg line-clamp-2">
+                        {bundleName}
+                      </h3>
 
-            //           {bundle.description && (
-            //             <p className="text-sm text-muted-foreground line-clamp-2">
-            //               {bundle.description}
-            //             </p>
-            //           )}
+                      {bundle.description && (
+                        <p className="text-sm text-muted-foreground line-clamp-2">
+                          {bundle.description}
+                        </p>
+                      )}
 
-            //           <div className="flex items-baseline gap-2">
-            //             <span className="text-2xl font-bold">
-            //               ₹{bundle.discounted_price?.toFixed(2) || bundle.base_price?.toFixed(2)}
-            //             </span>
-            //             {bundle.base_price && bundle.discounted_price && bundle.base_price !== bundle.discounted_price && (
-            //               <span className="text-sm text-muted-foreground line-through">
-            //                 ₹{bundle.base_price.toFixed(2)}
-            //               </span>
-            //             )}
-            //           </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-bold">
+                          ₹{bundle.discounted_price?.toFixed(2) || bundle.base_price?.toFixed(2)}
+                        </span>
+                        {bundle.base_price && bundle.discounted_price && bundle.base_price !== bundle.discounted_price && (
+                          <span className="text-sm text-muted-foreground line-through">
+                            ₹{bundle.base_price.toFixed(2)}
+                          </span>
+                        )}
+                      </div>
 
-            //           <div className="flex items-center gap-4 text-sm text-muted-foreground">
-            //             <div>Items: {bundle.total_items}</div>
-            //             <div>•</div>
-            //             <div>Stock: {bundle.total_stock_quantity || 0}</div>
-            //           </div>
+                      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                        <div>Items: {bundle.total_items}</div>
+                        <div>•</div>
+                        <div>Stock: {bundle.total_stock_quantity || 0}</div>
+                      </div>
 
-            //           <div className="flex gap-2 pt-2">
-            //             <Button
-            //               size="sm"
-            //               variant="outline"
-            //               className="flex-1"
-            //               onClick={() => {
-            //                 setEditingBundle(bundle);
-            //                 setBundleDialogOpen(true);
-            //               }}
-            //             >
-            //               <Edit className="h-4 w-4 mr-2" />
-            //               Edit
-            //             </Button>
-            //             <Button
-            //               size="sm"
-            //               variant="outline"
-            //               onClick={() => {
-            //                 console.log("Restock clicked for bundle:", bundle.bundle_id);
-            //                 const { itemType, ...bundleData } = bundle;
-            //                 setBundleRestockTarget(bundleData);
-            //               }}
-            //               title="Restock Bundle"
-            //             >
-            //               <Plus className="h-4 w-4 mr-1" />
-            //               Restock
-            //             </Button>
-            //             <Button
-            //               size="sm"
-            //               variant="destructive"
-            //               onClick={() =>
-            //                 setDeleteTarget({
-            //                   type: "bundle",
-            //                   id: item.bundle_id,
-            //                   name: bundleName,
-            //                 })
-            //               }
-            //             >
-            //               <Trash2 className="h-4 w-4" />
-            //             </Button>
-            //           </div>
-            //         </div>
-            //       </CardContent>
-            //     </Card>
-            //   );
-            // }
+                      <div className="flex gap-2 pt-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          onClick={() => {
+                            setEditingBundle(bundle);
+                            setBundleDialogOpen(true);
+                          }}
+                        >
+                          <Edit className="h-4 w-4 mr-2" />
+                          Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            console.log("Restock clicked for bundle:", bundle.bundle_id);
+                            const { itemType, ...bundleData } = bundle;
+                            setBundleRestockTarget(bundleData);
+                          }}
+                          title="Restock Bundle"
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Restock
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() =>
+                            setDeleteTarget({
+                              type: "bundle",
+                              id: item.bundle_id,
+                              name: bundleName,
+                            })
+                          }
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            }
 
             // Original product rendering
             const listing = item as ListingWithDetails;
@@ -1571,9 +1565,7 @@ export default function Inventory() {
                 if (deleteTarget?.type === "listing") {
                   handleDeleteListing(deleteTarget.id);
                 } else if (deleteTarget?.type === "bundle") {
-                  // Temporarily disabled for debugging
-                  // handleDeleteBundle(deleteTarget.id);
-                  console.log("Bundle deletion temporarily disabled");
+                  handleDeleteBundle(deleteTarget.id);
                 } else if (deleteTarget?.type === "variant") {
                   handleDeleteVariant(deleteTarget.id);
                 }
@@ -1593,8 +1585,8 @@ export default function Inventory() {
         open={imageManagerOpen} 
         onOpenChange={setImageManagerOpen} 
       />
-      {/* Bundle Creation Dialog - Temporarily disabled for debugging */}
-      {/* <BundleCreation
+      {/* Bundle Creation Dialog */}
+      <BundleCreation
         open={bundleDialogOpen}
         onClose={() => {
           setBundleDialogOpen(false);
@@ -1602,10 +1594,10 @@ export default function Inventory() {
           if (sellerId) loadListings(sellerId);
         }}
         editingBundle={editingBundle}
-      /> */}
+      />
 
-      {/* Restock Dialog for Bundles - Temporarily disabled for debugging */}
-      {/* {bundleRestockTarget && (
+      {/* Restock Dialog for Bundles */}
+      {bundleRestockTarget && (
         <BundleRestockDialog
           open={!!bundleRestockTarget}
           onOpenChange={(open) => {
@@ -1617,7 +1609,7 @@ export default function Inventory() {
             setBundleRestockTarget(null);
           }}
         />
-      )} */}
+      )}
 
       {/* Product/Bundle Detail Modal */}
       <ProductDetailModal
