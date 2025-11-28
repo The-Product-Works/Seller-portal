@@ -32,15 +32,25 @@ export default function SignUp() {
 
   const handleGoogleSignUp = async () => {
     setLoading(true);
+    
+    // Set flag in localStorage to indicate this is a seller signup
+    // This will be checked after OAuth callback to assign seller role
+    localStorage.setItem('seller_signup_pending', 'true');
+    
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/kyc`,
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
       },
     });
 
     if (error) {
       setLoading(false);
+      localStorage.removeItem('seller_signup_pending');
       toast({
         title: "Error",
         description: error.message,
@@ -166,6 +176,7 @@ export default function SignUp() {
         emailRedirectTo: redirectUrl,
         data: {
           username,
+          seller_signup: 'true',
         },
       },
     });

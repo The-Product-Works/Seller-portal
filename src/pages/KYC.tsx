@@ -116,6 +116,68 @@ export default function KYC() {
           return;
         }
 
+        // Handle Google OAuth seller signup - update user role from buyer to seller
+        const sellerSignupPending = localStorage.getItem('seller_signup_pending');
+        if (sellerSignupPending === 'true') {
+          console.log('Processing seller signup for OAuth user:', user.id);
+          localStorage.removeItem('seller_signup_pending');
+          
+          // Call the database function to assign seller role
+          const { error: roleError } = await supabase.rpc('assign_seller_role_for_oauth', {
+            p_user_id: user.id
+          });
+          
+          if (roleError) {
+            console.error('Failed to assign seller role via RPC:', roleError);
+            // Try direct update as fallback (RPC function may not exist yet)
+            try {
+              const { data: sellerRole } = await supabase
+                .from('roles')
+                .select('role_id')
+                .eq('role_name', 'seller')
+                .single();
+              
+              const { data: buyerRole } = await supabase
+                .from('roles')
+                .select('role_id')
+                .eq('role_name', 'buyer')
+                .single();
+              
+              if (sellerRole?.role_id) {
+                // Delete buyer role if exists
+                if (buyerRole?.role_id) {
+                  await supabase
+                    .from('user_roles')
+                    .delete()
+                    .eq('user_id', user.id)
+                    .eq('role_id', buyerRole.role_id);
+                }
+                
+                // Insert seller role (upsert to avoid conflicts)
+                await supabase
+                  .from('user_roles')
+                  .upsert({ user_id: user.id, role_id: sellerRole.role_id }, 
+                    { onConflict: 'user_id,role_id' });
+                
+                // Create seller record if not exists
+                await supabase
+                  .from('sellers')
+                  .upsert({
+                    user_id: user.id,
+                    email: user.email || '',
+                    is_individual: true,
+                    onboarding_status: 'started',
+                    created_at: new Date().toISOString(),
+                  }, { onConflict: 'user_id' });
+              }
+            } catch (fallbackError) {
+              console.error('Fallback role assignment also failed:', fallbackError);
+            }
+          } else {
+            console.log('Successfully assigned seller role via RPC');
+          }
+        }
+
         const { data: s, error } = await supabase
           .from("sellers")
           .select("*")
