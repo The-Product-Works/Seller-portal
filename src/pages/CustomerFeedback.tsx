@@ -18,12 +18,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -71,16 +65,19 @@ interface AdminQuestion {
   status: 'pending' | 'answered';
 }
 
+interface AdminDetails {
+  user_id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+}
+
 export default function CustomerFeedback() {
-  const [reviews, setReviews] = useState<ProductReview[]>([]);
-  const [stats, setStats] = useState<FeedbackStats>({
-    totalReviews: 0,
-    averageRating: 0,
-    ratingDistribution: {},
-    verifiedPurchases: 0,
-    recentTrend: 'stable'
-  });
   const [loading, setLoading] = useState(true);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [filterRating, setFilterRating] = useState<string>("all");
   const [filterProduct, setFilterProduct] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -95,6 +92,16 @@ export default function CustomerFeedback() {
   const [products, setProducts] = useState<Array<{listing_id: string; seller_title: string}>>([]);
   const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
   const [sellerId, setSellerId] = useState<string | null>(null);
+  const [adminDetails, setAdminDetails] = useState<AdminDetails | null>(null);
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
+  const [activeTab, setActiveTab] = useState("reviews");
+  const [stats, setStats] = useState<FeedbackStats>({
+    totalReviews: 0,
+    averageRating: 0,
+    ratingDistribution: {},
+    verifiedPurchases: 0,
+    recentTrend: 'stable'
+  });
   const { toast } = useToast();
 
   useEffect(() => {
@@ -102,23 +109,26 @@ export default function CustomerFeedback() {
       try {
         const id = await getAuthenticatedSellerId();
         setSellerId(id);
-        
-        // Load data in parallel
+
+        // Load basic data first
         await Promise.allSettled([
-          loadCustomerFeedback(),
-          loadAdminQuestions(),
-          loadSellerProducts()
+          loadSellerProducts(),
+          loadAdminDetails()
         ]);
+
+        // Load reviews and questions separately
+        await loadCustomerFeedback();
+        await loadAdminQuestions();
+
+        setLoading(false);
       } catch (error) {
         console.error("Error initializing customer feedback data:", error);
+        setLoading(false);
       }
     };
 
     initializeData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Functions are memoized with useCallback, no need for dependencies
-
-  // Filter and sort reviews
   const filteredReviews = useMemo(() => {
     const filtered = reviews.filter(review => {
       // Rating filter
@@ -193,45 +203,163 @@ export default function CustomerFeedback() {
   const loadAdminQuestions = useCallback(async () => {
     try {
       const sellerId = await getAuthenticatedSellerId();
-      if (!sellerId) return;
+      console.log('Loading admin questions for seller:', sellerId);
+      
+      if (!sellerId) {
+        console.log('No seller ID found, cannot load questions');
+        setAdminQuestions([]);
+        return;
+      }
 
-      // Mock data for admin questions - replace with real API call when table is created
-      setAdminQuestions([
-        {
-          id: '1',
-          question: 'What is the warranty period for this product?',
-          answer: 'This product comes with a 1-year warranty from the date of purchase.',
-          product_name: 'Sample Product 1',
-          created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          status: 'answered'
-        }
-      ]);
+      // Query seller_admin_questions table with proper join
+      const { data: questionsData, error } = await supabase
+        .from("seller_admin_questions")
+        .select(`
+          question_id,
+          question_text,
+          admin_response,
+          status,
+          created_at,
+          listing_id,
+          seller_product_listings(seller_title)
+        `)
+        .eq("seller_id", sellerId)
+        .order("created_at", { ascending: false });
+
+      console.log('Admin questions query result:', { data: questionsData, error });
+
+      if (!error && questionsData) {
+        const formattedQuestions: AdminQuestion[] = questionsData.map(q => ({
+          id: q.question_id,
+          question: q.question_text,
+          answer: q.admin_response,
+          product_name: q.seller_product_listings?.seller_title || "General Question",
+          created_at: q.created_at,
+          status: q.status as 'pending' | 'answered'
+        }));
+        console.log('Formatted questions:', formattedQuestions);
+        setAdminQuestions(formattedQuestions);
+      } else {
+        console.log("Error loading admin questions:", error);
+        // Fallback to empty array if table doesn't exist yet
+        setAdminQuestions([]);
+      }
     } catch (error) {
       console.error("Error loading admin questions:", error);
+      setAdminQuestions([]);
+    }
+  }, []);
+
+  const loadAdminDetails = useCallback(async () => {
+    try {
+      // Query users with admin role by joining user_roles and roles tables
+      const { data: adminData, error } = await supabase
+        .from("user_roles")
+        .select(`
+          user_id,
+          roles!inner(role_name),
+          users!inner(email, phone)
+        `)
+        .eq("roles.role_name", "admin")
+        .limit(1)
+        .single();
+
+      if (!error && adminData) {
+        // Get user profile separately
+        const { data: profileData } = await supabase
+          .from("user_profiles")
+          .select("full_name")
+          .eq("user_id", adminData.user_id)
+          .single();
+
+        setAdminDetails({
+          user_id: adminData.user_id,
+          name: profileData?.full_name || "Admin Support",
+          email: adminData.users?.email || "",
+          phone: adminData.users?.phone || "",
+          role: adminData.roles?.role_name || "admin"
+        });
+      } else {
+        console.log("No admin found or error:", error);
+        // Fallback to mock data
+        setAdminDetails({
+          user_id: 'mock-admin',
+          name: 'Admin Support',
+          email: 'admin@theproductworks.com',
+          phone: '+91-9876543210',
+          role: 'admin'
+        });
+      }
+    } catch (error) {
+      console.error("Error loading admin details:", error);
+      // Fallback to mock data
+      setAdminDetails({
+        user_id: 'mock-admin',
+        name: 'Admin Support',
+        email: 'admin@theproductworks.com',
+        phone: '+91-9876543210',
+        role: 'admin'
+      });
     }
   }, []);
 
   const handleAskAdmin = async () => {
-    if (!newQuestion.trim() || !selectedProduct) {
+    if (!newQuestion.trim()) {
       toast({
         title: "Error",
-        description: "Please fill all fields",
+        description: "Please enter a question",
         variant: "destructive",
       });
       return;
     }
 
     try {
+      const sellerId = await getAuthenticatedSellerId();
+      if (!sellerId) {
+        toast({
+          title: "Error",
+          description: "Please log in to ask questions",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Insert into seller_admin_questions table
+      const { data, error } = await supabase
+        .from("seller_admin_questions")
+        .insert({
+          seller_id: sellerId,
+          listing_id: selectedProduct || null,
+          question_text: newQuestion.trim(),
+          status: 'pending'
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error inserting question:", error);
+        toast({
+          title: "Error",
+          description: "Failed to send question. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Add to local state for immediate UI update
       const newQ: AdminQuestion = {
-        id: Date.now().toString(),
-        question: newQuestion,
-        product_name: products.find(p => p.listing_id === selectedProduct)?.seller_title || "Unknown",
-        created_at: new Date().toISOString(),
+        id: data.question_id,
+        question: data.question_text,
+        answer: null,
+        product_name: selectedProduct ? products.find(p => p.listing_id === selectedProduct)?.seller_title || "Unknown" : "General",
+        created_at: data.created_at,
         status: 'pending',
       };
-      
+
       setAdminQuestions(prev => [newQ, ...prev]);
       setNewQuestion("");
+      setSelectedProduct("");
+
       toast({
         title: "Question Sent",
         description: "Admin will respond to your question shortly",
@@ -257,11 +385,53 @@ export default function CustomerFeedback() {
     }
 
     try {
-      // Mock send - replace with real API call
+      const sellerId = await getAuthenticatedSellerId();
+      if (!sellerId) {
+        toast({
+          title: "Error",
+          description: "Please log in to send messages",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!adminDetails?.user_id) {
+        toast({
+          title: "Error",
+          description: "Admin contact information not available",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Insert into messages table
+      const { data, error } = await supabase
+        .from("messages")
+        .insert({
+          sender_id: sellerId,
+          receiver_id: adminDetails.user_id,
+          subject: contactSubject.trim(),
+          message_text: contactMessage.trim(),
+          message_type: 'direct'
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("Error sending message:", error);
+        toast({
+          title: "Error",
+          description: "Failed to send message. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       toast({
         title: "Message Sent",
         description: "Admin will respond to your message soon",
       });
+
       setContactSubject("");
       setContactMessage("");
       setShowContactDialog(false);
@@ -276,11 +446,11 @@ export default function CustomerFeedback() {
   };
 
   const loadCustomerFeedback = useCallback(async () => {
-    setLoading(true);
+    setReviewsLoading(true);
     try {
       const sellerId = await getAuthenticatedSellerId();
       console.log("Authenticated seller ID:", sellerId); // Debug log
-      
+
       if (!sellerId) {
         toast({
           title: "Authentication Error",
@@ -303,6 +473,12 @@ export default function CustomerFeedback() {
 
       if (listingsError) {
         console.error("❌ Error fetching seller listings:", listingsError);
+        toast({
+          title: "Error",
+          description: "Failed to load product listings",
+          variant: "destructive",
+        });
+        return;
       }
 
       // Get reviews for seller's products
@@ -320,7 +496,7 @@ export default function CustomerFeedback() {
         status: string | null;
         moderation_notes: string | null;
         updated_at: string | null;
-        images?: string[];
+        images: string[] | null;
       }> = [];
       let error: Error | null = null;
 
@@ -328,7 +504,7 @@ export default function CustomerFeedback() {
         // If seller has listings, get reviews for those listings
         const listingIds = sellerListings.map(l => l.listing_id);
         console.log("🔗 Listing IDs to search for reviews:", listingIds);
-        
+
         const { data: reviews, error: reviewsError } = await supabase
           .from("product_reviews")
           .select(`
@@ -344,46 +520,20 @@ export default function CustomerFeedback() {
             not_helpful_count,
             status,
             moderation_notes,
-            updated_at
+            updated_at,
+            images
           `)
           .in("listing_id", listingIds)
           .eq("status", "approved");
 
         reviewsData = reviews || [];
         error = reviewsError;
-        
+
         console.log("📝 Reviews query result:", { reviews: reviewsData, error: reviewsError });
         console.log("⭐ Found", reviewsData.length, "reviews for seller's listings");
 
-        // If we have reviews, fetch their images separately
-        if (reviewsData.length > 0) {
-          const reviewIds = reviewsData.map(r => r.review_id);
-          console.log("🖼️ Fetching images for review IDs:", reviewIds);
-          
-          const { data: reviewImages, error: imagesError } = await supabase
-            .from("review_images")
-            .select("review_id, image_url")
-            .in("review_id", reviewIds);
-
-          console.log("🖼️ Review images query result:", { reviewImages, imagesError });
-
-          // Group images by review_id
-          const imagesByReviewId: { [key: string]: string[] } = {};
-          if (reviewImages) {
-            reviewImages.forEach(img => {
-              if (!imagesByReviewId[img.review_id]) {
-                imagesByReviewId[img.review_id] = [];
-              }
-              imagesByReviewId[img.review_id].push(img.image_url);
-            });
-          }
-
-          // Add images to reviews
-          reviewsData = reviewsData.map(review => ({
-            ...review,
-            images: imagesByReviewId[review.review_id] || []
-          }));
-        }
+        // Images are already included in the product_reviews table
+        console.log("🖼️ Images loaded directly from product_reviews table");
       } else {
         console.log("⚠️ Seller has no listings, no reviews to show");
         reviewsData = [];
@@ -392,7 +542,7 @@ export default function CustomerFeedback() {
       // Transform data and add product information
       const formattedReviews: ProductReview[] = reviewsData.map((review) => {
         const product = sellerListings?.find(l => l.listing_id === review.listing_id);
-        
+
         return {
           review_id: review.review_id,
           listing_id: review.listing_id,
@@ -419,31 +569,48 @@ export default function CustomerFeedback() {
       setReviews(formattedReviews);
 
       // Calculate statistics
-      const totalReviews = formattedReviews.length;
-      const averageRating = totalReviews > 0 
-        ? formattedReviews.reduce((sum, review) => sum + (review.rating || 0), 0) / totalReviews 
+      calculateAnalytics(formattedReviews);
+
+    } catch (error) {
+      console.error("Error loading feedback:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load customer feedback",
+        variant: "destructive",
+      });
+    } finally {
+      setReviewsLoading(false);
+    }
+  }, [toast]);
+
+  const calculateAnalytics = useCallback((reviewsData: ProductReview[]) => {
+    setAnalyticsLoading(true);
+    try {
+      const totalReviews = reviewsData.length;
+      const averageRating = totalReviews > 0
+        ? reviewsData.reduce((sum, review) => sum + (review.rating || 0), 0) / totalReviews
         : 0;
 
       const ratingDistribution: { [key: number]: number } = {};
       for (let i = 1; i <= 5; i++) {
-        ratingDistribution[i] = formattedReviews.filter(r => (r.rating || 0) === i).length;
+        ratingDistribution[i] = reviewsData.filter(r => (r.rating || 0) === i).length;
       }
 
-      const verifiedPurchases = formattedReviews.filter(r => r.is_verified_purchase).length;
+      const verifiedPurchases = reviewsData.filter(r => r.is_verified_purchase).length;
 
       // Calculate trend (simplified)
-      const recentReviews = formattedReviews.filter(r => 
+      const recentReviews = reviewsData.filter(r =>
         new Date(r.created_at) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
       );
-      const olderReviews = formattedReviews.filter(r => 
+      const olderReviews = reviewsData.filter(r =>
         new Date(r.created_at) <= new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
       );
 
-      const recentAvg = recentReviews.length > 0 
-        ? recentReviews.reduce((sum, r) => sum + r.rating, 0) / recentReviews.length 
+      const recentAvg = recentReviews.length > 0
+        ? recentReviews.reduce((sum, r) => sum + r.rating, 0) / recentReviews.length
         : 0;
-      const olderAvg = olderReviews.length > 0 
-        ? olderReviews.reduce((sum, r) => sum + r.rating, 0) / olderReviews.length 
+      const olderAvg = olderReviews.length > 0
+        ? olderReviews.reduce((sum, r) => sum + r.rating, 0) / olderReviews.length
         : 0;
 
       let recentTrend: 'up' | 'down' | 'stable' = 'stable';
@@ -457,18 +624,10 @@ export default function CustomerFeedback() {
         verifiedPurchases,
         recentTrend
       });
-
-    } catch (error) {
-      console.error("Error loading feedback:", error);
-      toast({
-        title: "Error",
-        description: "Failed to load customer feedback",
-        variant: "destructive",
-      });
     } finally {
-      setLoading(false);
+      setAnalyticsLoading(false);
     }
-  }, [toast]); // toast is stable from useToast hook
+  }, []);
 
   const renderStars = (rating: number) => {
     return (
@@ -537,48 +696,127 @@ export default function CustomerFeedback() {
                 </Button>
               </DialogTrigger>
               <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Contact Admin</DialogTitle>
-              <DialogDescription>Send a message to our support team</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="subject">Subject</Label>
-                <Input
-                  id="subject"
-                  placeholder="Enter subject"
-                  value={contactSubject}
-                  onChange={(e) => setContactSubject(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="message">Message</Label>
-                <Textarea
-                  id="message"
-                  placeholder="Enter your message"
-                  value={contactMessage}
-                  onChange={(e) => setContactMessage(e.target.value)}
-                  rows={4}
-                />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setShowContactDialog(false)}>Cancel</Button>
-                <Button onClick={handleContactAdmin}>Send Message</Button>
-              </div>
-            </div>
-          </DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Contact Admin</DialogTitle>
+                  <DialogDescription>Send a message to our support team</DialogDescription>
+                </DialogHeader>
+                {adminDetails && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <h4 className="font-semibold text-blue-900 mb-2">Admin Contact Details</h4>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Name:</span>
+                        <span>{adminDetails.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium">Email:</span>
+                        <a href={`mailto:${adminDetails.email}`} className="text-blue-600 hover:underline">
+                          {adminDetails.email}
+                        </a>
+                      </div>
+                      {adminDetails.phone && (
+                        <div className="flex items-center gap-2">
+                          <Phone className="h-4 w-4 text-blue-600" />
+                          <span className="font-medium">Phone:</span>
+                          <a href={`tel:${adminDetails.phone}`} className="text-blue-600 hover:underline">
+                            {adminDetails.phone}
+                          </a>
+                        </div>
+                      )}
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Role:</span>
+                        <span className="capitalize">{adminDetails.role}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div className="space-y-4">
+                  <div>
+                    <Label htmlFor="subject">Subject</Label>
+                    <Input
+                      id="subject"
+                      placeholder="Enter subject"
+                      value={contactSubject}
+                      onChange={(e) => setContactSubject(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="message">Message</Label>
+                    <Textarea
+                      id="message"
+                      placeholder="Enter your message"
+                      value={contactMessage}
+                      onChange={(e) => setContactMessage(e.target.value)}
+                      rows={4}
+                    />
+                  </div>
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={() => setShowContactDialog(false)}>Cancel</Button>
+                    <Button onClick={handleContactAdmin}>Send Message</Button>
+                  </div>
+                </div>
+              </DialogContent>
             </Dialog>
           </div>
         </div>
 
-      <Tabs defaultValue="reviews" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="reviews">Customer Reviews</TabsTrigger>
-          <TabsTrigger value="questions">Q&A with Admin</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
-        </TabsList>
+      {/* Simple Tab Navigation */}
+      <div className="w-full mb-6">
+        <div className="flex space-x-1 border-b border-gray-200">
+          <button
+            onClick={() => {
+              console.log('Reviews tab clicked');
+              setActiveTab('reviews');
+            }}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+              activeTab === 'reviews'
+                ? 'bg-blue-500 text-white border-b-2 border-blue-500'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Customer Reviews
+          </button>
+          <button
+            onClick={() => {
+              console.log('Q&A tab clicked, setting activeTab to questions');
+              setActiveTab('questions');
+              console.log('activeTab should now be questions');
+            }}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+              activeTab === 'questions'
+                ? 'bg-blue-500 text-white border-b-2 border-blue-500'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Q&A with Admin
+          </button>
+          <button
+            onClick={() => {
+              console.log('Analytics tab clicked');
+              setActiveTab('analytics');
+            }}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+              activeTab === 'analytics'
+                ? 'bg-blue-500 text-white border-b-2 border-blue-500'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Analytics
+          </button>
+        </div>
+        {/* Debug current tab */}
+        <div className="mt-2 text-xs text-gray-500">
+          Current active tab: {activeTab}
+        </div>
+      </div>
 
-        <TabsContent value="reviews" className="space-y-6">
+      {/* Tab Content */}
+      <div className="tab-content">
+        {activeTab === 'reviews' && (
+          <div className="space-y-6">
+            <div className="text-xs text-blue-600 mb-2">📊 Reviews Tab Content</div>
+            {/* Reviews content */}
           <div className="flex gap-4 flex-wrap items-center">
             <div className="flex-1 min-w-64">
               <Input
@@ -647,17 +885,6 @@ export default function CustomerFeedback() {
           <Card>
             <CardHeader>
               <CardTitle>Customer Reviews</CardTitle>
-              {/* Debug Info - Always Visible */}
-              <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800">
-                  <strong>🔍 Debug Info:</strong><br/>
-                  Seller ID: {sellerId || 'Not authenticated'}<br/>
-                  Products loaded: {products.length}<br/>
-                  Reviews loaded: {reviews.length}<br/>
-                  Filtered reviews: {filteredReviews.length}<br/>
-                  Loading: {loading ? 'Yes' : 'No'}
-                </p>
-              </div>
             </CardHeader>
             <CardContent>
               {filteredReviews.length === 0 ? (
@@ -667,17 +894,6 @@ export default function CustomerFeedback() {
                     <p className="mt-1 text-sm text-gray-500">
                       Your customer reviews will appear here once you receive them.
                     </p>
-                    <p className="mt-2 text-xs text-gray-400">
-                      Check browser console for debug information.
-                    </p>
-                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                      <p className="text-sm text-blue-800">
-                        <strong>Debug Info:</strong><br/>
-                        Seller ID: {sellerId || 'Not found'}<br/>
-                        Products loaded: {products.length}<br/>
-                        Reviews loaded: {reviews.length}
-                      </p>
-                    </div>
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -806,10 +1022,12 @@ export default function CustomerFeedback() {
               }
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="questions" className="space-y-6">
-          {/* Ask Admin Question Section */}
+      {activeTab === 'questions' && (
+        <div className="space-y-6">
+          <div className="text-xs text-green-600 mb-2">💬 Q&A Tab Content - Active Tab: {activeTab}</div>
           <Card className="border-blue-200 bg-blue-50">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -818,21 +1036,6 @@ export default function CustomerFeedback() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="product-select">Select Product (Optional)</Label>
-                <Select value={selectedProduct} onValueChange={setSelectedProduct}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a product to ask about" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {products.map(p => (
-                      <SelectItem key={p.listing_id} value={p.listing_id}>
-                        {p.seller_title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
               <div>
                 <Label htmlFor="question-input">Your Question</Label>
                 <Textarea
@@ -850,7 +1053,6 @@ export default function CustomerFeedback() {
             </CardContent>
           </Card>
 
-          {/* Admin Responses */}
           <Card>
             <CardHeader>
               <CardTitle>Admin Q&A History</CardTitle>
@@ -888,9 +1090,12 @@ export default function CustomerFeedback() {
               )}
             </CardContent>
           </Card>
-        </TabsContent>
+        </div>
+      )}
 
-        <TabsContent value="analytics" className="space-y-6">
+      {activeTab === 'analytics' && (
+        <div className="space-y-6">
+          <div className="text-xs text-purple-600 mb-2">📈 Analytics Tab Content</div>
           {/* Statistics Cards */}
           <div className="grid gap-4 md:grid-cols-4">
             <Card>
@@ -971,7 +1176,7 @@ export default function CustomerFeedback() {
                       <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
                         <div 
                           className="bg-yellow-400 h-2 rounded-full transition-all duration-300"
-                          style={{ width: `${Math.min(Math.max(percentage, 5), 100)}%` }}
+                          style={{ width: `${percentage}%` }}
                         />
                       </div>
                       <span className="text-sm text-muted-foreground w-12">{count}</span>
@@ -981,9 +1186,10 @@ export default function CustomerFeedback() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
       </div>
-    </>
+    </div>
+  </>
   );
 }
