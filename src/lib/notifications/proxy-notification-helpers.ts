@@ -540,3 +540,149 @@ export const proxyNotifications = {
   sendNewReviewNotification,
   sendUpdatedReturnRequestNotification
 };
+
+/**
+ * Send Order Delivered notification to seller
+ */
+export async function sendOrderDeliveredNotification(params: {
+  sellerId: string;
+  orderNumber: string;
+  deliveredDate: string;
+  buyerName: string;
+  totalAmount: number;
+  productName: string;
+  quantity: number;
+  deliveryAddress: string;
+  trackingId?: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: seller } = await supabase
+      .from('sellers')
+      .select('email, business_name')
+      .eq('id', params.sellerId)
+      .single();
+
+    if (!seller?.email) {
+      return { success: false, error: 'Seller email not found' };
+    }
+
+    const result = await sendDirectEmail({
+      recipientEmail: seller.email,
+      subject: `✅ Order #${params.orderNumber} Delivered Successfully`,
+      htmlContent: `
+        <h2>Order Delivered</h2>
+        <p>Hello ${seller.business_name || 'Seller'},</p>
+        <p>Your order has been delivered successfully!</p>
+        <ul>
+          <li>Order: ${params.orderNumber}</li>
+          <li>Delivered: ${params.deliveredDate}</li>
+          <li>Customer: ${params.buyerName}</li>
+          <li>Amount: ₹${params.totalAmount.toFixed(2)}</li>
+        </ul>
+      `,
+      alertType: 'new_order_received'
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error sending order delivered notification:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Send Order Cancelled by Seller notification
+ */
+export async function sendOrderCancelledBySellerNotification(params: {
+  sellerId: string;
+  orderNumber: string;
+  cancelledDate: string;
+  orderAmount: number;
+  cancellationReason: string;
+  buyerName: string;
+  productName: string;
+  quantity: number;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: seller } = await supabase
+      .from('sellers')
+      .select('email, business_name')
+      .eq('id', params.sellerId)
+      .single();
+
+    if (!seller?.email) {
+      return { success: false, error: 'Seller email not found' };
+    }
+
+    const result = await sendDirectEmail({
+      recipientEmail: seller.email,
+      subject: `⚠️ Order #${params.orderNumber} Cancellation Confirmed`,
+      htmlContent: `
+        <h2>Order Cancellation Confirmed</h2>
+        <p>Hello ${seller.business_name || 'Seller'},</p>
+        <p>This confirms that you have cancelled order #${params.orderNumber}.</p>
+        <ul>
+          <li>Cancelled: ${params.cancelledDate}</li>
+          <li>Amount: ₹${params.orderAmount.toFixed(2)}</li>
+          <li>Reason: ${params.cancellationReason}</li>
+        </ul>
+      `,
+      alertType: 'order_canceled_by_buyer'
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error sending order cancelled notification:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Send Return Received notification to seller
+ */
+export async function sendReturnReceivedNotification(params: {
+  sellerId: string;
+  orderNumber: string;
+  returnId: string;
+  receivedDate: string;
+  productName: string;
+  quantity: number;
+  returnReason: string;
+  refundAmount: number;
+  buyerName: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const { data: seller } = await supabase
+      .from('sellers')
+      .select('email, business_name')
+      .eq('id', params.sellerId)
+      .single();
+
+    if (!seller?.email) {
+      return { success: false, error: 'Seller email not found' };
+    }
+
+    const result = await sendDirectEmail({
+      recipientEmail: seller.email,
+      subject: `📦 Return Package Received - Order #${params.orderNumber}`,
+      htmlContent: `
+        <h2>Return Package Received</h2>
+        <p>Hello ${seller.business_name || 'Seller'},</p>
+        <p>A return package has been received for order #${params.orderNumber}.</p>
+        <ul>
+          <li>Return ID: ${params.returnId}</li>
+          <li>Received: ${params.receivedDate}</li>
+          <li>Product: ${params.productName}</li>
+          <li>Reason: ${params.returnReason}</li>
+          <li>Refund: ₹${params.refundAmount.toFixed(2)}</li>
+        </ul>
+      `,
+      alertType: 'return_request_received'
+    });
+
+    return result;
+  } catch (error) {
+    console.error('Error sending return received notification:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}

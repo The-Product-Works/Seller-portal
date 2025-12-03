@@ -5,6 +5,7 @@
  */
 
 import { sendSellerNotificationToGmail, type AlertType } from '@/lib/notifications/resend-direct';
+import { supabase } from '@/integrations/supabase/client';
 
 // Define EmailResult type
 interface EmailResult {
@@ -50,6 +51,65 @@ import {
   generatePayoutProcessedEmail,
   type PayoutProcessedData,
 } from '../templates/seller/payout-processed';
+import {
+  generateOrderDeliveredEmail,
+  type OrderDeliveredData,
+} from '../templates/seller/order-delivered';
+import {
+  generateOrderCancelledBySellerEmail,
+  type OrderCancelledBySellerData,
+} from '../templates/seller/order-cancelled-by-seller';
+import {
+  generateReturnReceivedEmail,
+  type ReturnReceivedData,
+} from '../templates/seller/return-received';
+
+/**
+ * Check if a notification was sent recently (for deduplication)
+ * @param alertType - Type of alert to check
+ * @param recipientEmail - Email address to check
+ * @param relatedEntityId - Related entity (product_id, order_id, etc.)
+ * @param hoursWindow - Time window in hours (default 24)
+ * @returns true if notification was sent within the time window
+ */
+async function wasNotificationSentRecently(
+  alertType: string,
+  recipientEmail: string,
+  relatedEntityId?: string,
+  hoursWindow: number = 24
+): Promise<boolean> {
+  try {
+    const cutoffTime = new Date();
+    cutoffTime.setHours(cutoffTime.getHours() - hoursWindow);
+
+    let query = supabase
+      .from('email_notifications')
+      .select('notification_id')
+      .eq('alert_type', alertType)
+      .eq('recipient_email', recipientEmail)
+      .gte('sent_at', cutoffTime.toISOString())
+      .limit(1);
+
+    // Add entity-specific filter if provided
+    if (relatedEntityId) {
+      query = query.or(
+        `related_product_id.eq.${relatedEntityId},related_order_id.eq.${relatedEntityId},related_entity_id.eq.${relatedEntityId}`
+      );
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      console.error('Error checking notification history:', error);
+      return false; // On error, allow sending (fail-safe)
+    }
+
+    return data && data.length > 0;
+  } catch (error) {
+    console.error('Exception checking notification history:', error);
+    return false; // On error, allow sending (fail-safe)
+  }
+}
 
 /**
  * Send New Order Received notification to seller
@@ -134,12 +194,33 @@ export async function sendRefundCompletedNotification(
 /**
  * Send Low Stock Alert to seller
  * Triggered when product stock reaches threshold
+ * WITH 24-HOUR DEDUPLICATION
  */
 export async function sendLowStockAlert(
   sellerId: string,
   sellerEmail: string,
-  data: LowStockAlertData
+  data: LowStockAlertData,
+  productId?: string,
+  force: boolean = false
 ): Promise<EmailResult> {
+  // Check for recent notification (unless forced)
+  if (!force && productId) {
+    const wasSentRecently = await wasNotificationSentRecently(
+      'low_stock_alert',
+      sellerEmail,
+      productId,
+      24 // 24-hour window
+    );
+
+    if (wasSentRecently) {
+      console.log(`⏭️ Skipping low stock alert - already sent within 24 hours for product ${productId}`);
+      return {
+        success: false,
+        error: 'Duplicate notification prevented (sent within 24 hours)'
+      };
+    }
+  }
+
   const html = generateLowStockAlertEmail(data);
 
   return await sendSellerNotificationToGmail(
@@ -153,12 +234,33 @@ export async function sendLowStockAlert(
 /**
  * Send Out of Stock notification to seller
  * Triggered when product inventory hits zero
+ * WITH 24-HOUR DEDUPLICATION
  */
 export async function sendOutOfStockAlert(
   sellerId: string,
   sellerEmail: string,
-  data: OutOfStockData
+  data: OutOfStockData,
+  productId?: string,
+  force: boolean = false
 ): Promise<EmailResult> {
+  // Check for recent notification (unless forced)
+  if (!force && productId) {
+    const wasSentRecently = await wasNotificationSentRecently(
+      'product_out_of_stock',
+      sellerEmail,
+      productId,
+      24 // 24-hour window
+    );
+
+    if (wasSentRecently) {
+      console.log(`⏭️ Skipping out of stock alert - already sent within 24 hours for product ${productId}`);
+      return {
+        success: false,
+        error: 'Duplicate notification prevented (sent within 24 hours)'
+      };
+    }
+  }
+
   const html = generateOutOfStockEmail(data);
 
   return await sendSellerNotificationToGmail(
@@ -230,6 +332,66 @@ export async function sendPayoutProcessedNotification(
   );
 }
 
+/**
+ * Send Order Delivered notification to seller
+ * Triggered when buyer's order is successfully delivered
+ */
+export async function sendOrderDeliveredNotification(
+  sellerId: string,
+  sellerEmail: string,
+  data: OrderDeliveredData
+): Promise<EmailResult> {
+  const html = generateOrderDeliveredEmail(data);
+
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `✅ Order #${data.orderNumber} Delivered Successfully`,
+    html,
+    'new_order_received', // Reusing alert type as delivery is part of order lifecycle
+    { orderId: data.orderNumber }
+  );
+}
+
+/**
+ * Send Order Cancelled by Seller notification
+ * Triggered when seller cancels an order (seller confirmation)
+ */
+export async function sendOrderCancelledBySellerNotification(
+  sellerId: string,
+  sellerEmail: string,
+  data: OrderCancelledBySellerData
+): Promise<EmailResult> {
+  const html = generateOrderCancelledBySellerEmail(data);
+
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `⚠️ Order #${data.orderNumber} Cancellation Confirmed`,
+    html,
+    'order_canceled_by_buyer', // Reusing as it's a cancellation notification
+    { orderId: data.orderNumber }
+  );
+}
+
+/**
+ * Send Return Received notification to seller
+ * Triggered when return package is received by seller
+ */
+export async function sendReturnReceivedNotification(
+  sellerId: string,
+  sellerEmail: string,
+  data: ReturnReceivedData
+): Promise<EmailResult> {
+  const html = generateReturnReceivedEmail(data);
+
+  return await sendSellerNotificationToGmail(
+    sellerEmail,
+    `📦 Return Package Received - Order #${data.orderNumber}`,
+    html,
+    'return_request_received',
+    { orderId: data.orderNumber }
+  );
+}
+
 // Export all data types for easy importing
 export type {
   NewOrderReceivedData,
@@ -241,4 +403,7 @@ export type {
   AccountApprovedData,
   NewReviewData,
   PayoutProcessedData,
+  OrderDeliveredData,
+  OrderCancelledBySellerData,
+  ReturnReceivedData,
 };

@@ -10,7 +10,10 @@ import {
   sendRefundCompletedNotification,
   sendAccountApprovedNotification,
   sendNewReviewNotification,
-  sendPayoutNotification
+  sendPayoutNotification,
+  sendOrderDeliveredNotification,
+  sendOrderCancelledBySellerNotification,
+  sendReturnReceivedNotification
 } from '@/lib/notifications/proxy-notification-helpers';
 
 export interface NotificationConfig {
@@ -389,10 +392,10 @@ export class RealTimeNotificationService {
           
           const oldListing = payload.old as { total_stock_quantity: number; [key: string]: unknown };
           const newListing = payload.new as {
-            id: string;
+            listing_id: string;
             seller_id: string;
             total_stock_quantity: number;
-            title?: string;
+            seller_title: string;
             [key: string]: unknown;
           };
           
@@ -402,8 +405,8 @@ export class RealTimeNotificationService {
           }
           
           // Check for duplicate events
-          const stockChangeKey = `stock_${newListing.id}_${newListing.total_stock_quantity}`;
-          if (this.isDuplicateEvent('inventory_change', newListing.id, { stock: newListing.total_stock_quantity })) {
+          const stockChangeKey = `stock_${newListing.listing_id}_${newListing.total_stock_quantity}`;
+          if (this.isDuplicateEvent('inventory_change', String(newListing.listing_id), { stock: newListing.total_stock_quantity })) {
             return;
           }
           
@@ -418,39 +421,51 @@ export class RealTimeNotificationService {
             const oldStock = oldListing.total_stock_quantity || 0;
             const newStock = newListing.total_stock_quantity || 0;
             
-            // Check for out of stock
+            // Check for out of stock (with 24-hour deduplication)
             if (oldStock > 0 && newStock <= 0) {
-              console.log('📧 Sending out of stock notification...', {
+              console.log('📧 Sending out of stock notification (with deduplication)...', {
                 sellerId: newListing.seller_id,
-                productName
-              });
-              
-              await sendOutOfStockAlert({
-                sellerId: newListing.seller_id,
-                productName: productName,
+                productName,
                 productId: newListing.listing_id
               });
-              console.log('✅ Out of stock notification sent');
+              
+              const result = await sendOutOfStockAlert({
+                sellerId: newListing.seller_id,
+                productName: String(newListing.seller_title || 'Product'),
+                productId: String(newListing.listing_id)
+              });
+              
+              if (result.success) {
+                console.log('✅ Out of stock notification sent');
+              } else {
+                console.log('⏭️ Out of stock notification skipped:', result.error);
+              }
             }
-            // Check for low stock
+            // Check for low stock (with 24-hour deduplication)
             else if (
               oldStock >= 10 && 
               newStock > 0 && 
               newStock < 10
             ) {
-              console.log('📧 Sending low stock notification...', {
+              console.log('📧 Sending low stock notification (with deduplication)...', {
                 sellerId: newListing.seller_id,
                 productName,
-                currentStock: newStock
-              });
-              
-              await sendLowStockAlert({
-                sellerId: newListing.seller_id,
-                productName: productName,
                 currentStock: newStock,
                 productId: newListing.listing_id
               });
-              console.log('✅ Low stock notification sent');
+              
+              const result = await sendLowStockAlert({
+                sellerId: newListing.seller_id,
+                productName: String(newListing.seller_title || 'Product'),
+                currentStock: newStock,
+                productId: String(newListing.listing_id)
+              });
+              
+              if (result.success) {
+                console.log('✅ Low stock notification sent');
+              } else {
+                console.log('⏭️ Low stock notification skipped:', result.error);
+              }
             }
           } catch (error) {
             console.error('❌ Failed to send inventory notification:', error);
@@ -465,13 +480,59 @@ export class RealTimeNotificationService {
   private async monitorReviews(): Promise<void> {
     console.log('⭐ Monitoring reviews for real-time notifications...');
     
-    // For now, disable reviews monitoring as the table relationships are complex
-    // This can be re-enabled when the proper product-seller relationship is clarified
-    console.log('🚧 Reviews monitoring temporarily disabled - needs product-seller relationship clarification');
+    const filter = this.config!.sellerId === 'ALL' 
+      ? undefined
+      : `seller_id=eq.${this.config!.sellerId}`;
     
-    // Placeholder for future implementation when product schema is clarified
     const reviewsChannel = supabase
-      .channel('reviews-realtime-placeholder')
+      .channel('reviews-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'reviews',
+          ...(filter && { filter })
+        },
+        async (payload) => {
+          if (!this.isActive) return;
+          
+          console.log('⭐ New review detected:', payload.new);
+          const review = payload.new as {
+            id: string;
+            seller_id: string;
+            order_id: string;
+            rating: number;
+            review_text?: string;
+            [key: string]: unknown;
+          };
+          
+          if (this.config!.sellerId !== 'ALL' && review.seller_id !== this.config!.sellerId) {
+            return;
+          }
+          
+          try {
+            const orderNumber = `ORD-${review.order_id.slice(0, 8)}`;
+            
+            console.log('📧 Sending new review notification...', {
+              sellerId: review.seller_id,
+              rating: review.rating
+            });
+            
+            await sendNewReviewNotification({
+              sellerId: review.seller_id,
+              productName: 'Product', // Get from order items if needed
+              rating: review.rating,
+              comment: review.review_text || '',
+              customerName: 'Customer',
+              reviewedAt: new Date().toISOString()
+            });
+            console.log('✅ New review notification sent');
+          } catch (error) {
+            console.error('❌ Failed to send review notification:', error);
+          }
+        }
+      )
       .subscribe();
 
     this.subscriptions['reviews'] = reviewsChannel;
@@ -608,9 +669,9 @@ export class RealTimeNotificationService {
               });
               
               await sendAccountApprovedNotification({
-                sellerId: newSeller.id,
-                sellerName: newSeller.business_name || newSeller.name || 'Seller',
-                email: newSeller.email || '22052204@kiit.ac.in',
+                sellerId: String(newSeller.id),
+                sellerName: String(newSeller.business_name || newSeller.name || 'Seller'),
+                email: String(newSeller.email || '22052204@kiit.ac.in'),
                 approvedAt: new Date().toLocaleString(),
                 dashboardLink: '/dashboard'
               });

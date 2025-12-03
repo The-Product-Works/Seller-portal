@@ -16,6 +16,7 @@ export interface NewOrderReceivedData {
   }>;
   buyerName: string;
   shippingAddress: string;
+  orderId?: string; // Added for direct order link
   dashboardUrl?: string;
   orderDetailsUrl?: string; // Direct link to order details page
 }
