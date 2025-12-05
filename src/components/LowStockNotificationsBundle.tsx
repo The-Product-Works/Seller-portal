@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Package, AlertTriangle, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { getAuthenticatedUserId } from "@/lib/seller-helpers";
+import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 
 interface Notification {
   id: string;
@@ -35,8 +35,8 @@ export function LowStockNotificationsBundle({ onBundleClick, showRestockButton =
   const loadNotifications = useCallback(async () => {
     setLoading(true);
     try {
-      const authUserId = await getAuthenticatedUserId();
-      if (!authUserId) {
+      const sellerId = await getAuthenticatedSellerId();
+      if (!sellerId) {
         setLoading(false);
         return;
       }
@@ -46,7 +46,7 @@ export function LowStockNotificationsBundle({ onBundleClick, showRestockButton =
         .select("*")
         .eq("type", "low_stock")
         .eq("is_read", false)
-        .eq("related_seller_id", authUserId)
+        .eq("related_seller_id", sellerId)
         .not("related_bundle_id", "is", null)
         .order("created_at", { ascending: false })
         .limit(10);
@@ -94,8 +94,8 @@ export function LowStockNotificationsBundle({ onBundleClick, showRestockButton =
 
   const handleMarkAsRead = async (notificationId: string) => {
     try {
-      const authUserId = await getAuthenticatedUserId();
-      if (!authUserId) return;
+      const sellerId = await getAuthenticatedSellerId();
+      if (!sellerId) return;
 
       const { error } = await supabase
         .from("notifications")

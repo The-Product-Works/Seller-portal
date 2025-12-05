@@ -1,152 +1,307 @@
 /**
- * Email Template: Order Cancelled by Buyer (Seller)
- * Sent when buyer cancels an order
+ * Order Cancelled Email Template (Seller version)
+ * Sent when seller cancels an order or receives cancellation notification
  */
 
-export interface OrderCancelledData {
-  sellerName: string;
-  orderNumber: string;
-  cancelledDate: string;
-  orderAmount: number;
-  cancellationReason: string;
-  buyerName: string;
-  items: Array<{
-    productName: string;
-    quantity: number;
-  }>;
-}
+import {
+  buildEmailWrapper,
+  buildActionButton,
+  buildOrderItemsTable,
+  formatCurrency,
+  formatDate,
+} from "../template-utils";
+import type { OrderCancelledSellerTemplateData } from "../types";
 
-export function generateOrderCancelledEmail(data: OrderCancelledData): string {
-  const itemsHtml = data.items
-    .map(
-      (item) => `
-    <li style="padding: 5px 0; color: #374151;">
-      ${item.productName} (Qty: ${item.quantity})
-    </li>
-  `
-    )
-    .join("");
+export function generateOrderCancelledSellerEmail(
+  data: OrderCancelledSellerTemplateData
+): string {
+  const content = `
+    <div style="text-align: center; margin-bottom: 30px;">
+      <div style="background: #f59e0b; width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
+        <span style="color: white; font-size: 32px;">⚠️</span>
+      </div>
+      <h2 style="color: #f59e0b; margin: 0; font-size: 28px;">Order Cancelled</h2>
+    </div>
 
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Order Cancelled</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f3f4f6;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 20px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-          
-          <!-- Header -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); padding: 30px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: bold;">
-                ❌ Order Cancelled
-              </h1>
-            </td>
-          </tr>
+    <div style="background: #fef3c7; padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #f59e0b;">
+      <p style="margin: 0 0 16px 0; font-size: 16px; color: #374151;">
+        Hello <strong>${data.sellerName}</strong>,
+      </p>
+      <p style="margin: 0; font-size: 14px; color: #6b7280; line-height: 1.6;">
+        ${
+          data.cancelledBy === "seller"
+            ? "Your order cancellation has been processed successfully."
+            : `Order #${data.orderNumber} has been cancelled by ${
+                data.cancelledBy === "customer" ? "the customer" : "system"
+              }.`
+        } Please review the details below.
+      </p>
+    </div>
 
-          <!-- Content -->
-          <tr>
-            <td style="padding: 30px;">
-              <p style="margin: 0 0 20px 0; font-size: 16px; color: #374151;">
-                Hello <strong>${data.sellerName}</strong>,
-              </p>
+    <div style="background: white; padding: 24px; border-radius: 8px; margin: 24px 0; border: 2px solid #e5e7eb;">
+      <h3 style="margin: 0 0 20px 0; font-size: 18px; color: #374151;">Cancelled Order Details</h3>
+      
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Order Number:</span>
+        <span style="color: #374151; font-family: monospace; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">#${
+          data.orderNumber
+        }</span>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Customer:</span>
+        <span style="color: #374151;">${data.customerName}</span>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Order Date:</span>
+        <span style="color: #374151;">${formatDate(data.orderDate)}</span>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Cancellation Date:</span>
+        <span style="color: #374151;">${formatDate(
+          data.cancellationDate
+        )}</span>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Cancelled By:</span>
+        <span style="color: #374151;">${data.cancelledBy}</span>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; margin-bottom: 0;">
+        <span style="font-weight: 500; color: #6b7280;">Order Amount:</span>
+        <span style="color: #f59e0b; font-weight: 600; font-size: 18px;">${formatCurrency(
+          data.orderAmount,
+          data.currency
+        )}</span>
+      </div>
+    </div>
 
-              <p style="margin: 0 0 20px 0; font-size: 16px; color: #374151;">
-                We're writing to inform you that an order has been cancelled by the buyer.
-              </p>
+    <div style="margin: 24px 0;">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #374151;">Cancelled Items</h3>
+      ${buildOrderItemsTable(data.items)}
+    </div>
 
-              <!-- Order Details Card -->
-              <div style="background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 20px; margin: 20px 0; border-radius: 4px;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Order Number:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      <span style="color: #dc2626; font-weight: bold;">${
-                        data.orderNumber
-                      }</span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Cancelled Date:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      ${data.cancelledDate}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Order Amount:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      ₹${data.orderAmount.toFixed(2)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Buyer:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      ${data.buyerName}
-                    </td>
-                  </tr>
-                </table>
-              </div>
+    ${
+      data.reason
+        ? `
+    <div style="background: #fef2f2; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ef4444;">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #dc2626;">📝 Cancellation Reason</h3>
+      <p style="margin: 0; color: #374151; line-height: 1.6; background: white; padding: 16px; border-radius: 6px;">
+        ${data.reason}
+      </p>
+    </div>
+    `
+        : ""
+    }
 
-              <!-- Cancellation Reason -->
-              <h3 style="margin: 30px 0 15px 0; color: #111827; font-size: 18px;">
-                Cancellation Reason
-              </h3>
-              <div style="background-color: #f9fafb; padding: 15px; border-radius: 4px; color: #374151;">
-                ${data.cancellationReason}
-              </div>
+    <div style="background: ${
+      data.cancelledBy === "seller" ? "#f0fdf4" : "#eff6ff"
+    }; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid ${
+    data.cancelledBy === "seller" ? "#10b981" : "#3b82f6"
+  };">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: ${
+        data.cancelledBy === "seller" ? "#065f46" : "#1e40af"
+      };">
+        💼 ${
+          data.cancelledBy === "seller"
+            ? "Cancellation Impact"
+            : "Action Required"
+        }
+      </h3>
+      
+      ${
+        data.cancelledBy === "seller"
+          ? `
+        <div style="margin-bottom: 12px;">
+          <span style="color: #10b981; margin-right: 8px;">•</span>
+          <span style="color: #374151;">No payment processing fees deducted</span>
+        </div>
+        
+        <div style="margin-bottom: 12px;">
+          <span style="color: #10b981; margin-right: 8px;">•</span>
+          <span style="color: #374151;">Customer will receive full refund automatically</span>
+        </div>
+        
+        <div style="margin-bottom: 12px;">
+          <span style="color: #10b981; margin-right: 8px;">•</span>
+          <span style="color: #374151;">Inventory levels have been restored</span>
+        </div>
+        
+        <div style="margin-bottom: 0;">
+          <span style="color: #10b981; margin-right: 8px;">•</span>
+          <span style="color: #374151;">Order marked as cancelled in your dashboard</span>
+        </div>
+      `
+          : `
+        <div style="margin-bottom: 12px;">
+          <span style="color: #3b82f6; margin-right: 8px;">•</span>
+          <span style="color: #374151;">If items were already prepared, please check inventory</span>
+        </div>
+        
+        <div style="margin-bottom: 12px;">
+          <span style="color: #3b82f6; margin-right: 8px;">•</span>
+          <span style="color: #374151;">Any packed items should be returned to stock</span>
+        </div>
+        
+        <div style="margin-bottom: 12px;">
+          <span style="color: #3b82f6; margin-right: 8px;">•</span>
+          <span style="color: #374151;">Update order status if partially processed</span>
+        </div>
+        
+        <div style="margin-bottom: 0;">
+          <span style="color: #3b82f6; margin-right: 8px;">•</span>
+          <span style="color: #374151;">Customer refund will be processed automatically</span>
+        </div>
+      `
+      }
+    </div>
 
-              <!-- Cancelled Items -->
-              <h3 style="margin: 30px 0 15px 0; color: #111827; font-size: 18px;">
-                Cancelled Items
-              </h3>
-              <ul style="margin: 0; padding-left: 20px;">
-                ${itemsHtml}
-              </ul>
+    ${buildActionButton({
+      text: "View Order Details",
+      url: data.orderUrl,
+      color: data.cancelledBy === "seller" ? "#10b981" : "#f59e0b",
+    })}
 
-              <!-- Info Box -->
-              <div style="background-color: #dbeafe; border: 1px solid #3b82f6; border-radius: 4px; padding: 15px; margin: 20px 0;">
-                <p style="margin: 0; color: #1e40af;">
-                  <strong>ℹ️ Note:</strong> This cancellation will not affect your seller rating. The order amount has been adjusted in your pending balance.
-                </p>
-              </div>
+    ${
+      data.impactOnSeller
+        ? `
+    <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #374151;">📊 Seller Impact Analysis</h3>
+      
+      <div style="background: white; padding: 16px; border-radius: 6px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <span style="color: #6b7280;">Cancellation Rate Impact:</span>
+          <span style="color: ${
+            data.impactOnSeller.rateImpact === "positive"
+              ? "#10b981"
+              : data.impactOnSeller.rateImpact === "neutral"
+              ? "#f59e0b"
+              : "#ef4444"
+          }; font-weight: 600;">
+            ${
+              data.impactOnSeller.rateImpact === "positive"
+                ? "No Negative Impact"
+                : data.impactOnSeller.rateImpact === "neutral"
+                ? "Minimal Impact"
+                : "Moderate Impact"
+            }
+          </span>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <span style="color: #6b7280;">Current Cancellation Rate:</span>
+          <span style="color: #374151;">${
+            data.impactOnSeller.currentRate
+          }%</span>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; margin-bottom: 0;">
+          <span style="color: #6b7280;">Performance Status:</span>
+          <span style="color: ${
+            data.impactOnSeller.performanceStatus === "excellent"
+              ? "#10b981"
+              : data.impactOnSeller.performanceStatus === "good"
+              ? "#f59e0b"
+              : "#ef4444"
+          };">
+            ${
+              data.impactOnSeller.performanceStatus.charAt(0).toUpperCase() +
+              data.impactOnSeller.performanceStatus.slice(1)
+            }
+          </span>
+        </div>
+      </div>
+      
+      ${
+        data.impactOnSeller.suggestions &&
+        data.impactOnSeller.suggestions.length > 0
+          ? `
+        <div style="margin-bottom: 0;">
+          <h4 style="margin: 0 0 8px 0; font-size: 14px; color: #6b7280; font-weight: 500;">Improvement Suggestions:</h4>
+          ${data.impactOnSeller.suggestions
+            .map(
+              (suggestion) => `
+            <div style="margin-bottom: 8px;">
+              <span style="color: #6366f1; margin-right: 8px;">•</span>
+              <span style="color: #374151;">${suggestion}</span>
+            </div>
+          `
+            )
+            .join("")}
+        </div>
+      `
+          : ""
+      }
+    </div>
+    `
+        : ""
+    }
 
-              <p style="margin: 20px 0 0 0; font-size: 14px; color: #6b7280;">
-                If you have any questions, please contact support.
-              </p>
-            </td>
-          </tr>
+    <div style="background: #fff7ed; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #92400e;">💡 Prevention Tips</h3>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #f59e0b; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Maintain accurate inventory levels to avoid stock-out cancellations</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #f59e0b; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Respond to orders promptly to reduce customer cancellations</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #f59e0b; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Provide clear product descriptions and images</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #f59e0b; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Set realistic delivery expectations</span>
+      </div>
+      
+      <div style="margin-bottom: 0;">
+        <span style="color: #f59e0b; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Communicate proactively with customers about any delays</span>
+      </div>
+    </div>
 
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; font-size: 12px; color: #6b7280;">
-                This is an automated notification from ProtiMart
-              </p>
-              <p style="margin: 5px 0 0 0; font-size: 12px; color: #6b7280;">
-                © ${new Date().getFullYear()} ProtiMart. All rights reserved.
-              </p>
-            </td>
-          </tr>
+    <div style="display: flex; gap: 12px; justify-content: center; margin: 20px 0;">
+      <a href="${data.dashboardUrl}" 
+         style="display: inline-block; padding: 10px 20px; background: #3b82f6; color: white; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+        Go to Dashboard
+      </a>
+      <a href="${data.inventoryUrl}" 
+         style="display: inline-block; padding: 10px 20px; background: white; color: #f59e0b; border: 2px solid #f59e0b; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+        Manage Inventory
+      </a>
+    </div>
 
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
+    <div style="text-align: center; margin: 24px 0;">
+      <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 14px;">
+        Need help reducing cancellations?
+      </p>
+      <a href="https://support.sellerportal.com/order-management" 
+         style="color: #f59e0b; text-decoration: none; font-weight: 500;">
+        View Seller Resources
+      </a>
+    </div>
+
+    <div style="background: #f9fafb; padding: 16px; border-radius: 6px; margin: 20px 0;">
+      <p style="margin: 0; font-size: 12px; color: #6b7280; text-align: center;">
+        📊 Track your performance metrics and get personalized improvement tips in your seller dashboard.
+      </p>
+    </div>
   `;
+
+  return buildEmailWrapper({
+    title: "Order Cancelled",
+    recipientName: data.sellerName,
+    recipientEmail: data.sellerEmail,
+    content,
+    headerColor: "#f59e0b",
+  });
 }

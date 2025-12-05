@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DollarSign, Package, ShoppingCart, Clock, AlertCircle, RefreshCw, Star, Shield, TrendingUp, Flag } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
+import { LowStockNotificationsBundle } from "@/components/LowStockNotificationsBundle";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -43,6 +44,7 @@ interface Stats {
   pendingOrders: number;
   averageRating: number;
   lowStockCount: number;
+  productLowStockCount: number;
   bundleLowStockCount: number;
   bundlesLowStock?: Array<{
     bundle_id: string;
@@ -96,6 +98,7 @@ export default function Dashboard() {
     pendingOrders: 0,
     averageRating: 0,
     lowStockCount: 0,
+    productLowStockCount: 0,
     bundleLowStockCount: 0,
     bundlesLowStock: [],
   });
@@ -128,6 +131,13 @@ export default function Dashboard() {
   const [bundles, setBundles] = useState<Bundle[]>([]);
   const [performanceMetrics, setPerformanceMetrics] = useState<ProductPerformanceMetric[]>([]);
   const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
+  const [lowStockProducts, setLowStockProducts] = useState<ListingWithDetails[]>([]);
+  const [lowStockBundles, setLowStockBundles] = useState<Bundle[]>([]);
+  const [restockBundleTarget, setRestockBundleTarget] = useState<{
+    bundleId: string;
+    bundleName: string;
+    currentStock: number;
+  } | null>(null);
 
   const loadListings = useCallback(async (seller_id: string) => {
     const { data, error } = await supabase
@@ -156,7 +166,114 @@ export default function Dashboard() {
     setListings((data as ListingWithDetails[]) || []);
   }, []);
 
+  const loadLowStockProducts = useCallback(async (seller_id: string) => {
+    const { data, error } = await supabase
+      .from("seller_product_listings")
+      .select(
+        `
+        listing_id,
+        seller_id,
+        seller_title,
+        total_stock_quantity,
+        base_price,
+        status,
+        created_at,
+        global_products(product_name),
+        listing_images(image_url, is_primary)
+      `
+      )
+      .eq("seller_id", seller_id)
+      .eq("status", "active")
+      .lte("total_stock_quantity", 10)
+      .gt("total_stock_quantity", 0)
+      .order("total_stock_quantity", { ascending: true });
+
+    if (error) {
+      console.error("Error loading low stock products:", error);
+      return;
+    }
+
+    setLowStockProducts((data as ListingWithDetails[]) || []);
+  }, []);
+
+  const loadLowStockBundles = useCallback(async (seller_id: string) => {
+    const { data, error } = await supabase
+      .from("bundles")
+      .select(
+        `
+        bundle_id,
+        bundle_name,
+        total_stock_quantity,
+        base_price,
+        discounted_price,
+        status,
+        created_at,
+        bundle_items(
+          quantity,
+          listing_id,
+          seller_product_listings(
+            listing_id,
+            seller_title,
+            total_stock_quantity,
+            listing_images(image_url, is_primary)
+          )
+        )
+      `
+      )
+      .eq("seller_id", seller_id)
+      .eq("status", "active")
+      .lte("total_stock_quantity", 10)
+      .gt("total_stock_quantity", 0)
+      .order("total_stock_quantity", { ascending: true });
+
+    if (error) {
+      console.error("Error loading low stock bundles:", error);
+      return;
+    }
+
+    setLowStockBundles((data as Bundle[]) || []);
+  }, []);
+
+  const loadBundles = useCallback(async (seller_id: string) => {
+    const { data, error } = await supabase
+      .from("bundles")
+      .select(
+        `
+        *,
+        bundle_items(
+          quantity,
+          listing_id,
+          seller_product_listings(
+            listing_id,
+            seller_title,
+            total_stock_quantity,
+            listing_images(image_url, is_primary)
+          )
+        )
+      `
+      )
+      .eq("seller_id", seller_id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Error loading bundles:", error);
+      return;
+    }
+
+    // Process bundles to calculate total stock
+    const processedBundles = data?.map(bundle => ({
+      ...bundle,
+      total_stock_quantity: bundle.bundle_items?.reduce((total: number, item: { seller_product_listings?: { total_stock_quantity?: number }; quantity: number }) => {
+        return total + (item.seller_product_listings?.total_stock_quantity || 0) * item.quantity;
+      }, 0) || 0
+    })) || [];
+
+    console.log("✅ Loaded bundles:", processedBundles?.length || 0, "bundles", processedBundles);
+    setBundles(processedBundles as Bundle[]);
+  }, []);
+
   const loadDashboardData = useCallback(async () => {
+    console.log("🔄 Loading dashboard data...");
     setLoading(true);
     try {
       const authSellerId = await getAuthenticatedSellerId();
@@ -168,6 +285,9 @@ export default function Dashboard() {
 
       setSellerId(authSellerId);
       await loadListings(authSellerId);
+      await loadLowStockProducts(authSellerId);
+      await loadLowStockBundles(authSellerId);
+      await loadBundles(authSellerId);
 
       // Get seller basic info and KYC details
       const { data: seller } = await supabase
@@ -224,19 +344,35 @@ export default function Dashboard() {
         .eq("seller_id", authSellerId);
 
       const outOfStock = (activeProducts || []).filter(p => p.total_stock_quantity === 0).length;
-      const lowStockProducts = (activeProducts || []).filter(p => p.total_stock_quantity > 0 && p.total_stock_quantity <= 10).length;
-
-      // Get bundles low stock count
-      const { data: activeBundles } = await supabase
-        .from("bundles")
-        .select("bundle_id, total_stock_quantity")
-        .eq("seller_id", authSellerId)
-        .eq("status", "active");
-
-      const lowStockBundles = (activeBundles || []).filter(b => b.total_stock_quantity > 0 && b.total_stock_quantity <= 10).length;
-
-      // Total low stock = products + bundles
-      const lowStock = lowStockProducts + lowStockBundles;
+      
+      // Get actual low stock notifications count instead of manual calculation
+      const { count: lowStockNotificationsCount } = await supabase
+        .from("notifications")
+        .select("id", { count: "exact" })
+        .eq("type", "low_stock")
+        .eq("is_read", false)
+        .eq("related_seller_id", authSellerId);
+      
+      // Get low stock notifications for products and variants
+      const { count: productLowStockCount } = await supabase
+        .from("notifications")
+        .select("id", { count: "exact" })
+        .eq("type", "low_stock")
+        .eq("is_read", false)
+        .eq("related_seller_id", authSellerId)
+        .not("related_product_id", "is", null)
+        .is("related_bundle_id", null);
+      
+      // Get low stock notifications for bundles
+      const { count: bundleLowStockCount } = await supabase
+        .from("notifications")
+        .select("id", { count: "exact" })
+        .eq("type", "low_stock")
+        .eq("is_read", false)
+        .eq("related_seller_id", authSellerId)
+        .not("related_bundle_id", "is", null);
+        
+      const lowStock = lowStockNotificationsCount || 0;
 
       // Get order counts from order_items
       const { count: totalOrdersCount } = await supabase
@@ -470,7 +606,8 @@ export default function Dashboard() {
         pendingOrders: pendingOrdersCount || 0,
         averageRating: avgRating,
         lowStockCount: lowStock,
-        bundleLowStockCount: bundlesLowStock.length,
+        productLowStockCount: productLowStockCount || 0,
+        bundleLowStockCount: bundleLowStockCount || 0,
         bundlesLowStock: bundlesLowStock,
       });
 
@@ -695,31 +832,7 @@ export default function Dashboard() {
 
               <Card>
                 <CardHeader><CardTitle className="flex items-center gap-2"><AlertCircle className="h-5 w-5 text-red-600" />Bundle Low Stock ({stats.bundleLowStockCount})</CardTitle></CardHeader>
-                <CardContent>
-                  {stats.bundleLowStockCount > 0 ? (
-                    <div className="space-y-3">
-                      {stats.bundlesLowStock?.map((bundle) => (
-                        <div key={bundle.bundle_id} className="p-3 bg-red-50 border border-red-200 rounded-lg">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <p className="font-medium text-sm text-red-900">{bundle.bundle_name}</p>
-                              <p className="text-xs text-red-700 mt-1">
-                                Stock: <span className="font-bold">{bundle.total_stock_quantity}</span> units
-                              </p>
-                              {bundle.lowStockItems && bundle.lowStockItems.length > 0 && (
-                                <p className="text-xs text-red-700 mt-1">
-                                  Low items: {bundle.lowStockItems.join(", ")}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-green-600 text-center py-4">✓ All bundles have sufficient stock</p>
-                  )}
-                </CardContent>
+                <CardContent><LowStockNotificationsBundle showRestockButton={false} /></CardContent>
               </Card>
             </>
           )}
@@ -867,27 +980,71 @@ export default function Dashboard() {
 
               {/* Product Grid with Restock */}
               <Card>
-                <CardHeader><CardTitle>My Products</CardTitle></CardHeader>
+                <CardHeader>
+                  <CardTitle className="flex items-center justify-between">
+                    My Products & Bundles
+                    <Badge variant="outline" className="ml-2">
+                      Filter: {stockFilter === "all" ? "All Items" : 
+                               stockFilter === "instock" ? "In Stock (>10)" : 
+                               stockFilter === "lowstock" ? "Low Stock (1-10)" : 
+                               stockFilter === "outofstock" ? "Out of Stock (0)" : stockFilter}
+                    </Badge>
+                  </CardTitle>
+                </CardHeader>
                 <CardContent>
-                  {listings.length === 0 ? (
-                    <p className="text-center text-muted-foreground py-8">No products found</p>
+                  {listings.length === 0 && bundles.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">No products or bundles found</p>
                   ) : (
+                    <>
+                      {/* Debug Info */}
+                      <div className="text-xs text-gray-500 mb-4 flex gap-4">
+                        <span>Products: {listings.length}</span>
+                        <span>Bundles: {bundles.length}</span>
+                        <span>Active Bundles: {bundles.filter(b => b.status === "active" || !b.status).length}</span>
+                        <span>Filter: {stockFilter}</span>
+                      </div>
+                      
                     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                       {listings
                         .filter(l => l.status === "active")
                         .filter(l => {
+                          // Category filter
+                          if (categoryFilter !== "all") {
+                            const productCategory = l.global_products?.product_name || "Uncategorized";
+                            if (productCategory !== categoryFilter) return false;
+                          }
+                          
                           // Price filter
                           if (l.base_price < priceRange[0] || l.base_price > priceRange[1]) return false;
                           
-                          // Stock filter
-                          if (stockFilter === "instock" && l.total_stock_quantity === 0) return false;
-                          if (stockFilter === "lowstock" && (l.total_stock_quantity === 0 || l.total_stock_quantity > 10)) return false;
+                          // Stock filter logic:
+                          if (stockFilter === "instock" && l.total_stock_quantity <= 10) return false;
+                          if (stockFilter === "lowstock" && (l.total_stock_quantity <= 0 || l.total_stock_quantity > 10)) return false;
                           if (stockFilter === "outofstock" && l.total_stock_quantity !== 0) return false;
                           
                           return true;
                         })
-                        .map((listing: ListingWithDetails) => (
-                        <div key={listing.listing_id} className="border rounded-lg overflow-hidden hover:shadow-lg transition">
+                        .map((listing: ListingWithDetails) => {
+                        const isLowStock = listing.total_stock_quantity <= 10 && listing.total_stock_quantity > 0;
+                        const isOutOfStock = listing.total_stock_quantity === 0;
+                        
+                        return (
+                        <div key={listing.listing_id} className={`border rounded-lg overflow-hidden hover:shadow-lg transition ${
+                          isLowStock ? 'border-orange-300 bg-orange-50' : 
+                          isOutOfStock ? 'border-red-300 bg-red-50' : 
+                          'border-gray-200'
+                        }`}>
+                          {/* Low Stock Badge */}
+                          {isLowStock && (
+                            <div className="bg-orange-600 text-white text-xs px-2 py-1 text-center">
+                              ⚠️ LOW STOCK - RESTOCK NEEDED
+                            </div>
+                          )}
+                          {isOutOfStock && (
+                            <div className="bg-red-600 text-white text-xs px-2 py-1 text-center">
+                              ❌ OUT OF STOCK
+                            </div>
+                          )}
                           {/* Product Image */}
                           <div className="bg-gray-100 aspect-square flex items-center justify-center">
                             {listing.listing_images?.[0]?.image_url ? (
@@ -902,20 +1059,27 @@ export default function Dashboard() {
                           </div>
                           {/* Product Info */}
                           <div className="p-3">
+                            <div className="flex items-center gap-1 mb-1">
+                              <Package className="h-3 w-3 text-gray-500" />
+                              <span className="text-xs text-gray-500">Product</span>
+                            </div>
                             <h3 className="font-medium text-sm truncate">{listing.seller_title}</h3>
                             <p className="text-xs text-muted-foreground mb-2">
                               {listing.global_products?.product_name}
                             </p>
                             <div className="flex justify-between items-center mb-2">
                               <span className="font-bold text-green-600">₹{listing.base_price}</span>
-                              <span className={`text-xs font-medium ${listing.total_stock_quantity === 0 ? 'text-red-600' : listing.total_stock_quantity <= 10 ? 'text-orange-600' : 'text-green-600'}`}>
+                              <span className={`text-xs font-medium ${isOutOfStock ? 'text-red-600' : isLowStock ? 'text-orange-600' : 'text-green-600'}`}>
                                 {listing.total_stock_quantity} stock
                               </span>
                             </div>
                             <Button 
                               size="sm" 
-                              variant="outline"
-                              className="w-full text-xs"
+                              className={`w-full text-xs ${
+                                isLowStock ? 'bg-orange-600 hover:bg-orange-700 text-white' :
+                                isOutOfStock ? 'bg-red-600 hover:bg-red-700 text-white' :
+                                'bg-gray-600 hover:bg-gray-700 text-white'
+                              }`}
                               onClick={() => {
                                 setRestockTarget({
                                   productId: listing.listing_id,
@@ -924,12 +1088,98 @@ export default function Dashboard() {
                                 });
                               }}
                             >
-                              <RefreshCw className="h-3 w-3 mr-1" />Restock
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                              {isLowStock ? 'RESTOCK NOW!' : isOutOfStock ? 'URGENT RESTOCK' : 'Restock'}
                             </Button>
                           </div>
                         </div>
-                      ))}
+                        );
+                      })}
+                      
+                      {/* Bundles */}
+                      {bundles
+                        .filter(b => b.status === "active")
+                        .filter(b => {
+                          // Stock filter logic for bundles:
+                          if (stockFilter === "instock" && b.total_stock_quantity <= 10) return false;
+                          if (stockFilter === "lowstock" && (b.total_stock_quantity <= 0 || b.total_stock_quantity > 10)) return false;
+                          if (stockFilter === "outofstock" && b.total_stock_quantity > 0) return false;
+                          
+                          return true;
+                        })
+                        .map((bundle: Bundle) => {
+                        const isLowStock = bundle.total_stock_quantity <= 10 && bundle.total_stock_quantity > 0;
+                        const isOutOfStock = bundle.total_stock_quantity === 0;
+                        
+                        return (
+                        <div key={bundle.bundle_id} className={`border rounded-lg overflow-hidden hover:shadow-lg transition ${
+                          isLowStock ? 'border-orange-300 bg-orange-50' : 
+                          isOutOfStock ? 'border-red-300 bg-red-50' : 
+                          'border-gray-200'
+                        }`}>
+                          {/* Low Stock Badge */}
+                          {isLowStock && (
+                            <div className="bg-orange-600 text-white text-xs px-2 py-1 text-center">
+                              ⚠️ BUNDLE LOW STOCK - RESTOCK NEEDED
+                            </div>
+                          )}
+                          {isOutOfStock && (
+                            <div className="bg-red-600 text-white text-xs px-2 py-1 text-center">
+                              ❌ BUNDLE OUT OF STOCK
+                            </div>
+                          )}
+                          {/* Bundle Image */}
+                          <div className="bg-gray-100 aspect-square flex items-center justify-center">
+                            {bundle.bundle_items?.[0]?.seller_product_listings?.listing_images?.[0]?.image_url ? (
+                              <img 
+                                src={bundle.bundle_items[0].seller_product_listings.listing_images[0].image_url} 
+                                alt={bundle.bundle_name}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <Package className="h-8 w-8 text-gray-400" />
+                            )}
+                          </div>
+                          {/* Bundle Info */}
+                          <div className="p-3">
+                            <div className="flex items-center gap-1 mb-1">
+                              <Package className="h-3 w-3 text-blue-500" />
+                              <span className="text-xs text-blue-500 font-medium">Bundle</span>
+                            </div>
+                            <h3 className="font-medium text-sm truncate">{bundle.bundle_name}</h3>
+                            <p className="text-xs text-muted-foreground mb-2">
+                              {bundle.bundle_items?.length || 0} items
+                            </p>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className="font-bold text-green-600">₹{bundle.discounted_price || bundle.base_price}</span>
+                              <span className={`text-xs font-medium ${isOutOfStock ? 'text-red-600' : isLowStock ? 'text-orange-600' : 'text-green-600'}`}>
+                                {bundle.total_stock_quantity} stock
+                              </span>
+                            </div>
+                            <Button 
+                              size="sm" 
+                              className={`w-full text-xs ${
+                                isLowStock ? 'bg-orange-600 hover:bg-orange-700 text-white' :
+                                isOutOfStock ? 'bg-red-600 hover:bg-red-700 text-white' :
+                                'bg-blue-600 hover:bg-blue-700 text-white'
+                              }`}
+                              onClick={() => {
+                                setRestockBundleTarget({
+                                  bundleId: bundle.bundle_id,
+                                  bundleName: bundle.bundle_name,
+                                  currentStock: bundle.total_stock_quantity,
+                                });
+                              }}
+                            >
+                              <RefreshCw className="h-3 w-3 mr-1" />
+                              {isLowStock ? 'RESTOCK BUNDLE NOW!' : isOutOfStock ? 'URGENT BUNDLE RESTOCK' : 'Restock Bundle'}
+                            </Button>
+                          </div>
+                        </div>
+                        );
+                      })}
                     </div>
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -943,8 +1193,30 @@ export default function Dashboard() {
                 isVariant={false}
                 sellerId={sellerId}
                 onSuccess={() => {
-                  if (sellerId) loadDashboardData();
+                  if (sellerId) {
+                    loadDashboardData();
+                    loadLowStockProducts(sellerId);
+                    loadListings(sellerId);
+                  }
                   setRestockTarget(null);
+                }}
+              />
+
+              <SimpleRestockDialog
+                open={!!restockBundleTarget}
+                onOpenChange={(open) => !open && setRestockBundleTarget(null)}
+                productId={restockBundleTarget?.bundleId || ""}
+                productName={restockBundleTarget?.bundleName || ""}
+                currentStock={restockBundleTarget?.currentStock || 0}
+                isBundle={true}
+                sellerId={sellerId}
+                onSuccess={() => {
+                  if (sellerId) {
+                    loadDashboardData();
+                    loadLowStockBundles(sellerId);
+                    loadBundles(sellerId);
+                  }
+                  setRestockBundleTarget(null);
                 }}
               />
             </>

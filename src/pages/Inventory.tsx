@@ -27,7 +27,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Edit, Trash2, Plus, Filter, Search, Package, X, Images, ChevronLeft, ChevronRight, Flag, AlertTriangle } from "lucide-react";
+import { Edit, Trash2, Plus, Filter, Search, Package, X, Images, ChevronLeft, ChevronRight, Flag, AlertTriangle, RefreshCw } from "lucide-react";
 import { BundleCreation } from "@/components/BundleCreation";
 import { FilterOptions, ListingWithDetails, VariantForm, BundleWithDetails } from "@/types/inventory.types";
 import AddProductDialog from "@/components/AddProductDialog";
@@ -240,15 +240,15 @@ export default function Inventory() {
     
     // Load bundles separately to avoid failing the entire load
     try {
-      // Load bundles with product images
+      // Load bundles with product images (using left joins to avoid missing bundles)
       const { data: bundlesData, error: bundlesError } = await supabase
         .from("bundles")
         .select(`
           *,
-          bundle_items!inner(
+          bundle_items(
             listing_id,
             quantity,
-            seller_product_listings!inner(
+            seller_product_listings(
               seller_title,
               listing_images(
                 image_url,
@@ -262,18 +262,44 @@ export default function Inventory() {
 
       if (bundlesData) {
         console.log("Found", bundlesData.length, "bundles for seller", seller_id);
+        
+        // Debug: Log each bundle's structure
+        bundlesData.forEach((bundle, idx) => {
+          console.log(`Bundle ${idx + 1}:`, {
+            id: bundle.bundle_id,
+            name: bundle.bundle_name,
+            status: bundle.status,
+            itemsCount: bundle.bundle_items?.length || 0,
+            hasItems: !!bundle.bundle_items && Array.isArray(bundle.bundle_items)
+          });
+        });
+        
+        // Filter out bundles with no valid bundle_items to prevent display issues
+        const validBundles = bundlesData.filter(bundle => {
+          const isValid = bundle.bundle_items && Array.isArray(bundle.bundle_items) && bundle.bundle_items.length > 0;
+          if (!isValid) {
+            console.warn(`Filtering out bundle ${bundle.bundle_name} (${bundle.bundle_id}) - no valid items`);
+          }
+          return isValid;
+        });
+        
+        setBundles((validBundles as Array<Record<string, unknown>>) || []);
+        console.log("Valid bundles after filtering:", validBundles.length);
+      } else {
+        console.log("No bundles data returned from query");
+        setBundles([]);
       }
 
       if (bundlesError) {
         console.error("Error loading bundles:", bundlesError);
         // Don't fail the entire load if bundles fail
         console.warn("Continuing without bundles due to error");
+        setBundles([]);
       }
-
-      setBundles((bundlesData as Array<Record<string, unknown>>) || []);
     } catch (bundleErr) {
       console.error("Unexpected error loading bundles:", bundleErr);
       // Continue without bundles
+      setBundles([]);
     }
   }, [toast]);
 
@@ -870,11 +896,17 @@ export default function Inventory() {
   }
 
   const filteredListings = useMemo(() => {
+    console.log("Filtering listings - Products:", listings.length, "Bundles:", bundles.length);
+    
     // Combine products and bundles
     const combinedItems = [
       ...listings.map(l => ({ ...l, itemType: 'product' })),
       ...bundles.map(b => ({ ...b, itemType: 'bundle' }))
     ];
+
+    console.log("Combined items total:", combinedItems.length, 
+      "Products:", combinedItems.filter(i => i.itemType === 'product').length,
+      "Bundles:", combinedItems.filter(i => i.itemType === 'bundle').length);
 
     let result = [...combinedItems];
 
@@ -944,7 +976,7 @@ export default function Inventory() {
     }
 
     return result;
-  }, [listings, filters]);
+  }, [listings, bundles, filters]);
 
   const activeFilterCount = [
     filters.searchTerm,
@@ -1019,8 +1051,25 @@ export default function Inventory() {
           <p className="text-muted-foreground">
             Manage your product listings and variants
           </p>
+          {/* Debug Info */}
+          <div className="text-xs text-gray-500 mt-1">
+            Products: {listings.length} | Bundles: {bundles.length} | Total Items: {filteredListings.length}
+          </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => {
+              if (sellerId) {
+                console.log("🔄 Force refreshing inventory...");
+                loadListings(sellerId);
+              }
+            }}
+            className="flex items-center gap-2"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
           <Button
             variant="outline"
             onClick={() => setRaiseDisputeOpen(true)}

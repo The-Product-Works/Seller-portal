@@ -1,209 +1,182 @@
 /**
- * Email Template: New Order Received (Seller)
+ * New Order Received Email Template for Sellers
  * Sent when seller receives a new order
  */
 
-export interface NewOrderReceivedData {
-  sellerName: string;
-  orderNumber: string;
-  orderDate: string;
-  totalAmount: number;
-  itemCount: number;
-  items: Array<{
-    productName: string;
-    quantity: number;
-    price: number;
-  }>;
-  buyerName: string;
-  shippingAddress: string;
-  dashboardUrl?: string;
-  orderDetailsUrl?: string; // Direct link to order details page
-}
+import {
+  buildEmailWrapper,
+  buildActionButton,
+  buildOrderItemsTable,
+  buildShippingAddressSection,
+  formatCurrency,
+  formatDate,
+} from "../template-utils";
+import type { NewOrderSellerTemplateData } from "../types";
 
 export function generateNewOrderReceivedEmail(
-  data: NewOrderReceivedData
+  data: NewOrderSellerTemplateData
 ): string {
-  const itemsHtml = data.items
-    .map(
-      (item) => `
-    <tr>
-      <td style="padding: 8px; border-bottom: 1px solid #e5e7eb;">
-        ${item.productName}
-      </td>
-      <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: center;">
-        ${item.quantity}
-      </td>
-      <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; text-align: right;">
-        ₹${item.price.toFixed(2)}
-      </td>
-    </tr>
-  `
-    )
-    .join("");
+  const content = `
+    <div style="text-align: center; margin-bottom: 30px;">
+      <div style="background: #3b82f6; width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
+        <span style="color: white; font-size: 32px;">🛒</span>
+      </div>
+      <h2 style="color: #3b82f6; margin: 0; font-size: 28px;">New Order Received!</h2>
+    </div>
 
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>New Order Received</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f3f4f6;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 20px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-          
-          <!-- Header -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px; text-align: center;">
-              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: bold;">
-                🎉 New Order Received!
-              </h1>
-            </td>
-          </tr>
+    <div style="background: #eff6ff; padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #3b82f6;">
+      <p style="margin: 0 0 16px 0; font-size: 16px; color: #374151;">
+        Hello <strong>${data.sellerName}</strong>,
+      </p>
+      <p style="margin: 0; font-size: 14px; color: #6b7280; line-height: 1.6;">
+        Great news! You have received a new order from <strong>${
+          data.customerName
+        }</strong>. Please prepare the items for shipment and update the order status accordingly.
+      </p>
+    </div>
 
-          <!-- Content -->
-          <tr>
-            <td style="padding: 30px;">
-              <p style="margin: 0 0 20px 0; font-size: 16px; color: #374151;">
-                Hello <strong>${data.sellerName}</strong>,
-              </p>
+    <div style="background: white; padding: 24px; border-radius: 8px; margin: 24px 0; border: 2px solid #e5e7eb;">
+      <h3 style="margin: 0 0 20px 0; font-size: 18px; color: #374151;">Order Details</h3>
+      
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Order Number:</span>
+        <span style="color: #374151; font-family: monospace; background: #f3f4f6; padding: 2px 6px; border-radius: 4px;">#${
+          data.orderNumber
+        }</span>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Customer:</span>
+        <span style="color: #374151;">${data.customerName}</span>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Order Date:</span>
+        <span style="color: #374151;">${formatDate(data.orderDate)}</span>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; margin-bottom: 0;">
+        <span style="font-weight: 500; color: #6b7280;">Total Amount:</span>
+        <span style="color: #10b981; font-weight: 600; font-size: 18px;">${formatCurrency(
+          data.totalAmount,
+          data.currency
+        )}</span>
+      </div>
+    </div>
 
-              <p style="margin: 0 0 20px 0; font-size: 16px; color: #374151;">
-                Great news! You have received a new order.
-              </p>
+    <div style="margin: 24px 0;">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #374151;">Ordered Items</h3>
+      ${buildOrderItemsTable(data.items)}
+    </div>
 
-              <!-- Order Details Card -->
-              <div style="background-color: #f9fafb; border-left: 4px solid #10b981; padding: 20px; margin: 20px 0; border-radius: 4px;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Order Number:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      <span style="color: #10b981; font-weight: bold;">${
-                        data.orderNumber
-                      }</span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Order Date:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      ${data.orderDate}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Total Amount:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      <span style="font-size: 20px; font-weight: bold; color: #10b981;">₹${data.totalAmount.toFixed(
-                        2
-                      )}</span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Buyer:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      ${data.buyerName}
-                    </td>
-                  </tr>
-                </table>
-              </div>
+    ${buildShippingAddressSection(data.shippingAddress)}
 
-              <!-- Items Table -->
-              <h3 style="margin: 30px 0 15px 0; color: #111827; font-size: 18px;">
-                Order Items (${data.itemCount})
-              </h3>
-              <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #e5e7eb; border-radius: 4px;">
-                <thead>
-                  <tr style="background-color: #f9fafb;">
-                    <th style="padding: 12px 8px; text-align: left; border-bottom: 2px solid #e5e7eb; color: #6b7280;">
-                      Product
-                    </th>
-                    <th style="padding: 12px 8px; text-align: center; border-bottom: 2px solid #e5e7eb; color: #6b7280;">
-                      Qty
-                    </th>
-                    <th style="padding: 12px 8px; text-align: right; border-bottom: 2px solid #e5e7eb; color: #6b7280;">
-                      Price
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${itemsHtml}
-                </tbody>
-              </table>
+    <div style="background: #f0fdf4; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #10b981;">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #065f46;">📋 Next Steps</h3>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #10b981; margin-right: 8px;">1.</span>
+        <span style="color: #374151;"><strong>Confirm Order:</strong> Accept or reject the order within 2 hours</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #10b981; margin-right: 8px;">2.</span>
+        <span style="color: #374151;"><strong>Prepare Items:</strong> Quality check and packaging</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #10b981; margin-right: 8px;">3.</span>
+        <span style="color: #374151;"><strong>Update Status:</strong> Mark as packed when ready</span>
+      </div>
+      
+      <div style="margin-bottom: 0;">
+        <span style="color: #10b981; margin-right: 8px;">4.</span>
+        <span style="color: #374151;"><strong>Ship Order:</strong> Hand over to logistics partner</span>
+      </div>
+    </div>
 
-              <!-- Shipping Address -->
-              <h3 style="margin: 30px 0 15px 0; color: #111827; font-size: 18px;">
-                📦 Shipping Address
-              </h3>
-              <div style="background-color: #f9fafb; padding: 15px; border-radius: 4px; color: #374151;">
-                ${data.shippingAddress.replace(/\n/g, "<br>")}
-              </div>
+    ${buildActionButton({
+      text: "Manage Order",
+      url: data.sellerDashboardUrl,
+      color: "#3b82f6",
+    })}
 
-              <!-- Action Required -->
-              <div style="background-color: #fef3c7; border: 1px solid #fbbf24; border-radius: 4px; padding: 15px; margin: 20px 0;">
-                <p style="margin: 0; color: #92400e;">
-                  <strong>⚡ Action Required:</strong> Please prepare this order for shipping as soon as possible.
-                </p>
-              </div>
+    <div style="display: flex; gap: 12px; justify-content: center; margin: 20px 0;">
+      <a href="${data.orderUrl}" 
+         style="display: inline-block; padding: 10px 20px; background: white; color: #10b981; border: 2px solid #10b981; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+        Accept Order
+      </a>
+      <a href="${data.orderUrl}" 
+         style="display: inline-block; padding: 10px 20px; background: white; color: #ef4444; border: 2px solid #ef4444; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 14px;">
+        Reject Order
+      </a>
+    </div>
 
-              <!-- CTA Buttons -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin: 30px 0;">
-                <tr>
-                  <td align="center">
-                    ${
-                      data.orderDetailsUrl
-                        ? `
-                    <a href="${data.orderDetailsUrl}" style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: bold; font-size: 16px; margin-right: 10px;">
-                      📦 View Order Details
-                    </a>
-                        `
-                        : ""
-                    }
-                    ${
-                      data.dashboardUrl
-                        ? `
-                    <a href="${data.dashboardUrl}" style="display: inline-block; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-weight: bold; font-size: 16px;">
-                      🏠 Go to Dashboard
-                    </a>
-                        `
-                        : ""
-                    }
-                  </td>
-                </tr>
-              </table>
+    <div style="background: #fff7ed; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #92400e;">⏰ Time Sensitive</h3>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #f59e0b; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Please respond within <strong>2 hours</strong> to maintain good seller rating</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #f59e0b; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Late responses may result in automatic order cancellation</span>
+      </div>
+      
+      <div style="margin-bottom: 0;">
+        <span style="color: #f59e0b; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Customer expects order processing within 24 hours</span>
+      </div>
+    </div>
 
-              <p style="margin: 20px 0 0 0; font-size: 14px; color: #6b7280;">
-                Thank you for being a valued seller on ProtiMart!
-              </p>
-            </td>
-          </tr>
+    <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #374151;">💡 Pro Tips</h3>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #6366f1; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Double-check item availability before confirming</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #6366f1; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Verify shipping address for accuracy</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #6366f1; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Ensure proper packaging for safe delivery</span>
+      </div>
+      
+      <div style="margin-bottom: 0;">
+        <span style="color: #6366f1; margin-right: 8px;">•</span>
+        <span style="color: #374151;">Communicate with customer for any clarifications</span>
+      </div>
+    </div>
 
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; font-size: 12px; color: #6b7280;">
-                This is an automated notification from ProtiMart
-              </p>
-              <p style="margin: 5px 0 0 0; font-size: 12px; color: #6b7280;">
-                © ${new Date().getFullYear()} ProtiMart. All rights reserved.
-              </p>
-            </td>
-          </tr>
+    <div style="text-align: center; margin: 24px 0;">
+      <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 14px;">
+        Questions about order management?
+      </p>
+      <a href="https://support.sellerportal.com/order-management" 
+         style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        View Order Management Guide
+      </a>
+    </div>
 
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
+    <div style="background: #f9fafb; padding: 16px; border-radius: 6px; margin: 20px 0;">
+      <p style="margin: 0; font-size: 12px; color: #6b7280; text-align: center;">
+        📱 You can also manage this order through the mobile app for quick updates on the go.
+      </p>
+    </div>
   `;
+
+  return buildEmailWrapper({
+    title: "New Order Received",
+    recipientName: data.sellerName,
+    recipientEmail: data.sellerEmail,
+    content,
+    headerColor: "#3b82f6",
+  });
 }

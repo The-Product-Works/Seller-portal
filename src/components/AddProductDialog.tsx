@@ -678,7 +678,11 @@ export default function AddProductDialog({
         
         // Provide user-friendly error messages
         if (listingError.code === '23503') {
-          throw new Error("Invalid seller or product reference. Please refresh and try again.");
+          if (listingError.message.includes('seller_payout_items')) {
+            throw new Error("Cannot edit this product because it has associated payouts. Please contact support or apply the database fix in URGENT_FIX_RUN_IN_SUPABASE.sql");
+          } else {
+            throw new Error("Invalid reference constraint. Please refresh and try again.");
+          }
         } else {
           throw new Error(`Failed to ${isEditing ? 'update' : 'create'} listing: ${listingError.message}`);
         }

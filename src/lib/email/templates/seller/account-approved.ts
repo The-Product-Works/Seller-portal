@@ -1,184 +1,112 @@
 /**
- * Email Template: Account Approved (Seller)
- * Sent after KYC verification and onboarding completion
+ * Account Approved Email Template for Sellers
+ * Sent after successful KYC verification and onboarding completion
  */
 
-export interface AccountApprovedData {
-  sellerName: string;
-  businessName: string;
-  approvalDate: string;
-  sellerId: string;
-  dashboardUrl?: string;
-  inventoryUrl?: string;
-  supportUrl?: string;
-}
+import {
+  buildEmailWrapper,
+  buildActionButton,
+  formatDate,
+} from "../template-utils";
+import type { AccountApprovedTemplateData } from "../types";
 
 export function generateAccountApprovedEmail(
-  data: AccountApprovedData
+  data: AccountApprovedTemplateData
 ): string {
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Account Approved</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: Arial, sans-serif; background-color: #f3f4f6;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f3f4f6; padding: 20px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-          
-          <!-- Header -->
-          <tr>
-            <td style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 40px; text-align: center;">
-              <div style="font-size: 60px; margin-bottom: 10px;">🎉</div>
-              <h1 style="margin: 0; color: #ffffff; font-size: 32px; font-weight: bold;">
-                Congratulations!
-              </h1>
-              <p style="margin: 10px 0 0 0; color: #ffffff; font-size: 18px;">
-                Your seller account has been approved
-              </p>
-            </td>
-          </tr>
+  const content = `
+    <div style="text-align: center; margin-bottom: 30px;">
+      <div style="background: #10b981; width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;">
+        <span style="color: white; font-size: 40px;">✓</span>
+      </div>
+      <h2 style="color: #10b981; margin: 0; font-size: 28px;">Account Approved!</h2>
+    </div>
 
-          <!-- Content -->
-          <tr>
-            <td style="padding: 30px;">
-              <p style="margin: 0 0 20px 0; font-size: 16px; color: #374151;">
-                Hello <strong>${data.sellerName}</strong>,
-              </p>
+    <div style="background: #f0fdf4; padding: 24px; border-radius: 8px; margin: 24px 0; border-left: 4px solid #10b981;">
+      <p style="margin: 0 0 16px 0; font-size: 16px; color: #374151;">
+        <strong>Congratulations ${data.sellerName}!</strong>
+      </p>
+      <p style="margin: 0; font-size: 14px; color: #6b7280; line-height: 1.6;">
+        Your seller account has been successfully verified and approved. You can now start selling your products on our platform and reach thousands of customers.
+      </p>
+    </div>
 
-              <p style="margin: 0 0 20px 0; font-size: 16px; color: #374151;">
-                We're thrilled to inform you that your seller account for <strong>${
-                  data.businessName
-                }</strong> has been successfully verified and approved! You can now start selling on ProtiMart.
-              </p>
+    <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #374151;">Account Details</h3>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Seller Name:</span>
+        <span style="color: #374151; margin-left: 8px;">${
+          data.sellerName
+        }</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Email:</span>
+        <span style="color: #374151; margin-left: 8px;">${
+          data.sellerEmail
+        }</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="font-weight: 500; color: #6b7280;">Approval Date:</span>
+        <span style="color: #374151; margin-left: 8px;">${formatDate(
+          data.approvalDate
+        )}</span>
+      </div>
+    </div>
 
-              <!-- Account Details Card -->
-              <div style="background-color: #d1fae5; border-left: 4px solid #10b981; padding: 20px; margin: 20px 0; border-radius: 4px;">
-                <table width="100%" cellpadding="0" cellspacing="0">
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Seller ID:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      <span style="color: #059669; font-weight: bold;">${
-                        data.sellerId
-                      }</span>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Business Name:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      ${data.businessName}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Approval Date:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      ${data.approvalDate}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 8px 0;">
-                      <strong style="color: #6b7280;">Status:</strong>
-                    </td>
-                    <td style="padding: 8px 0; text-align: right;">
-                      <span style="background-color: #10b981; color: #ffffff; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: bold;">
-                        ACTIVE
-                      </span>
-                    </td>
-                  </tr>
-                </table>
-              </div>
+    <div style="background: #eff6ff; padding: 20px; border-radius: 8px; margin: 20px 0;">
+      <h3 style="margin: 0 0 16px 0; font-size: 18px; color: #374151;">What's Next?</h3>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #3b82f6; margin-right: 8px;">1.</span>
+        <span style="color: #374151;">Add your first product to start selling</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #3b82f6; margin-right: 8px;">2.</span>
+        <span style="color: #374151;">Set up your payout preferences</span>
+      </div>
+      
+      <div style="margin-bottom: 12px;">
+        <span style="color: #3b82f6; margin-right: 8px;">3.</span>
+        <span style="color: #374151;">Configure your shipping settings</span>
+      </div>
+      
+      <div style="margin-bottom: 0;">
+        <span style="color: #3b82f6; margin-right: 8px;">4.</span>
+        <span style="color: #374151;">Start receiving orders from customers</span>
+      </div>
+    </div>
 
-              <!-- Next Steps -->
-              <h3 style="margin: 30px 0 15px 0; color: #111827; font-size: 20px;">
-                🚀 Next Steps
-              </h3>
-              <div style="background-color: #f9fafb; padding: 20px; border-radius: 4px;">
-                <ol style="margin: 0; padding-left: 20px; color: #374151;">
-                  <li style="margin-bottom: 10px; line-height: 1.6;">
-                    <strong>Add Your Products:</strong> Upload your product catalog to start selling
-                  </li>
-                  <li style="margin-bottom: 10px; line-height: 1.6;">
-                    <strong>Set Up Inventory:</strong> Manage your stock levels and pricing
-                  </li>
-                  <li style="margin-bottom: 10px; line-height: 1.6;">
-                    <strong>Configure Shipping:</strong> Set up your shipping methods and rates
-                  </li>
-                  <li style="margin-bottom: 10px; line-height: 1.6;">
-                    <strong>Start Selling:</strong> Your products will be visible to millions of buyers
-                  </li>
-                </ol>
-              </div>
+    ${buildActionButton({
+      text: "Access Seller Dashboard",
+      url: data.dashboardUrl,
+      color: "#10b981",
+    })}
 
-              <!-- CTA Buttons -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin: 30px 0;">
-                <tr>
-                  <td align="center">
-                    ${
-                      data.dashboardUrl
-                        ? `
-                    <a href="${data.dashboardUrl}" style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: #ffffff; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: bold; font-size: 16px; margin: 5px;">
-                      Go to Dashboard
-                    </a>
-                    `
-                        : ""
-                    }
-                    ${
-                      data.inventoryUrl
-                        ? `
-                    <a href="${data.inventoryUrl}" style="display: inline-block; background-color: #ffffff; color: #059669; border: 2px solid #059669; text-decoration: none; padding: 16px 40px; border-radius: 6px; font-weight: bold; font-size: 16px; margin: 5px;">
-                      Add Products
-                    </a>
-                    `
-                        : ""
-                    }
-                  </td>
-                </tr>
-              </table>
+    <div style="text-align: center; margin: 24px 0;">
+      <p style="margin: 0 0 8px 0; color: #6b7280; font-size: 14px;">
+        Need help getting started?
+      </p>
+      <a href="${data.supportUrl || "https://support.sellerportal.com"}" 
+         style="color: #3b82f6; text-decoration: none; font-weight: 500;">
+        Contact our support team
+      </a>
+    </div>
 
-              <!-- Support Info -->
-              <div style="background-color: #dbeafe; border: 1px solid #3b82f6; border-radius: 4px; padding: 15px; margin: 20px 0;">
-                <p style="margin: 0; color: #1e40af;">
-                  <strong>💡 Need Help?</strong> Our seller support team is here to assist you. ${
-                    data.supportUrl
-                      ? `<a href="${data.supportUrl}" style="color: #2563eb;">Contact Support</a>`
-                      : "Contact us anytime for assistance."
-                  }
-                </p>
-              </div>
-
-              <p style="margin: 20px 0 0 0; font-size: 16px; color: #374151;">
-                Welcome to the ProtiMart seller community! We're excited to have you on board.
-              </p>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="background-color: #f9fafb; padding: 20px; text-align: center; border-top: 1px solid #e5e7eb;">
-              <p style="margin: 0; font-size: 12px; color: #6b7280;">
-                This is an automated notification from ProtiMart
-              </p>
-              <p style="margin: 5px 0 0 0; font-size: 12px; color: #6b7280;">
-                © ${new Date().getFullYear()} ProtiMart. All rights reserved.
-              </p>
-            </td>
-          </tr>
-
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
+    <div style="background: #f9fafb; padding: 16px; border-radius: 6px; margin: 20px 0;">
+      <p style="margin: 0; font-size: 12px; color: #6b7280; text-align: center;">
+        Welcome to our seller community! We're excited to have you on board.
+      </p>
+    </div>
   `;
+
+  return buildEmailWrapper({
+    title: "Account Approved",
+    recipientName: data.sellerName,
+    recipientEmail: data.sellerEmail,
+    content,
+    headerColor: "#10b981",
+  });
 }

@@ -13,7 +13,6 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import { Package } from "lucide-react";
-import { sendLowStockAlert, sendOutOfStockAlert } from "@/lib/notifications/proxy-notification-helpers";
 
 interface SimpleRestockDialogProps {
   open: boolean;
@@ -169,72 +168,30 @@ export function SimpleRestockDialog({
 
   const checkAndSendStockAlerts = async (stock: number, productName: string, sellerId: string) => {
     try {
-      console.log('=== CHECKING STOCK ALERTS (Working Solution) ===');
+      console.log('=== CHECKING STOCK ALERTS ===');
       console.log('Product:', productName, 'Stock:', stock);
 
       const LOW_STOCK_THRESHOLD = 10;
 
       if (stock === 0) {
-        console.log('📧 Sending OUT OF STOCK alert...');
-        
-        const result = await sendOutOfStockAlert({
-          sellerId,
-          productName,
-          productId
+        console.log('⚠️ Product is out of stock');
+        toast({
+          title: "⚠️ Out of Stock",
+          description: `${productName} is now out of stock`,
+          variant: "destructive"
         });
-        
-        console.log('📧 Out of stock alert result:', result);
-        
-        if (result.success) {
-          toast({
-            title: "📧 Out of Stock Alert Sent!",
-            description: `Notification sent successfully for ${productName}`,
-          });
-        } else {
-          toast({
-            title: "⚠️ Email Alert Failed",
-            description: result.error?.includes('domain') 
-              ? "Email requires verified domain. Stock updated successfully." 
-              : "Stock updated but email notification failed",
-            variant: result.error?.includes('domain') ? "default" : "destructive"
-          });
-        }
       } else if (stock <= LOW_STOCK_THRESHOLD) {
-        console.log('📧 Sending LOW STOCK alert...');
-        
-        const result = await sendLowStockAlert({
-          sellerId,
-          productName,
-          currentStock: stock,
-          productId
+        console.log('⚠️ Low stock detected');
+        toast({
+          title: "⚠️ Low Stock Alert",
+          description: `${productName} has only ${stock} units remaining`,
+          variant: "destructive"
         });
-        
-        console.log('📧 Low stock alert result:', result);
-        
-        if (result.success) {
-          toast({
-            title: "📧 Low Stock Alert Sent!",
-            description: `Notification sent successfully for ${productName}`,
-          });
-        } else {
-          toast({
-            title: "⚠️ Email Alert Failed",
-            description: result.error?.includes('domain') 
-              ? "Email requires verified domain. Stock updated successfully." 
-              : "Stock updated but email notification failed",
-            variant: result.error?.includes('domain') ? "default" : "destructive"
-          });
-        }
       } else {
-        console.log('✅ Stock level OK, no alert needed');
+        console.log('✅ Stock level OK');
       }
     } catch (error) {
-      console.error("❌ Error sending stock alert:", error);
-      toast({
-        title: "⚠️ Email Alert Failed",
-        description: "Stock updated but email notification failed",
-        variant: "destructive"
-      });
+      console.error("❌ Error checking stock alerts:", error);
     }
   };
 

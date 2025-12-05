@@ -1,17 +1,6 @@
 // src/services/real-time-notifications.ts
 import { supabase } from '@/integrations/supabase/client';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { 
-  sendLowStockAlert, 
-  sendOutOfStockAlert,
-  sendNewOrderNotification,
-  sendOrderCancelledNotification,
-  sendReturnRequestNotification,
-  sendRefundCompletedNotification,
-  sendAccountApprovedNotification,
-  sendNewReviewNotification,
-  sendPayoutNotification
-} from '@/lib/notifications/proxy-notification-helpers';
 
 export interface NotificationConfig {
   enabled: boolean;
@@ -208,7 +197,7 @@ export class RealTimeNotificationService {
   }
 
   // Add duplicate prevention helper
-  private isDuplicateEvent(eventType: string, entityId: string, data: any): boolean {
+  private isDuplicateEvent(eventType: string, entityId: string, data: Record<string, unknown>): boolean {
     const eventKey = `${eventType}_${entityId}_${JSON.stringify(data)}`;
     const currentTime = Date.now();
     
@@ -269,34 +258,83 @@ export class RealTimeNotificationService {
           }
           
           try {
-            // Get order details
+            // Get order details and seller info
             const { data: order } = await supabase
               .from('orders')
-              .select('*')
+              .select(`
+                *,
+                users!inner(email, first_name, last_name)
+              `)
               .eq('order_id', orderItem.order_id)
+              .single();
+
+            // Get seller details
+            const { data: seller } = await supabase
+              .from('sellers')
+              .select('business_email, business_name')
+              .eq('seller_id', orderItem.seller_id)
+              .single();
+
+            // Get product details
+            const { data: listing } = await supabase
+              .from('listings')
+              .select('title, category')
+              .eq('listing_id', orderItem.listing_id)
               .single();
             
             const orderNumber = `ORD-${orderItem.order_id.slice(0, 8)}`;
             const totalAmount = (orderItem.quantity || 1) * (orderItem.price_per_unit || 0);
             
-            console.log('📧 Sending new order notification...', {
-              sellerId: orderItem.seller_id,
-              orderNumber,
-              amount: totalAmount
-            });
-            
-            await sendNewOrderNotification({
-              sellerId: orderItem.seller_id,
-              orderId: orderItem.order_id,
-              orderNumber: orderNumber,
-              productName: 'Product', // We'll get this from listing if needed
-              quantity: orderItem.quantity || 1,
-              amount: totalAmount,
-              customerName: order?.buyer_id ? `Customer-${order.buyer_id.slice(0, 8)}` : 'Customer'
-            });
-            console.log('✅ New order notification sent successfully');
+            if (seller?.business_email && order?.users?.email) {
+              // Import email service
+              const { sendNewOrderReceivedEmail } = await import('@/lib/email/helpers/new-order-received');
+              const { sendOrderConfirmedEmail } = await import('@/lib/email/helpers/order-confirmed');
+              
+              // Send new order notification to seller
+              const sellerEmailResult = await sendNewOrderReceivedEmail({
+                sellerName: seller.business_name || 'Seller',
+                sellerEmail: seller.business_email,
+                customerName: `${order.users.first_name} ${order.users.last_name}`,
+                customerEmail: order.users.email,
+                orderNumber,
+                orderDate: new Date().toISOString(),
+                totalAmount,
+                items: [{
+                  productName: listing?.title || 'Product',
+                  quantity: orderItem.quantity || 1,
+                  price: orderItem.price_per_unit || 0
+                }],
+                shippingAddress: order.shipping_address || {},
+                paymentMethod: order.payment_method || 'Card'
+              });
+
+              // Send order confirmation to buyer
+              const buyerEmailResult = await sendOrderConfirmedEmail({
+                buyerEmail: order.users.email,
+                buyerName: `${order.users.first_name} ${order.users.last_name}`,
+                orderNumber,
+                orderDate: new Date().toISOString(),
+                totalAmount,
+                items: [{
+                  productName: listing?.title || 'Product',
+                  quantity: orderItem.quantity || 1,
+                  price: orderItem.price_per_unit || 0
+                }],
+                shippingAddress: order.shipping_address || {},
+                paymentMethod: order.payment_method || 'Card',
+                estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+              });
+              
+              console.log('📧 Email notifications sent:', {
+                seller: sellerEmailResult.success ? '✅' : '❌',
+                buyer: buyerEmailResult.success ? '✅' : '❌',
+                orderNumber
+              });
+            } else {
+              console.log('⚠️ Missing email addresses - notifications not sent');
+            }
           } catch (error) {
-            console.error('❌ Failed to send new order notification:', error);
+            console.error('❌ Failed to send new order notifications:', error);
           }
         }
       )
@@ -325,37 +363,122 @@ export class RealTimeNotificationService {
             return;
           }
           
-          // Check if order item was cancelled
-          if (oldOrderItem.status !== 'cancelled' && newOrderItem.status === 'cancelled') {
-            console.log('❌ Order cancellation detected:', newOrderItem);
+          // Handle various order status changes
+          const statusChanged = oldOrderItem.status !== newOrderItem.status;
+          
+          if (statusChanged) {
+            console.log(`📦 Order status change: ${oldOrderItem.status} → ${newOrderItem.status}`);
             
             try {
-              // Get product listing details
+              // Get comprehensive order details
+              const { data: orderDetails } = await supabase
+                .from('orders')
+                .select(`
+                  *,
+                  users!inner(email, first_name, last_name)
+                `)
+                .eq('order_id', newOrderItem.order_id)
+                .single();
+
+              // Get seller details
+              const { data: seller } = await supabase
+                .from('sellers')
+                .select('business_email, business_name')
+                .eq('seller_id', newOrderItem.seller_id)
+                .single();
+
+              // Get product details
               const { data: listing } = await supabase
                 .from('seller_product_listings')
-                .select('seller_title')
+                .select('seller_title, category')
                 .eq('listing_id', newOrderItem.listing_id)
                 .single();
               
               const orderNumber = `ORD-${newOrderItem.order_id.slice(0, 8)}`;
               const productName = listing?.seller_title || 'Product';
               
-              console.log('📧 Sending order cancellation notification...', {
-                sellerId: newOrderItem.seller_id,
-                orderNumber,
-                productName
-              });
+              // Handle order cancellation
+              if (oldOrderItem.status !== 'cancelled' && newOrderItem.status === 'cancelled') {
+                console.log('❌ Order cancellation detected');
+                
+                if (seller?.business_email && orderDetails?.users?.email) {
+                  const { sendOrderCancelledSellerEmail } = await import('@/lib/email/helpers/order-cancelled-seller');
+                  const { sendOrderCancelledBuyerEmail } = await import('@/lib/email/helpers/order-cancelled-buyer');
+                  
+                  // Notify seller of cancellation
+                  const sellerCancelResult = await sendOrderCancelledSellerEmail({
+                    sellerName: seller.business_name || 'Seller',
+                    sellerEmail: seller.business_email,
+                    customerName: `${orderDetails.users.first_name} ${orderDetails.users.last_name}`,
+                    orderNumber,
+                    productName,
+                    cancelledAt: new Date().toISOString(),
+                    reason: 'Customer requested cancellation'
+                  });
+
+                  // Notify buyer of cancellation confirmation
+                  const buyerCancelResult = await sendOrderCancelledBuyerEmail({
+                    buyerName: `${orderDetails.users.first_name} ${orderDetails.users.last_name}`,
+                    buyerEmail: orderDetails.users.email,
+                    orderNumber,
+                    productName,
+                    refundAmount: newOrderItem.price_per_unit * newOrderItem.quantity,
+                    cancelledAt: new Date().toISOString(),
+                    refundProcessingDays: 3
+                  });
+                  
+                  console.log('📧 Cancellation emails sent:', {
+                    seller: sellerCancelResult.success ? '✅' : '❌',
+                    buyer: buyerCancelResult.success ? '✅' : '❌'
+                  });
+                }
+              }
               
-              await sendOrderCancelledNotification({
-                sellerId: newOrderItem.seller_id,
-                orderNumber: orderNumber,
-                productName: productName,
-                reason: 'Order cancelled by customer',
-                cancelledAt: new Date().toLocaleString()
-              });
-              console.log('✅ Order cancellation notification sent successfully');
+              // Handle order packed status
+              else if (oldOrderItem.status !== 'packed' && newOrderItem.status === 'packed') {
+                console.log('📦 Order packed - sending notification');
+                
+                if (orderDetails?.users?.email) {
+                  const { sendOrderPackedEmail } = await import('@/lib/email/helpers/order-packed');
+                  
+                  const packedResult = await sendOrderPackedEmail({
+                    buyerName: `${orderDetails.users.first_name} ${orderDetails.users.last_name}`,
+                    buyerEmail: orderDetails.users.email,
+                    sellerName: seller?.business_name || 'Seller',
+                    orderNumber,
+                    productName,
+                    packedAt: new Date().toISOString(),
+                    estimatedShipping: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+                    trackingAvailable: false
+                  });
+                  
+                  console.log('📧 Order packed email:', packedResult.success ? '✅' : '❌');
+                }
+              }
+              
+              // Handle return initiated status
+              else if (oldOrderItem.status !== 'return_requested' && newOrderItem.status === 'return_requested') {
+                console.log('🔄 Return initiated - sending notification');
+                
+                if (seller?.business_email) {
+                  const { sendReturnInitiatedEmail } = await import('@/lib/email/helpers/return-initiated');
+                  
+                  const returnResult = await sendReturnInitiatedEmail({
+                    sellerName: seller.business_name || 'Seller',
+                    sellerEmail: seller.business_email,
+                    customerName: `${orderDetails?.users?.first_name} ${orderDetails?.users?.last_name}`,
+                    orderNumber,
+                    productName,
+                    returnReason: 'Customer requested return',
+                    returnInitiatedAt: new Date().toISOString()
+                  });
+                  
+                  console.log('📧 Return initiated email:', returnResult.success ? '✅' : '❌');
+                }
+              }
+              
             } catch (error) {
-              console.error('❌ Failed to send order cancellation notification:', error);
+              console.error('❌ Failed to send order status change notifications:', error);
             }
           }
         }
@@ -420,17 +543,13 @@ export class RealTimeNotificationService {
             
             // Check for out of stock
             if (oldStock > 0 && newStock <= 0) {
-              console.log('📧 Sending out of stock notification...', {
+              console.log('📧 Out of stock notification would be sent...', {
                 sellerId: newListing.seller_id,
                 productName
               });
               
-              await sendOutOfStockAlert({
-                sellerId: newListing.seller_id,
-                productName: productName,
-                productId: newListing.listing_id
-              });
-              console.log('✅ Out of stock notification sent');
+              // Email notifications removed - logging event only
+              console.log('ℹ️ Out of stock notification logged (email disabled)');
             }
             // Check for low stock
             else if (
@@ -438,22 +557,17 @@ export class RealTimeNotificationService {
               newStock > 0 && 
               newStock < 10
             ) {
-              console.log('📧 Sending low stock notification...', {
+              console.log('📧 Low stock notification would be sent...', {
                 sellerId: newListing.seller_id,
                 productName,
                 currentStock: newStock
               });
               
-              await sendLowStockAlert({
-                sellerId: newListing.seller_id,
-                productName: productName,
-                currentStock: newStock,
-                productId: newListing.listing_id
-              });
-              console.log('✅ Low stock notification sent');
+              // Email notifications removed - logging event only
+              console.log('ℹ️ Low stock notification logged (email disabled)');
             }
           } catch (error) {
-            console.error('❌ Failed to send inventory notification:', error);
+            console.error('❌ Failed to log inventory event:', error);
           }
         }
       )
@@ -494,8 +608,8 @@ export class RealTimeNotificationService {
         async (payload) => {
           if (!this.isActive) return;
           
-          const oldAccount = payload.old as any;
-          const newAccount = payload.new as any;
+          const oldAccount = payload.old as { account_verified?: boolean; account_number?: string; [key: string]: unknown };
+          const newAccount = payload.new as { id: string; account_verified?: boolean; account_number?: string; bank_name?: string; [key: string]: unknown };
           
           // Check if account was verified (simulating payout event)
           if (!oldAccount.account_verified && newAccount.account_verified) {
@@ -544,7 +658,7 @@ export class RealTimeNotificationService {
         async (payload) => {
           if (!this.isActive) return;
           
-          const returnRequest = payload.new as any;
+          const returnRequest = payload.new as { order_id?: string; seller_id: string; reason?: string; [key: string]: unknown };
           console.log('🔄 New return request detected:', returnRequest);
           
           try {
@@ -601,20 +715,38 @@ export class RealTimeNotificationService {
             console.log('🎉 Account approval detected:', newSeller);
             
             try {
-              console.log('📧 Sending account approval notification...', {
-                sellerId: newSeller.id,
-                sellerName: newSeller.business_name || newSeller.name || 'Seller',
-                email: newSeller.email
-              });
+              const sellerEmail = newSeller.business_email || newSeller.email;
+              const sellerName = newSeller.business_name || newSeller.name || 'Seller';
               
-              await sendAccountApprovedNotification({
-                sellerId: newSeller.id,
-                sellerName: newSeller.business_name || newSeller.name || 'Seller',
-                email: newSeller.email || '22052204@kiit.ac.in',
-                approvedAt: new Date().toLocaleString(),
-                dashboardLink: '/dashboard'
-              });
-              console.log('✅ Account approval notification sent');
+              if (sellerEmail) {
+                const { sendAccountApprovedEmail } = await import('@/lib/email/helpers/account-approved');
+                
+                const approvalResult = await sendAccountApprovedEmail({
+                  sellerId: newSeller.id,
+                  sellerName,
+                  sellerEmail,
+                  approvalDate: new Date().toISOString()
+                });
+                
+                console.log('📧 Account approval email:', approvalResult.success ? '✅' : '❌');
+                
+                // Also notify admin about new approved seller
+                const { sendAdminKYCSubmittedEmail } = await import('@/lib/email/helpers/admin-kyc-submitted');
+                
+                const adminNotificationResult = await sendAdminKYCSubmittedEmail({
+                  sellerId: newSeller.id,
+                  sellerName,
+                  sellerEmail,
+                  adminId: 'admin',
+                  adminName: 'Admin',
+                  adminEmail: process.env.ADMIN_EMAIL || 'admin@protimart.com',
+                  documentsSubmitted: ['Business License', 'ID Verification', 'Tax Information']
+                });
+                
+                console.log('📧 Admin notification:', adminNotificationResult.success ? '✅' : '❌');
+              } else {
+                console.log('⚠️ No email address found for seller:', newSeller.id);
+              }
             } catch (error) {
               console.error('❌ Failed to send account approval notification:', error);
             }

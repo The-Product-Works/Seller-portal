@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Package, AlertTriangle, X } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
-import { getAuthenticatedSellerId, getAuthenticatedUserId } from "@/lib/seller-helpers";
+import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 
 interface Notification {
   id: string;
@@ -151,16 +151,16 @@ export function LowStockNotifications({ onProductClick, onBundleClick, showResto
 
   const handleDismissAll = async () => {
     try {
-      // Use auth user ID for RLS policy to work
-      const authUserId = await getAuthenticatedUserId();
-      if (!authUserId) return;
+      // Use seller ID for RLS policy to work
+      const sellerId = await getAuthenticatedSellerId();
+      if (!sellerId) return;
 
       const { error } = await supabase
         .from("notifications")
         .update({ is_read: true })
         .eq("type", "low_stock")
         .eq("is_read", false)
-        .eq("related_seller_id", authUserId);
+        .eq("related_seller_id", sellerId);
 
       if (error) {
         console.error("Error dismissing all notifications:", error);
