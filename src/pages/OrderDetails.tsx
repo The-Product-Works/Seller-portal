@@ -29,6 +29,11 @@ import { ArrowLeft, Package, User, MapPin, CreditCard, Truck, FileText, CheckCir
 import { getAuthenticatedSellerId } from "@/lib/seller-helpers";
 import type { Database } from "@/integrations/supabase/database.types";
 import { processDeliveryForPayout } from "@/lib/payout";
+import {
+  sendOrderShippedEmail,
+  sendOrderDeliveredEmail,
+  sendOrderCancelledEmail,
+} from "@/lib/email/helpers";
 
 // Database type aliases for better readability
 type Order = Database['public']['Tables']['orders']['Row'];
@@ -504,6 +509,67 @@ export default function OrderDetails() {
         pickup_date: courierDetails.pickupDate || null,
         notes: courierDetails.notes,
       });
+
+      // Send order shipped email to buyer
+      try {
+        console.log('🔍 Email Send Debug - Start', {
+          hasBuyer: !!buyer,
+          buyerEmail: buyer?.email,
+          hasOrder: !!order,
+          orderId: order?.order_id,
+        });
+
+        if (buyer?.email && order?.order_id) {
+          const buyerName = buyer.full_name || buyer.name || buyer.user_profiles?.full_name || "Customer";
+          const trackingUrl = courierDetails.trackingUrl || 
+            `https://track.courier.com/${courierDetails.consignmentNumber}`;
+          
+          // Format order ID for display (first 8 chars of UUID)
+          const orderNumber = order.order_id.substring(0, 8).toUpperCase();
+          
+          console.log('📧 Attempting to send order shipped email', {
+            buyerName,
+            buyerEmail: buyer.email,
+            orderId: order.order_id,
+            orderNumber,
+            trackingNumber: courierDetails.consignmentNumber,
+            carrier: courierDetails.courierPartner,
+          });
+
+          await sendOrderShippedEmail({
+            customerName: buyerName,
+            customerEmail: buyer.email,
+            orderNumber: orderNumber, // Display version (A3B2C1D4)
+            orderId: order.order_id, // Actual UUID for database
+            trackingNumber: courierDetails.consignmentNumber,
+            trackingUrl,
+            carrier: courierDetails.courierPartner,
+            estimatedDelivery: courierDetails.estimatedDelivery || "3-5 business days",
+            items: items.map(item => ({
+              name: item.seller_title || "Product",
+              quantity: item.quantity,
+              imageUrl: undefined, // Add product image URL if available
+            })),
+            orderUrl: `${window.location.origin}/orders/${order.order_id}`,
+          });
+          
+          console.log('✅ Order shipped email sent successfully');
+        } else {
+          console.warn('⚠️ Cannot send email - missing data:', {
+            hasBuyerEmail: !!buyer?.email,
+            hasOrderId: !!order?.order_id,
+            buyerEmail: buyer?.email || 'N/A',
+            orderId: order?.order_id || 'N/A',
+          });
+        }
+      } catch (emailError) {
+        console.error("❌ Failed to send order shipped email:", emailError);
+        console.error('Error details:', {
+          message: emailError instanceof Error ? emailError.message : 'Unknown error',
+          stack: emailError instanceof Error ? emailError.stack : undefined,
+        });
+        // Don't block the order update if email fails
+      }
     } catch (error) {
       console.error("Error shipping order item:", error);
     }
@@ -513,6 +579,39 @@ export default function OrderDetails() {
     try {
       // Simply update status to delivered - tracking entry was already created when shipped
       await updateOrderStatus("delivered");
+
+      // Send order delivered email to buyer
+      try {
+        if (buyer?.email && order?.order_id) {
+          const buyerName = buyer.full_name || buyer.name || buyer.user_profiles?.full_name || "Customer";
+          const orderNumber = order.order_id.substring(0, 8).toUpperCase();
+          
+          console.log('📧 Sending order delivered email', { buyerEmail: buyer.email, orderNumber });
+          
+          await sendOrderDeliveredEmail({
+            customerName: buyerName,
+            customerEmail: buyer.email,
+            orderNumber: orderNumber, // Display version
+            orderId: order.order_id, // Actual UUID for database
+            deliveryDate: new Date().toLocaleDateString('en-IN', { 
+              year: 'numeric', 
+              month: 'long', 
+              day: 'numeric' 
+            }),
+            items: items.map(item => ({
+              name: item.seller_title || "Product",
+              quantity: item.quantity,
+              imageUrl: undefined, // Add product image URL if available
+            })),
+            orderUrl: `${window.location.origin}/orders/${order.order_id}`,
+          });
+        } else {
+          console.warn('⚠️ Cannot send delivered email - missing buyer email or order ID');
+        }
+      } catch (emailError) {
+        console.error("Failed to send order delivered email:", emailError);
+        // Don't block the order update if email fails
+      }
     } catch (error) {
       console.error("Error marking as delivered:", error);
     }
@@ -549,6 +648,38 @@ export default function OrderDetails() {
       }
 
       await updateOrderStatus("cancelled", { cancel_reason: cancelReason });
+
+      // Send order cancelled email to buyer
+      try {
+        if (buyer?.email && order?.order_id) {
+          const buyerName = buyer.full_name || buyer.name || buyer.user_profiles?.full_name || "Customer";
+          const orderNumber = order.order_id.substring(0, 8).toUpperCase();
+          
+          console.log('📧 Sending order cancelled email', { buyerEmail: buyer.email, orderNumber });
+          
+          await sendOrderCancelledEmail({
+            customerName: buyerName,
+            customerEmail: buyer.email,
+            orderNumber: orderNumber, // Display version
+            orderId: order.order_id, // Actual UUID for database
+            cancellationReason: cancelReason,
+            cancelledBy: 'seller',
+            items: items.map(item => ({
+              name: item.seller_title || "Product",
+              quantity: item.quantity,
+              price: item.price_per_unit,
+            })),
+            refundAmount: orderItem?.subtotal,
+            refundMethod: "Original payment method (upi/card) to original bank account",
+            orderUrl: `${window.location.origin}/orders/${order.order_id}`,
+          });
+        } else {
+          console.warn('⚠️ Cannot send cancelled email - missing buyer email or order ID');
+        }
+      } catch (emailError) {
+        console.error("Failed to send order cancelled email:", emailError);
+        // Don't block the order update if email fails
+      }
     } catch (error) {
       console.error("Error cancelling order item:", error);
     }

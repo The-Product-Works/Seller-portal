@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/select";
 import { AlertCircle, Upload, X } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { sendAdminDisputeRaisedEmail } from "@/lib/email/helpers/admin-dispute-raised";
 
 interface SellerRaiseDisputeProps {
   isOpen: boolean;
@@ -183,6 +184,44 @@ export const SellerRaiseDispute = ({
         title: "Dispute raised successfully",
         description: `Your dispute has been submitted with ID: ${dispute.dispute_id.slice(0, 8)}`,
       });
+
+      // Send admin notification email about new dispute
+      const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
+      if (adminEmail) {
+        try {
+          // Fetch seller details for the email
+          const { data: sellerData } = await supabase
+            .from('sellers')
+            .select('email, business_name, name')
+            .eq('id', sellerId)
+            .single();
+
+          const sellerName = sellerData?.business_name || sellerData?.name || sellerData?.email || 'Seller';
+          const sellerEmail = sellerData?.email || '';
+
+          await sendAdminDisputeRaisedEmail({
+            adminEmail,
+            sellerName,
+            sellerEmail,
+            sellerId,
+            disputeId: dispute.dispute_id,
+            subject,
+            description,
+            severity,
+            disputeType: context?.type || 'platform',
+            orderNumber: context?.orderNumber,
+            productName: context?.productName,
+            raisedAt: new Date().toISOString(),
+            dashboardUrl: `${window.location.origin}/admin/disputes/${dispute.dispute_id}`,
+            hasEvidence: evidence.length > 0,
+            hasVideo: videoFile !== null,
+          });
+          console.log('[Dispute] Admin notification email sent successfully');
+        } catch (emailError) {
+          console.error('[Dispute] Failed to send admin notification:', emailError);
+          // Non-fatal - don't block user flow
+        }
+      }
 
       // Reset form
       setSubject("");

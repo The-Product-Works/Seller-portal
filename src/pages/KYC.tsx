@@ -1,4 +1,3 @@
-// src/pages/KYC.tsx
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -18,6 +17,7 @@ import type { Database } from "@/integrations/supabase/database.types";
 import { Camera, CheckCircle, Loader2, X } from "lucide-react";
 import { z } from "zod";
 import { useDocumentUpload } from "@/hooks/useDocumentUpload";
+import { sendAdminKYCSubmittedEmail } from "@/lib/email/helpers/admin-kyc-submitted";
 
 // ✅ Validation schema
 const kycSchema = z.object({
@@ -489,6 +489,34 @@ export default function KYC() {
           title: `Hi ${user.email?.split('@')[0] || 'Seller'}, welcome to Protimart! 🎉`,
           description: "Your KYC has been submitted successfully. Documents are under review.",
         });
+
+        // Send admin notification email about KYC submission
+        const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
+        if (adminEmail && newSeller) {
+          try {
+            const documentsSubmitted = [];
+            if (selfiePhoto) documentsSubmitted.push('selfie');
+            if (aadhaarPhoto) documentsSubmitted.push('aadhaar');
+            if (panPhoto) documentsSubmitted.push('pan');
+            if (formData.gstin) documentsSubmitted.push('gstin');
+
+            await sendAdminKYCSubmittedEmail({
+              adminEmail,
+              sellerName: formData.businessName || user.email?.split('@')[0] || 'Seller',
+              sellerEmail: user.email || '',
+              sellerId: newSeller.id,
+              businessName: formData.businessName,
+              documentsSubmitted,
+              submittedAt: new Date().toISOString(),
+              dashboardUrl: `${window.location.origin}/admin/sellers/${newSeller.id}`,
+            });
+            console.log('[KYC] Admin notification email sent successfully');
+          } catch (emailError) {
+            console.error('[KYC] Failed to send admin notification email:', emailError);
+            // Non-fatal - don't block user flow
+          }
+        }
+
         navigate("/seller-verification");
         return;
       }

@@ -12,6 +12,7 @@ import { DollarSign, Package, ShoppingCart, Clock, AlertCircle, RefreshCw, Star,
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
 import { LowStockNotificationsBundle } from "@/components/LowStockNotificationsBundle";
+import { TestEmailButton } from "@/components/TestEmailButton";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [kycStatus, setKycStatus] = useState<string | null>(null);
   const [sellerId, setSellerId] = useState<string | null>(null);
+  const [sellerEmail, setSellerEmail] = useState<string | null>(null);
+  const [sellerName, setSellerName] = useState<string | null>(null);
   const [revenueChange, setRevenueChange] = useState<number | null>(null);
   const [showRestockDialog, setShowRestockDialog] = useState(false);
   const [selectedListing, setSelectedListing] = useState<ListingWithDetails | null>(null);
@@ -292,12 +295,15 @@ export default function Dashboard() {
       // Get seller basic info and KYC details
       const { data: seller } = await supabase
         .from("sellers")
-        .select("verification_status, gstin_verified, pan_verified, aadhaar_verified")
+        .select("verification_status, gstin_verified, pan_verified, aadhaar_verified, email, business_name, name")
         .eq("id", authSellerId)
         .maybeSingle();
 
       if (seller) {
         setKycStatus(seller.verification_status);
+        setSellerEmail(seller.email || null);
+        // schema uses `name` for contact name
+        setSellerName(seller.business_name || seller.name || null);
       }
 
       // Current month revenue - query order_items for this seller
@@ -692,6 +698,13 @@ export default function Dashboard() {
             </Button>
           </div>
         </div>
+
+      {/* Test Email Component - Hidden for production */}
+      {/* <TestEmailButton 
+        sellerEmail={sellerEmail || undefined}
+        sellerName={sellerName || undefined}
+        sellerId={sellerId || undefined}
+      /> */}
 
       {kycStatus !== "verified" && (
         <Alert className="border-yellow-200 bg-yellow-50">

@@ -9,6 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Heart, Loader2 } from "lucide-react";
 import { z } from "zod";
 import { Separator } from "@/components/ui/separator";
+import { sendWelcomeSellerEmail } from "@/lib/email/helpers/welcome-seller";
+import { sendAdminNewSellerEmail } from "@/lib/email/helpers/admin-new-seller";
 
 const signupSchema = z.object({
   username: z.string().min(3, { message: "Username must be at least 3 characters" }),
@@ -209,6 +211,40 @@ export default function SignUp() {
           description: "Account created but failed to initialize seller profile. Please contact support.",
           variant: "destructive",
         });
+      } else {
+        // Send welcome email to new seller
+        try {
+          await sendWelcomeSellerEmail({
+            sellerEmail: email,
+            sellerId: authData.user.id,
+            sellerName: username,
+            dashboardUrl: `${window.location.origin}/dashboard`,
+            kycUrl: `${window.location.origin}/kyc`,
+          });
+          console.log('[SignUp] Welcome email sent to seller');
+        } catch (emailError) {
+          console.error('[SignUp] Failed to send welcome email:', emailError);
+          // Non-fatal - don't block user flow
+        }
+
+        // Send admin notification about new seller registration
+        const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
+        if (adminEmail) {
+          try {
+            await sendAdminNewSellerEmail({
+              adminEmail,
+              sellerName: username,
+              sellerEmail: email,
+              sellerId: authData.user.id,
+              registeredAt: new Date().toISOString(),
+              dashboardUrl: `${window.location.origin}/admin/sellers/${authData.user.id}`,
+            });
+            console.log('[SignUp] Admin notification email sent');
+          } catch (emailError) {
+            console.error('[SignUp] Failed to send admin notification:', emailError);
+            // Non-fatal - don't block user flow
+          }
+        }
       }
     }
 
