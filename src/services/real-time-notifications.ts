@@ -285,54 +285,7 @@ export class RealTimeNotificationService {
             const orderNumber = `ORD-${orderItem.order_id.slice(0, 8)}`;
             const totalAmount = (orderItem.quantity || 1) * (orderItem.price_per_unit || 0);
             
-            if (seller?.business_email && order?.users?.email) {
-              // Import email service
-              const { sendNewOrderReceivedEmail } = await import('@/lib/email/helpers/new-order-received');
-              const { sendOrderConfirmedEmail } = await import('@/lib/email/helpers/order-confirmed');
-              
-              // Send new order notification to seller
-              const sellerEmailResult = await sendNewOrderReceivedEmail({
-                sellerName: seller.business_name || 'Seller',
-                sellerEmail: seller.business_email,
-                customerName: `${order.users.first_name} ${order.users.last_name}`,
-                customerEmail: order.users.email,
-                orderNumber,
-                orderDate: new Date().toISOString(),
-                totalAmount,
-                items: [{
-                  productName: listing?.title || 'Product',
-                  quantity: orderItem.quantity || 1,
-                  price: orderItem.price_per_unit || 0
-                }],
-                shippingAddress: order.shipping_address || {},
-                paymentMethod: order.payment_method || 'Card'
-              });
-
-              // Send order confirmation to buyer
-              const buyerEmailResult = await sendOrderConfirmedEmail({
-                buyerEmail: order.users.email,
-                buyerName: `${order.users.first_name} ${order.users.last_name}`,
-                orderNumber,
-                orderDate: new Date().toISOString(),
-                totalAmount,
-                items: [{
-                  productName: listing?.title || 'Product',
-                  quantity: orderItem.quantity || 1,
-                  price: orderItem.price_per_unit || 0
-                }],
-                shippingAddress: order.shipping_address || {},
-                paymentMethod: order.payment_method || 'Card',
-                estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-              });
-              
-              console.log('📧 Email notifications sent:', {
-                seller: sellerEmailResult.success ? '✅' : '❌',
-                buyer: buyerEmailResult.success ? '✅' : '❌',
-                orderNumber
-              });
-            } else {
-              console.log('⚠️ Missing email addresses - notifications not sent');
-            }
+            // Email notifications removed
           } catch (error) {
             console.error('❌ Failed to send new order notifications:', error);
           }
@@ -400,81 +353,16 @@ export class RealTimeNotificationService {
               // Handle order cancellation
               if (oldOrderItem.status !== 'cancelled' && newOrderItem.status === 'cancelled') {
                 console.log('❌ Order cancellation detected');
-                
-                if (seller?.business_email && orderDetails?.users?.email) {
-                  const { sendOrderCancelledSellerEmail } = await import('@/lib/email/helpers/order-cancelled-seller');
-                  const { sendOrderCancelledBuyerEmail } = await import('@/lib/email/helpers/order-cancelled-buyer');
-                  
-                  // Notify seller of cancellation
-                  const sellerCancelResult = await sendOrderCancelledSellerEmail({
-                    sellerName: seller.business_name || 'Seller',
-                    sellerEmail: seller.business_email,
-                    customerName: `${orderDetails.users.first_name} ${orderDetails.users.last_name}`,
-                    orderNumber,
-                    productName,
-                    cancelledAt: new Date().toISOString(),
-                    reason: 'Customer requested cancellation'
-                  });
-
-                  // Notify buyer of cancellation confirmation
-                  const buyerCancelResult = await sendOrderCancelledBuyerEmail({
-                    buyerName: `${orderDetails.users.first_name} ${orderDetails.users.last_name}`,
-                    buyerEmail: orderDetails.users.email,
-                    orderNumber,
-                    productName,
-                    refundAmount: newOrderItem.price_per_unit * newOrderItem.quantity,
-                    cancelledAt: new Date().toISOString(),
-                    refundProcessingDays: 3
-                  });
-                  
-                  console.log('📧 Cancellation emails sent:', {
-                    seller: sellerCancelResult.success ? '✅' : '❌',
-                    buyer: buyerCancelResult.success ? '✅' : '❌'
-                  });
-                }
               }
               
               // Handle order packed status
               else if (oldOrderItem.status !== 'packed' && newOrderItem.status === 'packed') {
-                console.log('📦 Order packed - sending notification');
-                
-                if (orderDetails?.users?.email) {
-                  const { sendOrderPackedEmail } = await import('@/lib/email/helpers/order-packed');
-                  
-                  const packedResult = await sendOrderPackedEmail({
-                    buyerName: `${orderDetails.users.first_name} ${orderDetails.users.last_name}`,
-                    buyerEmail: orderDetails.users.email,
-                    sellerName: seller?.business_name || 'Seller',
-                    orderNumber,
-                    productName,
-                    packedAt: new Date().toISOString(),
-                    estimatedShipping: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-                    trackingAvailable: false
-                  });
-                  
-                  console.log('📧 Order packed email:', packedResult.success ? '✅' : '❌');
-                }
+                console.log('📦 Order packed');
               }
               
               // Handle return initiated status
               else if (oldOrderItem.status !== 'return_requested' && newOrderItem.status === 'return_requested') {
-                console.log('🔄 Return initiated - sending notification');
-                
-                if (seller?.business_email) {
-                  const { sendReturnInitiatedEmail } = await import('@/lib/email/helpers/return-initiated');
-                  
-                  const returnResult = await sendReturnInitiatedEmail({
-                    sellerName: seller.business_name || 'Seller',
-                    sellerEmail: seller.business_email,
-                    customerName: `${orderDetails?.users?.first_name} ${orderDetails?.users?.last_name}`,
-                    orderNumber,
-                    productName,
-                    returnReason: 'Customer requested return',
-                    returnInitiatedAt: new Date().toISOString()
-                  });
-                  
-                  console.log('📧 Return initiated email:', returnResult.success ? '✅' : '❌');
-                }
+                console.log('🔄 Return initiated');
               }
               
             } catch (error) {
@@ -713,43 +601,6 @@ export class RealTimeNotificationService {
           // Check if account was approved
           if (oldSeller.verification_status !== 'approved' && newSeller.verification_status === 'approved') {
             console.log('🎉 Account approval detected:', newSeller);
-            
-            try {
-              const sellerEmail = newSeller.business_email || newSeller.email;
-              const sellerName = newSeller.business_name || newSeller.name || 'Seller';
-              
-              if (sellerEmail) {
-                const { sendAccountApprovedEmail } = await import('@/lib/email/helpers/account-approved');
-                
-                const approvalResult = await sendAccountApprovedEmail({
-                  sellerId: newSeller.id,
-                  sellerName,
-                  sellerEmail,
-                  approvalDate: new Date().toISOString()
-                });
-                
-                console.log('📧 Account approval email:', approvalResult.success ? '✅' : '❌');
-                
-                // Also notify admin about new approved seller
-                const { sendAdminKYCSubmittedEmail } = await import('@/lib/email/helpers/admin-kyc-submitted');
-                
-                const adminNotificationResult = await sendAdminKYCSubmittedEmail({
-                  sellerId: newSeller.id,
-                  sellerName,
-                  sellerEmail,
-                  adminId: 'admin',
-                  adminName: 'Admin',
-                  adminEmail: process.env.ADMIN_EMAIL || 'admin@protimart.com',
-                  documentsSubmitted: ['Business License', 'ID Verification', 'Tax Information']
-                });
-                
-                console.log('📧 Admin notification:', adminNotificationResult.success ? '✅' : '❌');
-              } else {
-                console.log('⚠️ No email address found for seller:', newSeller.id);
-              }
-            } catch (error) {
-              console.error('❌ Failed to send account approval notification:', error);
-            }
           }
         }
       )
