@@ -1,9 +1,10 @@
 /**
  * Enhanced Email Notification Service for Seller Portal
- * Updated version with template mapping support
+ * Updated version with template mapping support and direct Resend integration
  */
 
 import { supabaseSeller as supabase } from '@/integrations/supabase/supabaseSeller';
+import { sendEmail } from './resend-service';
 import type {
   AlertType,
   RecipientType,
@@ -65,43 +66,57 @@ export async function sendNotificationWithTemplate(
 
     console.log(`Sending ${alertType} email to ${recipientEmail}...`);
 
-    // Call Supabase Edge Function to send email
-    const { data, error } = await supabase.functions.invoke('send-email', {
-      body: {
-        recipientEmail,
-        recipientId,
-        recipientType,
-        alertType,
+    // Send email directly via Resend
+    const emailResult = await sendEmail({
+      to: recipientEmail,
+      subject: finalSubject,
+      html: htmlContent,
+    });
+
+    if (!emailResult.success) {
+      console.error('Resend error:', emailResult.error);
+      return {
+        success: false,
+        error: `Failed to send email: ${emailResult.error}`,
+      };
+    }
+
+    // Log to database
+    const { data, error: dbError } = await supabase
+      .from('email_notifications')
+      .insert({
+        notification_type: 'email',
+        recipient_type: recipientType,
+        recipient_id: recipientId || null,
+        recipient_email: recipientEmail,
         subject: finalSubject,
-        htmlContent,
-        relatedOrderId,
-        relatedProductId,
-        relatedSellerId,
-        relatedEntityId,
-        trackingId,
-        transactionId,
+        alert_type: alertType,
+        related_order_id: relatedOrderId || null,
+        related_product_id: relatedProductId || null,
+        related_seller_id: relatedSellerId || null,
+        related_entity_id: relatedEntityId || null,
+        tracking_id: trackingId || null,
+        transaction_id: transactionId || null,
+        status: 'sent',
         metadata: {
           ...metadata,
           templateGenerated: true,
           templateVersion: '2.0',
         },
-      },
-    });
+      })
+      .select('notification_id')
+      .single();
 
-    if (error) {
-      console.error('Supabase function error:', error);
-      return {
-        success: false,
-        error: `Failed to send email: ${error.message}`,
-      };
+    if (dbError) {
+      console.error('Database logging error:', dbError);
     }
 
     console.log(`${alertType} email sent successfully to ${recipientEmail}`);
 
     return {
       success: true,
-      messageId: data?.messageId || 'generated',
-      notificationId: data?.notificationId,
+      messageId: emailResult.messageId || 'generated',
+      notificationId: data?.notification_id,
     };
   } catch (error) {
     console.error(`Failed to send ${alertType} email:`, error);
