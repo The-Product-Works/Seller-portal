@@ -44,6 +44,7 @@ type Seller = Database['public']['Tables']['sellers']['Row'];
 
 interface Buyer {
   id: string;
+  email?: string;
   phone?: string;
   name?: string;
   full_name?: string;
@@ -208,7 +209,7 @@ export default function OrderDetails() {
         returnTrackingRes,
         returnQCRes
       ] = await Promise.all([
-        supabase.from("users").select("id, phone").eq("id", orderData.buyer_id).maybeSingle(),
+        supabase.from("users").select("id, email, phone").eq("id", orderData.buyer_id).maybeSingle(),
         orderData.address_id ? supabase.from("addresses").select("*").eq("address_id", orderData.address_id).single() : Promise.resolve({ data: null, error: null }),
         supabase.from("user_profiles").select("full_name, user_id").eq("user_id", orderData.buyer_id).maybeSingle(),
         supabase.from("order_returns").select("*").eq("order_item_id", orderItemData.order_item_id),
@@ -258,6 +259,7 @@ export default function OrderDetails() {
             setBuyer({
               id: addressRes.data.user_id,
               phone: addressRes.data.phone,
+              email: undefined, // Not available from address
               user_profiles: {
                 full_name: addressRes.data.name
               }
@@ -408,8 +410,6 @@ export default function OrderDetails() {
       } catch (historyError) {
         console.warn("Status history table may not exist:", historyError);
       }
-
-
 
       toast({
         title: "Order Updated",
@@ -877,11 +877,15 @@ export default function OrderDetails() {
                     {buyer?.user_profiles?.full_name || 
                      buyer?.full_name || 
                      buyer?.name || 
+                     buyer?.email?.split('@')[0] || 
                      shippingAddress?.name ||
                      "Customer Name"}
                   </p>
                 </div>
-
+                <div>
+                  <span className="font-medium text-gray-700">Email:</span>
+                  <p className="break-words text-xs text-gray-500">{buyer?.email || "Not provided"}</p>
+                </div>
                 <div>
                   <span className="font-medium text-gray-700">Phone:</span>
                   <p className="text-sm">{buyer?.phone ? buyer.phone : "Not available"}</p>
@@ -1605,7 +1609,7 @@ export default function OrderDetails() {
                   <p className="font-medium">Using Seller Details:</p>
                   <p>Name: {sellerDetails.name}</p>
                   <p>Phone: {sellerDetails.phone}</p>
-
+                  <p>Email: {sellerDetails.email}</p>
                   <p>Address: {sellerDetails.address_line1}, {sellerDetails.city}</p>
                 </div>
               )}
