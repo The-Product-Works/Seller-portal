@@ -15,6 +15,26 @@ export interface VariantForm {
   expiry_date?: string;
   nutritional_info?: Record<string, string | number | boolean | null>;
   is_available: boolean;
+  
+  // P0 Mandatory Fields
+  product_image_url?: string;
+  ingredient_image_url?: string;
+  nutrient_table_image_url?: string;
+  fssai_label_image_url?: string;
+  ingredient_list?: string;
+  allergen_info?: string;
+  fssai_number?: string;
+  fssai_expiry_date?: string;
+  nutrient_breakdown?: Record<string, unknown>;
+  accuracy_attested?: boolean;
+  attested_by?: string;
+  attested_at?: string;
+  
+  // P0 Image Files (for upload)
+  productImageFile?: File | null;
+  ingredientImageFile?: File | null;
+  nutrientImageFile?: File | null;
+  fssaiImageFile?: File | null;
 }
 
 export interface ProductForm {

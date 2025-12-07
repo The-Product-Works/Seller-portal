@@ -161,7 +161,7 @@ export default function AddProductDialog({
       // Reset form when not editing
       setSellerTitle("");
       setSellerDescription("");
-      setSellerIngredients("");
+      // sellerIngredients removed - now per-variant
       setSelectedAllergens([]);
       setVariants([]);
       setReturnPolicy("");
@@ -265,7 +265,33 @@ export default function AddProductDialog({
         batch_number: v.batch_number,
         expiry_date: v.expiry_date,
         nutritional_info: v.nutritional_info || {},
-        is_available: v.is_available
+        is_available: v.is_available,
+        // P0 Fields
+        product_image_url: v.product_image_url || null,
+        ingredient_image_url: v.ingredient_image_url || null,
+        nutrient_table_image_url: v.nutrient_table_image_url || null,
+        fssai_label_image_url: v.fssai_label_image_url || null,
+        ingredient_list: v.ingredient_list || "",
+        allergen_info: v.allergen_info || "NA",
+        fssai_number: v.fssai_number || "",
+        fssai_expiry_date: v.fssai_expiry_date || null,
+        nutrient_breakdown: v.nutrient_breakdown || {
+          servingSize: "100g",
+          energyKcal: 0,
+          macronutrients: {
+            protein: { value: 0, unit: "g" },
+            carbohydrate: { value: 0, unit: "g", ofWhichSugars: 0 },
+            fat: { value: 0, unit: "g", saturated: 0, trans: 0 },
+          },
+        },
+        accuracy_attested: v.accuracy_attested || false,
+        attested_by: v.attested_by || null,
+        attested_at: v.attested_at || null,
+        // File upload states (null for existing data)
+        productImageFile: null,
+        ingredientImageFile: null,
+        nutrientImageFile: null,
+        fssaiImageFile: null,
       })));
     }
   }
@@ -471,6 +497,25 @@ export default function AddProductDialog({
         original_price: 0,
         stock_quantity: 0,
         is_available: true,
+        
+        // P0 Fields
+        ingredient_list: "",
+        allergen_info: "NA",
+        fssai_number: "",
+        accuracy_attested: false,
+        nutrient_breakdown: {
+          servingSize: "100g",
+          energyKcal: 0,
+          macronutrients: {
+            protein: { value: 0, unit: "g" },
+            carbohydrate: { value: 0, unit: "g", ofWhichSugars: 0 },
+            fat: { value: 0, unit: "g", saturated: 0, trans: 0 },
+          },
+        },
+        productImageFile: null,
+        ingredientImageFile: null,
+        nutrientImageFile: null,
+        fssaiImageFile: null,
       },
     ]);
   }
@@ -480,8 +525,10 @@ export default function AddProductDialog({
   }
 
   function updateVariant(index: number, field: keyof VariantForm, value: string | number | boolean | Record<string, unknown> | null | undefined) {
+    console.log(`Updating variant ${index}, field: ${String(field)}, value:`, value);
     const updated = [...variants];
     updated[index] = { ...updated[index], [field]: value };
+    console.log(`Updated variant ${index}:`, updated[index]);
     setVariants(updated);
   }
 
@@ -535,7 +582,7 @@ export default function AddProductDialog({
         allergenCount: selectedAllergens.length,
         hasNutritionInfo: variants.some(v => v.nutritional_info && Object.keys(v.nutritional_info).length > 0),
         hasTransparencyData: !!transparency.manufacturing_info || !!transparency.testing_info,
-        ingredientCount: sellerIngredients.split(",").length,
+        ingredientCount: variants.length > 0 ? 1 : 0, // Changed: ingredients now per-variant
       });
 
       // Calculate price range from variants or use a default base price
@@ -617,7 +664,7 @@ export default function AddProductDialog({
           .update({
             seller_title: sellerTitle || productTitle,
             seller_description: sellerDescription,
-            seller_ingredients: sellerIngredients,
+            seller_ingredients: null, // Removed - now per-variant
             health_score: healthScore,
             base_price: basePrice,
             total_stock_quantity: totalStock,
@@ -647,7 +694,7 @@ export default function AddProductDialog({
             seller_id: sellerId,
             seller_title: sellerTitle || productTitle,
             seller_description: sellerDescription,
-            seller_ingredients: sellerIngredients,
+            seller_ingredients: null, // Removed - now per-variant
             health_score: healthScore,
             base_price: basePrice,
             total_stock_quantity: totalStock,
@@ -705,6 +752,71 @@ export default function AddProductDialog({
 
         // Insert all variants (both for new products and updates)
         for (const variant of variants) {
+          // Upload P0 images first if they exist
+          let productImageUrl = variant.product_image_url;
+          let ingredientImageUrl = variant.ingredient_image_url;
+          let nutrientImageUrl = variant.nutrient_table_image_url;
+          let fssaiImageUrl = variant.fssai_label_image_url;
+
+          // Create a temporary variant ID for image paths
+          const tempVariantId = variant.variant_id || `temp-${Date.now()}-${Math.random()}`;
+
+          if (variant.productImageFile) {
+            const filePath = `${sellerId}/${listing.listing_id}/${tempVariantId}/product.jpg`;
+            const { data, error } = await supabase.storage
+              .from('products')
+              .upload(filePath, variant.productImageFile, { upsert: true });
+            
+            if (!error) {
+              const { data: { publicUrl } } = supabase.storage
+                .from('products')
+                .getPublicUrl(filePath);
+              productImageUrl = publicUrl;
+            }
+          }
+
+          if (variant.ingredientImageFile) {
+            const filePath = `${sellerId}/${listing.listing_id}/${tempVariantId}/ingredient.jpg`;
+            const { data, error } = await supabase.storage
+              .from('products')
+              .upload(filePath, variant.ingredientImageFile, { upsert: true });
+            
+            if (!error) {
+              const { data: { publicUrl } } = supabase.storage
+                .from('products')
+                .getPublicUrl(filePath);
+              ingredientImageUrl = publicUrl;
+            }
+          }
+
+          if (variant.nutrientImageFile) {
+            const filePath = `${sellerId}/${listing.listing_id}/${tempVariantId}/nutrient.jpg`;
+            const { data, error } = await supabase.storage
+              .from('products')
+              .upload(filePath, variant.nutrientImageFile, { upsert: true });
+            
+            if (!error) {
+              const { data: { publicUrl } } = supabase.storage
+                .from('products')
+                .getPublicUrl(filePath);
+              nutrientImageUrl = publicUrl;
+            }
+          }
+
+          if (variant.fssaiImageFile) {
+            const filePath = `${sellerId}/${listing.listing_id}/${tempVariantId}/fssai.jpg`;
+            const { data, error } = await supabase.storage
+              .from('products')
+              .upload(filePath, variant.fssaiImageFile, { upsert: true });
+            
+            if (!error) {
+              const { data: { publicUrl } } = supabase.storage
+                .from('products')
+                .getPublicUrl(filePath);
+              fssaiImageUrl = publicUrl;
+            }
+          }
+
           const { error: variantError } = await supabase
             .from("listing_variants")
             .insert({
@@ -722,6 +834,47 @@ export default function AddProductDialog({
               expiry_date: variant.expiry_date,
               nutritional_info: variant.nutritional_info || {},
               is_available: variant.is_available,
+              
+              // P0 Fields
+              product_image_url: productImageUrl,
+              ingredient_image_url: ingredientImageUrl,
+              nutrient_table_image_url: nutrientImageUrl,
+              fssai_label_image_url: fssaiImageUrl,
+              ingredient_list: variant.ingredient_list,
+              allergen_info: variant.allergen_info || 'NA',
+              fssai_number: variant.fssai_number,
+              fssai_expiry_date: variant.fssai_expiry_date,
+              nutrient_breakdown: {
+                servingSize: "100g",
+                energyKcal: variant.nutritional_info?.calories || 0,
+                energyKj: Math.round((variant.nutritional_info?.calories || 0) * 4.184),
+                macronutrients: {
+                  protein: { value: variant.nutritional_info?.protein || 0, unit: "g" },
+                  carbohydrate: { value: variant.nutritional_info?.carbohydrates || 0, unit: "g", ofWhichSugars: 0 },
+                  fat: { 
+                    value: variant.nutritional_info?.fat || 0, 
+                    unit: "g", 
+                    saturated: variant.nutritional_info?.saturated_fat || 0, 
+                    trans: 0 
+                  }
+                },
+                micronutrients: {
+                  sodium: { value: variant.nutritional_info?.sodium || 0, unit: "mg" },
+                  calcium: { value: variant.nutritional_info?.calcium || 0, unit: "mg" },
+                  iron: { value: variant.nutritional_info?.iron || 0, unit: "mg" },
+                  zinc: { value: variant.nutritional_info?.zinc || 0, unit: "mg" },
+                  potassium: { value: variant.nutritional_info?.potassium || 0, unit: "mg" },
+                  magnesium: { value: variant.nutritional_info?.magnesium || 0, unit: "mg" },
+                  vitaminA: { value: variant.nutritional_info?.vitamin_a || 0, unit: "mcg" },
+                  vitaminC: { value: variant.nutritional_info?.vitamin_c || 0, unit: "mg" },
+                  vitaminD: { value: variant.nutritional_info?.vitamin_d || 0, unit: "mcg" }
+                },
+                fiber: { value: variant.nutritional_info?.fiber || 0, unit: "g" },
+                cholesterol: { value: 0, unit: "mg" }
+              },
+              accuracy_attested: variant.accuracy_attested || false,
+              attested_by: variant.attested_by || sellerId,
+              attested_at: variant.attested_at || (variant.accuracy_attested ? new Date().toISOString() : null),
             });
 
           if (variantError) {
@@ -877,7 +1030,7 @@ export default function AddProductDialog({
     setSelectedBrand(null);
     setSellerTitle("");
     setSellerDescription("");
-    setSellerIngredients("");
+    // sellerIngredients removed - now per-variant
     setSelectedAllergens([]);
     setVariants([]);
     setReturnPolicy("");
@@ -1121,16 +1274,7 @@ export default function AddProductDialog({
               />
             </div>
 
-            {/* Ingredients */}
-            <div className="space-y-2">
-              <Label>Ingredients</Label>
-              <Textarea
-                value={sellerIngredients}
-                onChange={(e) => setSellerIngredients(e.target.value)}
-                rows={3}
-                placeholder="List ingredients (comma separated)"
-              />
-            </div>
+            {/* Ingredients removed - now per-variant in P0 section */}
 
             {/* Policies */}
             <div className="space-y-2">
@@ -1351,68 +1495,463 @@ export default function AddProductDialog({
 
                 {/* Nutritional Info */}
                 <div className="border-t pt-3">
-                  <Label className="font-semibold mb-2 block">Nutritional Information</Label>
-                  <div className="grid grid-cols-2 gap-3">
+                  <Label className="font-semibold mb-2 block">Nutritional Information <span className="text-red-500">*</span></Label>
+                  
+                  {/* Macronutrients */}
+                  <div className="mb-3">
+                    <Label className="text-sm font-medium mb-2 block">Macronutrients</Label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-xs">Calories (kcal)</Label>
+                        <Input
+                          type="number"
+                          placeholder="250"
+                          value={typeof variant.nutritional_info?.calories === 'number' ? variant.nutritional_info.calories : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, calories: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Protein (g)</Label>
+                        <Input
+                          type="number"
+                          placeholder="10"
+                          value={typeof variant.nutritional_info?.protein === 'number' ? variant.nutritional_info.protein : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, protein: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Carbs (g)</Label>
+                        <Input
+                          type="number"
+                          placeholder="30"
+                          value={typeof variant.nutritional_info?.carbohydrates === 'number' ? variant.nutritional_info.carbohydrates : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, carbohydrates: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Total Fat (g)</Label>
+                        <Input
+                          type="number"
+                          placeholder="5"
+                          value={typeof variant.nutritional_info?.fat === 'number' ? variant.nutritional_info.fat : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, fat: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Saturated Fat (g)</Label>
+                        <Input
+                          type="number"
+                          placeholder="2"
+                          value={typeof variant.nutritional_info?.saturated_fat === 'number' ? variant.nutritional_info.saturated_fat : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, saturated_fat: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Fiber (g)</Label>
+                        <Input
+                          type="number"
+                          placeholder="5"
+                          value={typeof variant.nutritional_info?.fiber === 'number' ? variant.nutritional_info.fiber : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, fiber: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Micronutrients */}
+                  <div>
+                    <Label className="text-sm font-medium mb-2 block">Micronutrients (Minerals & Vitamins)</Label>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div>
+                        <Label className="text-xs">Sodium (mg)</Label>
+                        <Input
+                          type="number"
+                          placeholder="150"
+                          value={typeof variant.nutritional_info?.sodium === 'number' ? variant.nutritional_info.sodium : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, sodium: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Calcium (mg)</Label>
+                        <Input
+                          type="number"
+                          placeholder="120"
+                          value={typeof variant.nutritional_info?.calcium === 'number' ? variant.nutritional_info.calcium : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, calcium: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Iron (mg)</Label>
+                        <Input
+                          type="number"
+                          placeholder="2.5"
+                          step="0.1"
+                          value={typeof variant.nutritional_info?.iron === 'number' ? variant.nutritional_info.iron : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, iron: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Zinc (mg)</Label>
+                        <Input
+                          type="number"
+                          placeholder="1.2"
+                          step="0.1"
+                          value={typeof variant.nutritional_info?.zinc === 'number' ? variant.nutritional_info.zinc : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, zinc: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Potassium (mg)</Label>
+                        <Input
+                          type="number"
+                          placeholder="200"
+                          value={typeof variant.nutritional_info?.potassium === 'number' ? variant.nutritional_info.potassium : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, potassium: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Magnesium (mg)</Label>
+                        <Input
+                          type="number"
+                          placeholder="50"
+                          value={typeof variant.nutritional_info?.magnesium === 'number' ? variant.nutritional_info.magnesium : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, magnesium: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Vitamin A (mcg)</Label>
+                        <Input
+                          type="number"
+                          placeholder="800"
+                          value={typeof variant.nutritional_info?.vitamin_a === 'number' ? variant.nutritional_info.vitamin_a : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, vitamin_a: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Vitamin C (mg)</Label>
+                        <Input
+                          type="number"
+                          placeholder="25"
+                          value={typeof variant.nutritional_info?.vitamin_c === 'number' ? variant.nutritional_info.vitamin_c : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, vitamin_c: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Vitamin D (mcg)</Label>
+                        <Input
+                          type="number"
+                          placeholder="5"
+                          step="0.1"
+                          value={typeof variant.nutritional_info?.vitamin_d === 'number' ? variant.nutritional_info.vitamin_d : ""}
+                          onChange={(e) => {
+                            const newNutrInfo = { ...variant.nutritional_info, vitamin_d: Number(e.target.value) || 0 };
+                            updateVariant(index, "nutritional_info", newNutrInfo);
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* P0 Compliance Section */}
+                <div className="border-t pt-3 bg-blue-50 p-3 rounded">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Badge variant="outline">P0 Required</Badge>
+                    <Label className="font-semibold">Mandatory Compliance Fields</Label>
+                  </div>
+                  
+                  {/* 4 P0 Images */}
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    {/* Product Image */}
                     <div>
-                      <Label className="text-sm">Calories (per serving)</Label>
+                      <Label className="text-sm flex items-center gap-1">
+                        Product Photo <span className="text-red-500">*</span>
+                      </Label>
                       <Input
-                        type="number"
-                        placeholder="e.g., 250"
-                        value={typeof variant.nutritional_info?.calories === 'number' ? variant.nutritional_info.calories : ""}
+                        type="file"
+                        accept="image/*"
                         onChange={(e) => {
-                          const newNutrInfo = { ...variant.nutritional_info, calories: Number(e.target.value) || 0 };
-                          updateVariant(index, "nutritional_info", newNutrInfo);
+                          const file = e.target.files?.[0] || null;
+                          updateVariant(index, "productImageFile", file);
+                          if (file) {
+                            const url = URL.createObjectURL(file);
+                            updateVariant(index, "product_image_url", url);
+                          }
                         }}
+                        className="text-sm"
                       />
+                      {variant.product_image_url && (
+                        <div className="mt-2 space-y-1">
+                          <div className="text-xs text-green-600 font-medium">✓ Image uploaded</div>
+                          <img 
+                            src={variant.product_image_url as string} 
+                            alt="Product preview" 
+                            className="w-20 h-20 object-cover rounded border"
+                          />
+                        </div>
+                      )}
                     </div>
+
+                    {/* Ingredient Label Image */}
                     <div>
-                      <Label className="text-sm">Protein (g)</Label>
+                      <Label className="text-sm flex items-center gap-1">
+                        Ingredient Label <span className="text-red-500">*</span>
+                      </Label>
                       <Input
-                        type="number"
-                        placeholder="e.g., 10"
-                        value={typeof variant.nutritional_info?.protein === 'number' ? variant.nutritional_info.protein : ""}
+                        type="file"
+                        accept="image/*"
                         onChange={(e) => {
-                          const newNutrInfo = { ...variant.nutritional_info, protein: Number(e.target.value) || 0 };
-                          updateVariant(index, "nutritional_info", newNutrInfo);
+                          const file = e.target.files?.[0] || null;
+                          updateVariant(index, "ingredientImageFile", file);
+                          if (file) {
+                            const url = URL.createObjectURL(file);
+                            updateVariant(index, "ingredient_image_url", url);
+                          }
                         }}
+                        className="text-sm"
                       />
+                      {variant.ingredient_image_url && (
+                        <div className="mt-2 space-y-1">
+                          <div className="text-xs text-green-600 font-medium">✓ Image uploaded</div>
+                          <img 
+                            src={variant.ingredient_image_url as string} 
+                            alt="Ingredient label preview" 
+                            className="w-20 h-20 object-cover rounded border"
+                          />
+                        </div>
+                      )}
                     </div>
+
+                    {/* Nutrition Facts Image */}
                     <div>
-                      <Label className="text-sm">Fat (g)</Label>
+                      <Label className="text-sm flex items-center gap-1">
+                        Nutrition Facts <span className="text-red-500">*</span>
+                      </Label>
                       <Input
-                        type="number"
-                        placeholder="e.g., 5"
-                        value={typeof variant.nutritional_info?.fat === 'number' ? variant.nutritional_info.fat : ""}
+                        type="file"
+                        accept="image/*"
                         onChange={(e) => {
-                          const newNutrInfo = { ...variant.nutritional_info, fat: Number(e.target.value) || 0 };
-                          updateVariant(index, "nutritional_info", newNutrInfo);
+                          const file = e.target.files?.[0] || null;
+                          updateVariant(index, "nutrientImageFile", file);
+                          if (file) {
+                            const url = URL.createObjectURL(file);
+                            updateVariant(index, "nutrient_table_image_url", url);
+                          }
                         }}
+                        className="text-sm"
                       />
+                      {variant.nutrient_table_image_url && (
+                        <div className="mt-2 space-y-1">
+                          <div className="text-xs text-green-600 font-medium">✓ Image uploaded</div>
+                          <img 
+                            src={variant.nutrient_table_image_url as string} 
+                            alt="Nutrition facts preview" 
+                            className="w-20 h-20 object-cover rounded border"
+                          />
+                        </div>
+                      )}
                     </div>
+
+                    {/* FSSAI Certificate Image */}
                     <div>
-                      <Label className="text-sm">Carbohydrates (g)</Label>
+                      <Label className="text-sm flex items-center gap-1">
+                        FSSAI Certificate <span className="text-red-500">*</span>
+                      </Label>
                       <Input
-                        type="number"
-                        placeholder="e.g., 30"
-                        value={typeof variant.nutritional_info?.carbohydrates === 'number' ? variant.nutritional_info.carbohydrates : ""}
+                        type="file"
+                        accept="image/*"
                         onChange={(e) => {
-                          const newNutrInfo = { ...variant.nutritional_info, carbohydrates: Number(e.target.value) || 0 };
-                          updateVariant(index, "nutritional_info", newNutrInfo);
+                          const file = e.target.files?.[0] || null;
+                          updateVariant(index, "fssaiImageFile", file);
+                          if (file) {
+                            const url = URL.createObjectURL(file);
+                            updateVariant(index, "fssai_label_image_url", url);
+                          }
                         }}
+                        className="text-sm"
+                      />
+                      {variant.fssai_label_image_url && (
+                        <div className="mt-2 space-y-1">
+                          <div className="text-xs text-green-600 font-medium">✓ Image uploaded</div>
+                          <img 
+                            src={variant.fssai_label_image_url as string} 
+                            alt="FSSAI certificate preview" 
+                            className="w-20 h-20 object-cover rounded border"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* FSSAI Number & Dates */}
+                  <div className="grid grid-cols-3 gap-3 mb-3">
+                    <div>
+                      <Label className="text-sm flex items-center gap-1">
+                        FSSAI Number <span className="text-red-500">*</span>
+                      </Label>
+                      <Input
+                        type="text"
+                        placeholder="14 digit number"
+                        maxLength={14}
+                        value={variant.fssai_number || ""}
+                        onChange={(e) => {
+                          const value = e.target.value.replace(/\D/g, '');
+                          updateVariant(index, "fssai_number", value);
+                        }}
+                        className="text-sm"
+                      />
+                      {variant.fssai_number && variant.fssai_number.length !== 14 && (
+                        <div className="mt-1 text-xs text-red-500">Must be 14 digits</div>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label className="text-sm">FSSAI Expiry Date</Label>
+                      <Input
+                        type="date"
+                        value={variant.fssai_expiry_date || ""}
+                        onChange={(e) => updateVariant(index, "fssai_expiry_date", e.target.value)}
+                        className="text-sm"
                       />
                     </div>
-                    <div className="col-span-2">
-                      <Label className="text-sm">Fiber (g)</Label>
+
+                    <div>
+                      <Label className="text-sm flex items-center gap-1">
+                        Allergen Info <span className="text-red-500">*</span>
+                      </Label>
                       <Input
-                        type="number"
-                        placeholder="e.g., 5"
-                        value={typeof variant.nutritional_info?.fiber === 'number' ? variant.nutritional_info.fiber : ""}
-                        onChange={(e) => {
-                          const newNutrInfo = { ...variant.nutritional_info, fiber: Number(e.target.value) || 0 };
-                          updateVariant(index, "nutritional_info", newNutrInfo);
-                        }}
+                        type="text"
+                        placeholder="NA if none"
+                        value={variant.allergen_info || "NA"}
+                        onChange={(e) => updateVariant(index, "allergen_info", e.target.value)}
+                        className="text-sm"
                       />
                     </div>
+                  </div>
+
+                  {/* Ingredient List */}
+                  <div className="mb-3">
+                    <Label className="text-sm flex items-center gap-1">
+                      Complete Ingredient List <span className="text-red-500">*</span>
+                    </Label>
+                    <Textarea
+                      placeholder="List all ingredients in descending order by weight..."
+                      value={variant.ingredient_list || ""}
+                      onChange={(e) => updateVariant(index, "ingredient_list", e.target.value)}
+                      className="text-sm min-h-[60px]"
+                    />
+                    {variant.ingredient_list && variant.ingredient_list.length < 10 && (
+                      <div className="mt-1 text-xs text-red-500">Minimum 10 characters required</div>
+                    )}
+                  </div>
+
+                  {/* Accuracy Attestation */}
+                  <div className="flex items-center space-x-2 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                    <Checkbox
+                      checked={Boolean(variant.accuracy_attested)}
+                      onCheckedChange={(checked) => {
+                        console.log("Attestation checkbox clicked:", checked, "for variant", index);
+                        const isChecked = Boolean(checked);
+                        console.log("Setting accuracy_attested to:", isChecked);
+                        
+                        const updated = [...variants];
+                        updated[index] = { 
+                          ...updated[index], 
+                          accuracy_attested: isChecked,
+                          attested_by: isChecked ? (sellerId || "seller") : null,
+                          attested_at: isChecked ? new Date().toISOString() : null
+                        };
+                        setVariants(updated);
+                        console.log("Updated variant:", updated[index]);
+                      }}
+                      id={`attestation-${index}`}
+                    />
+                    <Label 
+                      htmlFor={`attestation-${index}`}
+                      className="text-sm font-medium cursor-pointer flex-1"
+                    >
+                      ✓ I confirm that all ingredient and nutrition information is accurate
+                      <span className="text-red-500 ml-1">*</span>
+                    </Label>
+                  </div>
+
+                  {/* P0 Status Indicator */}
+                  <div className="mt-3">
+                    {variant.product_image_url && 
+                     variant.ingredient_image_url && 
+                     variant.nutrient_table_image_url && 
+                     variant.fssai_label_image_url && 
+                     variant.fssai_number?.length === 14 &&
+                     variant.ingredient_list && 
+                     variant.ingredient_list.length >= 10 &&
+                     variant.allergen_info &&
+                     variant.nutritional_info?.calories &&
+                     variant.nutritional_info?.calories > 0 &&
+                     Boolean(variant.accuracy_attested) ? (
+                      <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-300 rounded">
+                        <Badge variant="default" className="bg-green-600">✓ P0 Compliant</Badge>
+                        <span className="text-xs text-green-700 font-medium">
+                          All mandatory compliance fields completed
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="p-2 bg-orange-50 border border-orange-300 rounded">
+                        <p className="text-xs text-orange-700 font-medium">⚠ Complete all P0 fields to enable compliance:</p>
+                        <ul className="text-xs text-orange-600 mt-1 ml-4 list-disc">
+                          {!variant.product_image_url && <li>Product Photo</li>}
+                          {!variant.ingredient_image_url && <li>Ingredient Label</li>}
+                          {!variant.nutrient_table_image_url && <li>Nutrition Facts</li>}
+                          {!variant.fssai_label_image_url && <li>FSSAI Certificate</li>}
+                          {variant.fssai_number?.length !== 14 && <li>FSSAI Number (14 digits)</li>}
+                          {(!variant.ingredient_list || variant.ingredient_list.length < 10) && <li>Ingredient List (min 10 chars)</li>}
+                          {!variant.allergen_info && <li>Allergen Information</li>}
+                          {(!variant.nutritional_info?.calories || variant.nutritional_info?.calories === 0) && <li>Nutritional Information (at least Calories)</li>}
+                          {!variant.accuracy_attested && <li>Accuracy Attestation (checkbox above)</li>}
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1790,7 +2329,7 @@ export default function AddProductDialog({
             ? {
                 seller_title: sellerTitle || selectedGlobalProduct?.product_name || "Product",
                 seller_description: sellerDescription,
-                seller_ingredients: sellerIngredients,
+                seller_ingredients: null, // Removed - now per-variant
                 base_price: variants.length > 0
                   ? Math.min(...variants.map(v => v.price))
                   : undefined,

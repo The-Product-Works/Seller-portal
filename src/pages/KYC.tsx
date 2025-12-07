@@ -43,6 +43,11 @@ const kycSchema = z.object({
     .regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, "Invalid IFSC code"),
   bankName: z.string().min(1, "Bank name is required"),
   bankAccountHolderName: z.string().min(1, "Account holder name is required"),
+  fssaiLicenseNumber: z
+    .string()
+    .length(14, "FSSAI License Number must be exactly 14 digits")
+    .regex(/^[0-9]{14}$/, "FSSAI License Number must be 14 digits"),
+  fssaiLicenseExpiryDate: z.string().min(1, "FSSAI License Expiry Date is required"),
 });
 
 // ✅ Business types (match EXACTLY Supabase enum)
@@ -91,6 +96,8 @@ export default function KYC() {
     bankAccountHolderName: "",
     accountType: "savings",
     email: "",
+    fssaiLicenseNumber: "",
+    fssaiLicenseExpiryDate: "",
   });
 
   const [selfiePhoto, setSelfiePhoto] = useState<File | null>(null);
@@ -213,6 +220,8 @@ export default function KYC() {
             bankAccountHolderName: s.account_holder_name ?? "",
             accountType: s.account_type ?? "savings",
             email: s.email ?? "",
+            fssaiLicenseNumber: s.fssai_license_number ?? "",
+            fssaiLicenseExpiryDate: s.fssai_license_expiry_date ?? "",
           });
 
           // Load previously uploaded documents
@@ -313,6 +322,8 @@ export default function KYC() {
         bankIfscCode: formData.bankIfscCode,
         bankName: formData.bankName,
         bankAccountHolderName: formData.bankAccountHolderName,
+        fssaiLicenseNumber: formData.fssaiLicenseNumber,
+        fssaiLicenseExpiryDate: formData.fssaiLicenseExpiryDate,
       });
 
       if (!validation.success) {
@@ -392,6 +403,8 @@ export default function KYC() {
             ifsc_code: formData.bankIfscCode || null,
             account_holder_name: formData.bankAccountHolderName || null,
             account_type: formData.accountType || null,
+            fssai_license_number: formData.fssaiLicenseNumber,
+            fssai_license_expiry_date: formData.fssaiLicenseExpiryDate,
             verification_status: "pending",
             onboarding_status: "in_review",
             onboarding_step: 1,
@@ -549,6 +562,8 @@ export default function KYC() {
           bank_name: formData.bankName,
           account_number: formData.bankAccountNumber,
           ifsc_code: formData.bankIfscCode,
+          fssai_license_number: formData.fssaiLicenseNumber,
+          fssai_license_expiry_date: formData.fssaiLicenseExpiryDate,
           account_holder_name: formData.bankAccountHolderName,
           email: formData.email,
           verification_status: "pending",
@@ -1110,6 +1125,47 @@ export default function KYC() {
                           })
                         }
                       />
+                    </div>
+
+                    <div>
+                      <Label>FSSAI License Number *</Label>
+                      <Input
+                        value={formData.fssaiLicenseNumber}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            fssaiLicenseNumber: e.target.value,
+                          })
+                        }
+                        placeholder="14 digit license number"
+                        maxLength={14}
+                        required
+                      />
+                      {errors.fssaiLicenseNumber && (
+                        <p className="text-sm text-destructive">
+                          {errors.fssaiLicenseNumber}
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <Label>FSSAI License Expiry Date *</Label>
+                      <Input
+                        type="date"
+                        value={formData.fssaiLicenseExpiryDate}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            fssaiLicenseExpiryDate: e.target.value,
+                          })
+                        }
+                        required
+                      />
+                      {errors.fssaiLicenseExpiryDate && (
+                        <p className="text-sm text-destructive">
+                          {errors.fssaiLicenseExpiryDate}
+                        </p>
+                      )}
                     </div>
                   </div>
 
