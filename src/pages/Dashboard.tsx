@@ -12,6 +12,7 @@ import { DollarSign, Package, ShoppingCart, Clock, AlertCircle, RefreshCw, Star,
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LowStockNotifications } from "@/components/LowStockNotifications";
 import { LowStockNotificationsBundle } from "@/components/LowStockNotificationsBundle";
+import { FSSAIExpiryNotifications } from "@/components/FSSAIExpiryNotifications";
 import { TestEmailButton } from "@/components/TestEmailButton";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -813,6 +814,9 @@ export default function Dashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {/* FSSAI Expiry Notifications */}
+      <FSSAIExpiryNotifications />
 
       {/* Tabs */}
       <Tabs defaultValue="overview" className="w-full">
