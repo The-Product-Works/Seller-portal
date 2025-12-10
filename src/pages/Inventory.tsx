@@ -1194,7 +1194,7 @@ export default function Inventory() {
                       onValueChange={(value: string) =>
                         setFilters({
                           ...filters,
-                          status: value === "all" ? undefined : (value as "draft" | "active" | "inactive"),
+                          status: value === "all" ? undefined : (value as "draft" | "active" | "inactive" | "pending_approval" | "failed_approval"),
                         })
                       }
                     >
@@ -1204,6 +1204,8 @@ export default function Inventory() {
                       <SelectContent>
                         <SelectItem value="all">All Status</SelectItem>
                         <SelectItem value="active">Active</SelectItem>
+                        <SelectItem value="pending_approval">Pending Approval</SelectItem>
+                        <SelectItem value="failed_approval">Failed Approval</SelectItem>
                         <SelectItem value="draft">Draft</SelectItem>
                         <SelectItem value="inactive">Inactive</SelectItem>
                       </SelectContent>
@@ -1491,10 +1493,17 @@ export default function Inventory() {
                           ? "default"
                           : listing.status === "draft"
                           ? "secondary"
+                          : listing.status === "pending_approval"
+                          ? "outline"
+                          : listing.status === "failed_approval"
+                          ? "destructive"
                           : "outline"
                       }
+                      className={listing.status === "pending_approval" ? "bg-yellow-100 text-yellow-800 border-yellow-300" : ""}
                     >
-                      {listing.status}
+                      {listing.status === "pending_approval" ? "⏳ Pending" : 
+                       listing.status === "failed_approval" ? "❌ Failed" :
+                       listing.status}
                     </Badge>
                     {discount > 0 && (
                       <Badge variant="destructive">{discount}% OFF</Badge>

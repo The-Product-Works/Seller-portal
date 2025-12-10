@@ -22,7 +22,7 @@ interface ProductPreviewData {
   shipping_info?: string;
   shelf_life_months?: number;
   health_score?: number;
-  status: 'draft' | 'active';
+  status: 'draft' | 'active' | 'pending_approval' | 'failed_approval';
   published_at?: string;
   manufacturing_info?: string;
   certificates?: {
