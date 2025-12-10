@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { X, Plus, Upload, Search, Image as ImageIcon } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { X, Plus, Upload, Search, Image as ImageIcon, AlertTriangle, Clock } from "lucide-react";
 import { 
   ingredientJsonToString, 
   ingredientStringToJson,
@@ -97,6 +98,7 @@ export default function AddProductDialog({
   const [loading, setLoading] = useState(false);
   const [sellerId, setSellerId] = useState<string | null>(null);
   const isEditing = Boolean(editingProduct);
+  const loadedProductIdRef = React.useRef<string | null>(null); // Track which product we've loaded to prevent reloading
   
   // Form state
   const [globalProductSearch, setGlobalProductSearch] = useState("");
@@ -128,7 +130,7 @@ export default function AddProductDialog({
   const [shelfLifeMonths, setShelfLifeMonths] = useState<number>(12);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [sellerCommission, setSellerCommission] = useState<number>(0); // Additional commission seller adds on top of 2%
-  const [status, setStatus] = useState<"draft" | "active">("draft");
+  const [status, setStatus] = useState<"draft" | "active" | "pending_approval" | "failed_approval">("draft");
   const [showBrandInput, setShowBrandInput] = useState(false);
   const [showCategoryInput, setShowCategoryInput] = useState(false);
   const [showProductInput, setShowProductInput] = useState(false);
@@ -168,9 +170,19 @@ export default function AddProductDialog({
 
   useEffect(() => {
     if (editingProduct && open) {
-      loadEditingProduct(editingProduct as ListingWithDetails);
+      const productId = (editingProduct as any).listing_id;
+      // Only load if we haven't loaded this product yet, or if it's a different product
+      if (loadedProductIdRef.current !== productId) {
+        console.log("🔄 Loading product for editing:", productId);
+        loadEditingProduct(editingProduct as ListingWithDetails);
+        loadedProductIdRef.current = productId;
+      } else {
+        console.log("⏭️ Skipping reload - product already loaded:", productId);
+      }
     } else if (!open) {
       // Only reset form when dialog is closing (not when opening for new product)
+      console.log("🔄 Resetting form - dialog closed");
+      loadedProductIdRef.current = null; // Reset the loaded product ID
       setSellerTitle("");
       setSellerDescription("");
       // sellerIngredients removed - now per-variant
@@ -245,7 +257,7 @@ export default function AddProductDialog({
     setShelfLifeMonths(product.shelf_life_months || 12);
     setReturnDays(product.return_days || 7);
     setDiscountPercentage(product.discount_percentage || 0);
-    setStatus(product.status as "draft" | "active" || "draft");
+    setStatus(product.status as "draft" | "active" | "pending_approval" | "failed_approval" || "draft");
     setReturnPolicy(product.return_policy || "");
     setShippingInfo(product.shipping_info || "");
     
@@ -258,6 +270,9 @@ export default function AddProductDialog({
         allergen_info: v.allergen_info
       })));
       
+      console.log("🔍 LOADING EDITING PRODUCT - listing_images:", product.listing_images);
+      console.log("🔍 Total listing_images count:", product.listing_images?.length || 0);
+      
       setVariants(product.listing_variants.map(v => {
         // Find product display images for this variant from listing_images
         const variantImages = product.listing_images?.filter(
@@ -265,6 +280,7 @@ export default function AddProductDialog({
         ) || [];
         
         console.log(`📦 Loading variant ${v.variant_name}:`);
+        console.log(`  - variant_id:`, v.variant_id);
         console.log(`  - Found ${variantImages.length} product display images:`, variantImages);
         console.log(`  - P0 image_url:`, v.image_url ? 'EXISTS' : 'MISSING');
         console.log(`  - ingredient_image_url:`, v.ingredient_image_url ? 'EXISTS' : 'MISSING');
@@ -321,6 +337,8 @@ export default function AddProductDialog({
               image_id: (img as any).image_id,
               sort_order: (img as any).sort_order || idx
             })),
+          // New images to upload (initialize as empty array, not undefined)
+          productImages: [],
           // File upload states (null for new uploads)
           ingredientImageFile: null,
           nutrientImageFile: null,
@@ -561,12 +579,18 @@ export default function AddProductDialog({
   function updateVariant(index: number, field: keyof VariantForm, value: string | number | boolean | Record<string, unknown> | null | undefined) {
     console.log(`Updating variant ${index}, field: ${String(field)}, value:`, value);
     const updated = [...variants];
-    updated[index] = { ...updated[index], [field]: value };
+    // Preserve ALL existing properties including runtime fields like existingProductImages, productImages, etc.
+    const currentVariant = updated[index] as any;
+    updated[index] = { 
+      ...currentVariant, // Keep all existing fields
+      [field]: value     // Update only the specified field
+    };
     console.log(`Updated variant ${index}:`, updated[index]);
+    console.log(`  - existingProductImages preserved:`, (updated[index] as any).existingProductImages?.length || 0);
     setVariants(updated);
   }
 
-  async function handleSave(overrideStatus?: "draft" | "active") {
+  async function handleSave(overrideStatus?: "draft" | "active" | "pending_approval" | "failed_approval") {
     const finalStatus = overrideStatus || status;
     console.log("handleSave called with status:", finalStatus, "override:", overrideStatus, "state:", status);
     console.log("🔍 Variants allergen_info before save:", variants.map(v => ({
@@ -900,7 +924,7 @@ export default function AddProductDialog({
           const { data: insertedVariant, error: variantError } = await supabase
             .from("listing_variants")
             .insert({
-              listing_id: listing.listing_id,
+              listing_id: listing.listing_id as any,
               sku: variant.sku,
               variant_name: variant.variant_name,
               size: variant.size,
@@ -1110,6 +1134,29 @@ export default function AddProductDialog({
             {editingProduct ? 'Edit Product' : 'Add Product'}
           </DialogTitle>
         </DialogHeader>
+
+        {/* Admin Approval Status Alerts */}
+        {editingProduct && status === "failed_approval" && (editingProduct as any).verification_notes && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Approval Failed</AlertTitle>
+            <AlertDescription>
+              <p className="font-semibold mb-1">Admin Notes:</p>
+              <p>{(editingProduct as any).verification_notes}</p>
+              <p className="mt-2 text-sm">Please address the issues above and resubmit for approval.</p>
+            </AlertDescription>
+          </Alert>
+        )}
+        
+        {editingProduct && status === "pending_approval" && (
+          <Alert className="mb-4">
+            <Clock className="h-4 w-4" />
+            <AlertTitle>Pending Admin Approval</AlertTitle>
+            <AlertDescription>
+              This product is awaiting admin review. You can still edit it, but it won't be visible to buyers until approved.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Tabs defaultValue="basic" className="w-full">
           <TabsList className="grid w-full grid-cols-6">
@@ -1563,7 +1610,7 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="250"
-                          value={variant.nutrient_breakdown?.energyKcal || ""}
+                          value={(variant.nutrient_breakdown as any)?.energyKcal || ""}
                           onChange={(e) => {
                             const value = Number(e.target.value) || 0;
                             updateVariant(index, "nutrient_breakdown", {
@@ -1847,11 +1894,17 @@ export default function AddProductDialog({
                                 const updatedVariants = [...variants];
                                 const currentAllergenIds = (updatedVariants[index].allergen_info as any)?.allergen_ids || [];
                                 
-                                console.log(`Toggling allergen ${allergen.name} for variant ${variant.variant_name}`);
-                                console.log('Before:', currentAllergenIds);
+                                console.log(`🔵 Toggling allergen ${allergen.name} for variant ${variant.variant_name}`);
+                                console.log('📊 BEFORE update - currentVariant:', {
+                                  productImages: (updatedVariants[index] as any).productImages?.length || 0,
+                                  existingProductImages: (updatedVariants[index] as any).existingProductImages?.length || 0,
+                                  allergen_ids: currentAllergenIds
+                                });
                                 
-                                updatedVariants[index] = {
-                                  ...updatedVariants[index],
+                                // Preserve ALL existing variant fields (productImages, existingProductImages, etc.)
+                                const currentVariant = updatedVariants[index] as any;
+                                const newVariant = {
+                                  ...currentVariant, // Keep all existing fields
                                   allergen_info: {
                                     allergen_ids: isSelected
                                       ? currentAllergenIds.filter((id: string) => id !== allergen.allergen_id)
@@ -1861,8 +1914,15 @@ export default function AddProductDialog({
                                     updated_at: new Date().toISOString()
                                   }
                                 };
+                                updatedVariants[index] = newVariant;
                                 
-                                console.log('After:', updatedVariants[index].allergen_info);
+                                console.log('📊 AFTER update - newVariant:', {
+                                  productImages: (newVariant as any).productImages?.length || 0,
+                                  existingProductImages: (newVariant as any).existingProductImages?.length || 0,
+                                  allergen_ids: newVariant.allergen_info.allergen_ids,
+                                  hasProductImages: 'productImages' in newVariant,
+                                  hasExistingProductImages: 'existingProductImages' in newVariant
+                                });
                                 setVariants(updatedVariants);
                               }}
                             >
@@ -1952,8 +2012,9 @@ export default function AddProductDialog({
                                       
                                       // Remove from state (UI update)
                                       existingImages.splice(imgIdx, 1);
+                                      const currentVariant = updatedVariants[index] as any;
                                       updatedVariants[index] = {
-                                        ...updatedVariants[index],
+                                        ...currentVariant,
                                         existingProductImages: existingImages
                                       };
                                       setVariants(updatedVariants);
@@ -1972,8 +2033,9 @@ export default function AddProductDialog({
                                         ...(typeof img === 'string' ? { image_url: img, is_primary: false } : img),
                                         is_primary: idx === imgIdx
                                       }));
+                                      const currentVariant = updatedVariants[index] as any;
                                       updatedVariants[index] = {
-                                        ...updatedVariants[index],
+                                        ...currentVariant,
                                         existingProductImages: updatedImages
                                       };
                                       setVariants(updatedVariants);
@@ -2014,8 +2076,9 @@ export default function AddProductDialog({
                                       const updatedVariants = [...variants];
                                       const newImages = [...((updatedVariants[index] as any).productImages || [])];
                                       newImages.splice(imgIdx, 1);
+                                      const currentVariant = updatedVariants[index] as any;
                                       updatedVariants[index] = {
-                                        ...updatedVariants[index],
+                                        ...currentVariant,
                                         productImages: newImages,
                                         newImagePrimaryIndex: (updatedVariants[index] as any).newImagePrimaryIndex === imgIdx ? 0 : (updatedVariants[index] as any).newImagePrimaryIndex
                                       };
@@ -2029,8 +2092,9 @@ export default function AddProductDialog({
                                     type="button"
                                     onClick={() => {
                                       const updatedVariants = [...variants];
+                                      const currentVariant = updatedVariants[index] as any;
                                       updatedVariants[index] = {
-                                        ...updatedVariants[index],
+                                        ...currentVariant,
                                         newImagePrimaryIndex: imgIdx
                                       };
                                       setVariants(updatedVariants);
@@ -2055,8 +2119,9 @@ export default function AddProductDialog({
                           if (files.length > 0) {
                             const updatedVariants = [...variants];
                             const existingFiles = (updatedVariants[index] as any).productImages || [];
+                            const currentVariant = updatedVariants[index] as any;
                             updatedVariants[index] = {
-                              ...updatedVariants[index],
+                              ...currentVariant,
                               productImages: [...existingFiles, ...files]
                             };
                             setVariants(updatedVariants);
@@ -2066,6 +2131,17 @@ export default function AddProductDialog({
                       <p className="text-xs text-muted-foreground">
                         Click to add more images. Total: {((variant as any).existingProductImages?.length || 0) + ((variant as any).productImages?.length || 0)} images
                       </p>
+                      {(() => {
+                        const existing = (variant as any).existingProductImages?.length || 0;
+                        const newImages = (variant as any).productImages?.length || 0;
+                        console.log(`🖼️ RENDER Product Display Images for ${variant.variant_name}:`, {
+                          existingProductImages: existing,
+                          productImages: newImages,
+                          total: existing + newImages,
+                          variantObject: variant
+                        });
+                        return null;
+                      })()}
                     </div>
 
                       {/* P0 Compliance Images */}
@@ -2120,8 +2196,9 @@ export default function AddProductDialog({
                               const file = e.target.files?.[0];
                               if (file) {
                                 const updatedVariants = [...variants];
+                                const currentVariant = updatedVariants[index] as any;
                                 updatedVariants[index] = {
-                                  ...updatedVariants[index],
+                                  ...currentVariant,
                                   productImage: file,
                                   productImagePreview: URL.createObjectURL(file)
                                 };
@@ -2161,8 +2238,9 @@ export default function AddProductDialog({
                                     }
                                     
                                     // Clear from state
+                                    const currentVariant = updatedVariants[index] as any;
                                     updatedVariants[index] = {
-                                      ...updatedVariants[index],
+                                      ...currentVariant,
                                       ingredient_image_url: null
                                     };
                                     setVariants(updatedVariants);
@@ -2181,8 +2259,9 @@ export default function AddProductDialog({
                               const file = e.target.files?.[0];
                               if (file) {
                                 const updatedVariants = [...variants];
+                                const currentVariant = updatedVariants[index] as any;
                                 updatedVariants[index] = {
-                                  ...updatedVariants[index],
+                                  ...currentVariant,
                                   ingredientImage: file,
                                   ingredientImagePreview: URL.createObjectURL(file)
                                 };
@@ -2222,8 +2301,9 @@ export default function AddProductDialog({
                                     }
                                     
                                     // Clear from state
+                                    const currentVariant = updatedVariants[index] as any;
                                     updatedVariants[index] = {
-                                      ...updatedVariants[index],
+                                      ...currentVariant,
                                       nutrient_table_image_url: null
                                     };
                                     setVariants(updatedVariants);
@@ -2242,8 +2322,9 @@ export default function AddProductDialog({
                               const file = e.target.files?.[0];
                               if (file) {
                                 const updatedVariants = [...variants];
+                                const currentVariant = updatedVariants[index] as any;
                                 updatedVariants[index] = {
-                                  ...updatedVariants[index],
+                                  ...currentVariant,
                                   nutritionImage: file,
                                   nutritionImagePreview: URL.createObjectURL(file)
                                 };
@@ -2283,8 +2364,9 @@ export default function AddProductDialog({
                                     }
                                     
                                     // Clear from state
+                                    const currentVariant = updatedVariants[index] as any;
                                     updatedVariants[index] = {
-                                      ...updatedVariants[index],
+                                      ...currentVariant,
                                       fssai_label_image_url: null
                                     };
                                     setVariants(updatedVariants);
@@ -2303,8 +2385,9 @@ export default function AddProductDialog({
                               const file = e.target.files?.[0];
                               if (file) {
                                 const updatedVariants = [...variants];
+                                const currentVariant = updatedVariants[index] as any;
                                 updatedVariants[index] = {
-                                  ...updatedVariants[index],
+                                  ...currentVariant,
                                   fssaiImage: file,
                                   fssaiImagePreview: URL.createObjectURL(file)
                                 };
@@ -2412,13 +2495,14 @@ export default function AddProductDialog({
 
                         {/* P0 Status Indicator */}
                         <div className="mt-3">
-                          {variant.ingredient_image_url && 
-                           variant.nutrient_table_image_url && 
-                           variant.fssai_label_image_url && 
+                          {((variant as any).image_url || (variant as any).productImage) && 
+                           (variant.ingredient_image_url || (variant as any).ingredientImage) && 
+                           (variant.nutrient_table_image_url || (variant as any).nutritionImage) && 
+                           (variant.fssai_label_image_url || (variant as any).fssaiImage) && 
                            variant.fssai_number?.length === 14 &&
                            isIngredientListValid(variant.ingredient_list) &&
-                           variant.nutrient_breakdown?.energyKcal &&
-                           variant.nutrient_breakdown?.energyKcal > 0 &&
+                           (variant.nutrient_breakdown as any)?.energyKcal &&
+                           (variant.nutrient_breakdown as any)?.energyKcal > 0 &&
                            Boolean(variant.accuracy_attested) ? (
                             <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-300 rounded">
                               <Badge variant="default" className="bg-green-600">✓ P0 Compliant</Badge>
@@ -2430,12 +2514,13 @@ export default function AddProductDialog({
                             <div className="p-2 bg-orange-50 border border-orange-300 rounded">
                               <p className="text-xs text-orange-700 font-medium">⚠ Complete all P0 fields to enable compliance:</p>
                               <ul className="text-xs text-orange-600 mt-1 ml-4 list-disc">
-                                {!variant.ingredient_image_url && <li>Ingredient Label Image</li>}
-                                {!variant.nutrient_table_image_url && <li>Nutrition Facts Image</li>}
-                                {!variant.fssai_label_image_url && <li>FSSAI Label Image</li>}
+                                {!(variant as any).image_url && !(variant as any).productImage && <li>Product Photo (above)</li>}
+                                {!variant.ingredient_image_url && !(variant as any).ingredientImage && <li>Ingredient Label Image</li>}
+                                {!variant.nutrient_table_image_url && !(variant as any).nutritionImage && <li>Nutrition Facts Image</li>}
+                                {!variant.fssai_label_image_url && !(variant as any).fssaiImage && <li>FSSAI Label Image</li>}
                                 {variant.fssai_number?.length !== 14 && <li>FSSAI Number (14 digits)</li>}
                                 {!isIngredientListValid(variant.ingredient_list) && <li>Ingredient List (min 10 chars)</li>}
-                                {(!variant.nutrient_breakdown?.energyKcal || variant.nutrient_breakdown?.energyKcal === 0) && <li>Nutritional Information (enter in Variants tab)</li>}
+                                {(!(variant.nutrient_breakdown as any)?.energyKcal || (variant.nutrient_breakdown as any)?.energyKcal === 0) && <li>Nutritional Information (enter in Variants tab)</li>}
                                 {!variant.accuracy_attested && <li>Accuracy Attestation (checkbox above)</li>}
                               </ul>
                             </div>
@@ -2743,13 +2828,38 @@ export default function AddProductDialog({
                 </Button>
                 <Button
                   onClick={() => {
-                    console.log("Add Product - Publish Now clicked");
+                    // Check if all variants have P0 compliance (existing URLs OR new files)
+                    const nonCompliantVariants = variants.filter(v => {
+                      const vAny = v as any;
+                      return (
+                        (!v.ingredient_image_url && !vAny.ingredientImage) || 
+                        (!v.nutrient_table_image_url && !vAny.nutritionImage) || 
+                        (!v.fssai_label_image_url && !vAny.fssaiImage) || 
+                        (!vAny.image_url && !vAny.productImage) || 
+                        v.fssai_number?.length !== 14 ||
+                        !isIngredientListValid(v.ingredient_list) ||
+                        !(v.nutrient_breakdown as any)?.energyKcal ||
+                        !(v.nutrient_breakdown as any)?.energyKcal > 0 ||
+                        !v.accuracy_attested
+                      );
+                    });
+                    
+                    if (nonCompliantVariants.length > 0) {
+                      toast({
+                        title: "P0 Compliance Required",
+                        description: `Please complete all mandatory P0 fields for ${nonCompliantVariants.length} variant(s) before submitting for approval.`,
+                        variant: "destructive"
+                      });
+                      return;
+                    }
+                    
+                    console.log("Add Product - Submit for Approval clicked");
                     setPendingAction("publish");
                     setShowAttestation(true);
                   }}
                   disabled={loading}
                 >
-                  Publish Now
+                  Submit for Approval
                 </Button>
               </>
             ) : (
@@ -2768,13 +2878,38 @@ export default function AddProductDialog({
                 </Button>
                 <Button
                   onClick={() => {
-                    console.log("Edit Product - Publish Now clicked");
+                    // Check if all variants have P0 compliance (existing URLs OR new files)
+                    const nonCompliantVariants = variants.filter(v => {
+                      const vAny = v as any;
+                      return (
+                        (!v.ingredient_image_url && !vAny.ingredientImage) || 
+                        (!v.nutrient_table_image_url && !vAny.nutritionImage) || 
+                        (!v.fssai_label_image_url && !vAny.fssaiImage) || 
+                        (!vAny.image_url && !vAny.productImage) || 
+                        v.fssai_number?.length !== 14 ||
+                        !isIngredientListValid(v.ingredient_list) ||
+                        !(v.nutrient_breakdown as any)?.energyKcal ||
+                        !(v.nutrient_breakdown as any)?.energyKcal > 0 ||
+                        !v.accuracy_attested
+                      );
+                    });
+                    
+                    if (nonCompliantVariants.length > 0) {
+                      toast({
+                        title: "P0 Compliance Required",
+                        description: `Please complete all mandatory P0 fields for ${nonCompliantVariants.length} variant(s) before submitting for approval.`,
+                        variant: "destructive"
+                      });
+                      return;
+                    }
+                    
+                    console.log("Edit Product - Submit for Approval clicked");
                     setPendingAction("publish");
                     setShowAttestation(true);
                   }}
                   disabled={loading}
                 >
-                  Publish Now
+                  Submit for Approval
                 </Button>
               </>
             )}
@@ -2866,7 +3001,7 @@ export default function AddProductDialog({
           if (pendingAction === "draft") {
             handleSave("draft");
           } else if (pendingAction === "publish") {
-            handleSave("active");
+            handleSave("pending_approval");
           }
           setPendingAction(null);
         }}

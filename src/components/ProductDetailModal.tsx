@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Package, AlertTriangle, X } from "lucide-react";
 import { ingredientJsonToString, allergenJsonToString } from "@/utils/jsonFieldHelpers";
-import { getAllergens } from "@/lib/inventory-helpers";
 
 interface ListingImage {
   image_url: string;
@@ -162,13 +161,29 @@ export function ProductDetailModal({
     console.log("🔄 loadAllergens FUNCTION CALLED in ProductDetailModal");
 
     try {
-      console.log("📞 Calling getAllergens() helper...");
-      const data = await getAllergens();
-      console.log("📦 getAllergens() returned:", data);
-      console.log("✅ Loaded", data?.length || 0, "allergens:", data?.map(a => a.name).join(", "));
+      // Try direct query first
+      console.log("📞 Trying DIRECT supabase query...");
+      const { data: directData, error: directError } = await supabase
+        .from("allergens")
+        .select("allergen_id, name")
+        .order("name");
       
-      setAllergens(data || []);
-      console.log("💾 setAllergens called, state should now have", data?.length || 0, "items");
+      console.log("📦 Direct query result:", { directData, directError });
+      
+      if (directError) {
+        console.error("❌ Direct query error:", directError);
+        throw directError;
+      }
+      
+      console.log("✅ Loaded", directData?.length || 0, "allergens:", directData?.map(a => a.name).join(", "));
+      
+      setAllergens(directData || []);
+      console.log("💾 setAllergens called with", directData?.length || 0, "items");
+      
+      // Verify state was set
+      setTimeout(() => {
+        console.log("🔍 Verification: allergens state after 100ms should be", directData?.length || 0);
+      }, 100);
     } catch (error) {
       console.error("❌ Exception loading allergens:", error);
       setAllergens([]);
@@ -368,7 +383,7 @@ export function ProductDetailModal({
     const productName = (p.seller_title as string) || globalProducts?.product_name || "Untitled";
     const description = (p.seller_description as string) || "No description available";
     // Allergens are now per-variant in allergen_info field
-    const allergens: string[] = [];
+    // Note: allergens state variable is used from component state (loaded from DB)
     
     // Use variant price directly, or base price if no variant selected
     const variantPrice = selectedVariant ? 
@@ -1075,10 +1090,18 @@ export function ProductDetailModal({
               console.log("🎨 RENDERING ALLERGENS TAB");
               console.log("  - allergens state length:", allergens.length);
               console.log("  - allergens state:", allergens);
+              console.log("  - product loaded?:", !!product);
+              console.log("  - variants count:", variants?.length || 0);
+              if (variants && variants.length > 0) {
+                console.log("  - First variant allergen_info:", variants[0].allergen_info);
+              }
               return null;
             })()}
-            <div className="text-xs text-muted-foreground mb-2">
-              Debug: {allergens.length} allergens loaded - {allergens.map(a => `${a.name}(${a.allergen_id})`).join(', ')}
+            <div className="p-3 bg-yellow-50 border border-yellow-200 rounded mb-3">
+              <p className="font-semibold text-sm">🐛 Debug Info:</p>
+              <p className="text-xs">Allergens loaded: {allergens.length}</p>
+              <p className="text-xs">Allergen names: {allergens.map(a => a.name).join(', ') || 'NONE'}</p>
+              <p className="text-xs">Variants: {variants?.length || 0}</p>
             </div>
             {variants && variants.length > 0 ? (
               <div className="space-y-3">

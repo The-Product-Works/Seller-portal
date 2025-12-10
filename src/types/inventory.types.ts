@@ -7,6 +7,8 @@ export interface VariantForm {
   sku: string;
   variant_name: string;
   size: string;
+  variant_size?: number; // Size numeric value
+  variant_unit?: string; // Size unit (e.g., 'kg', 'g', 'L')
   flavor?: string;
   serving_count?: number;
   price: number;
@@ -19,6 +21,7 @@ export interface VariantForm {
   is_available: boolean;
   
   // P0 Mandatory Fields
+  image_url?: string | null; // Product photo URL
   product_image_url?: string;
   ingredient_image_url?: string;
   nutrient_table_image_url?: string;
@@ -27,12 +30,12 @@ export interface VariantForm {
   allergen_info?: Json | string; // Can be JSON from DB or string from form
   fssai_number?: string;
   fssai_expiry_date?: string;
-  nutrient_breakdown?: Record<string, unknown>;
+  nutrient_breakdown?: Record<string, unknown> | Json;
   accuracy_attested?: boolean;
   attested_by?: string;
   attested_at?: string;
   
-  // P0 Image Files (for upload)
+  // P0 Image Files (for upload) - runtime only
   productImageFile?: File | null;
   ingredientImageFile?: File | null;
   nutrientImageFile?: File | null;

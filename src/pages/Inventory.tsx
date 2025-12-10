@@ -230,6 +230,7 @@ export default function Inventory() {
             ingredient_list,
             allergen_info,
             nutrient_breakdown,
+            image_url,
             ingredient_image_url,
             nutrient_table_image_url,
             fssai_label_image_url,
@@ -246,7 +247,7 @@ export default function Inventory() {
             nutrient_table_image_uploaded_at,
             fssai_label_image_uploaded_at
           ),
-          listing_images(image_id, image_url, is_primary, variant_id)
+          listing_images(image_id, image_url, is_primary, variant_id, sort_order)
         `
         )
         .eq("seller_id", seller_id)
