@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Package, AlertTriangle, X } from "lucide-react";
+import { ingredientJsonToString, allergenJsonToString } from "@/utils/jsonFieldHelpers";
 
 interface ListingImage {
   image_url: string;
@@ -180,9 +181,29 @@ export function ProductDetailModal({
 
   const handleRestock = async (variantId: string, newStock: number) => {
     try {
+      // First get the variant to preserve its nutritional_info
+      const { data: variant, error: fetchError } = await supabase
+        .from("listing_variants")
+        .select("nutritional_info")
+        .eq("variant_id", variantId)
+        .single();
+
+      if (fetchError) throw fetchError;
+
+      // Ensure nutritional_info has servingSize if it exists
+      let nutritionalInfo = variant?.nutritional_info;
+      if (nutritionalInfo && typeof nutritionalInfo === 'object') {
+        if (!nutritionalInfo.servingSize) {
+          nutritionalInfo = { ...nutritionalInfo, servingSize: "100g" };
+        }
+      }
+
       const { error } = await supabase
         .from("listing_variants")
-        .update({ stock_quantity: newStock })
+        .update({ 
+          stock_quantity: newStock,
+          nutritional_info: nutritionalInfo
+        })
         .eq("variant_id", variantId);
 
       if (error) throw error;
@@ -411,13 +432,6 @@ export function ProductDetailModal({
               </Card>
             )}
 
-            {p.seller_ingredients && (
-              <Card className="p-4">
-                <h3 className="font-semibold mb-2">Ingredients</h3>
-                <p className="text-sm text-foreground whitespace-pre-wrap">{p.seller_ingredients as string}</p>
-              </Card>
-            )}
-
             {p.return_policy && (
               <Card className="p-4">
                 <h3 className="font-semibold mb-2">Return Policy</h3>
@@ -634,7 +648,7 @@ export function ProductDetailModal({
                           <div className="mb-4">
                             <h4 className="font-semibold mb-2 text-sm">Ingredients</h4>
                             <p className="text-sm text-foreground whitespace-pre-wrap p-3 bg-muted/30 rounded">
-                              {variant.ingredient_list as string}
+                              {ingredientJsonToString(variant.ingredient_list)}
                             </p>
                           </div>
                         )}
@@ -644,7 +658,7 @@ export function ProductDetailModal({
                           <div className="mb-4">
                             <h4 className="font-semibold mb-2 text-sm">Allergen Information</h4>
                             <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                              <p className="text-sm text-orange-900">{variant.allergen_info as string}</p>
+                              <p className="text-sm text-orange-900">{allergenJsonToString(variant.allergen_info)}</p>
                             </div>
                           </div>
                         )}
@@ -887,8 +901,8 @@ export function ProductDetailModal({
             {variants && variants.length > 0 ? (
               <div className="space-y-3">
                 {variants.map((variant) => {
-                  const allergenInfo = variant.allergen_info as string;
-                  const hasAllergens = allergenInfo && allergenInfo !== 'NA' && allergenInfo.trim() !== '';
+                  const allergenInfoString = allergenJsonToString(variant.allergen_info);
+                  const hasAllergens = allergenInfoString && allergenInfoString !== 'NA' && allergenInfoString.trim() !== '';
                   
                   return (
                     <Card key={variant.variant_id as string} className="p-3">
@@ -898,7 +912,7 @@ export function ProductDetailModal({
                           <AlertTriangle className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" />
                           <div>
                             <p className="font-semibold text-orange-800 text-sm">Contains Allergens</p>
-                            <p className="text-sm text-orange-900 mt-1">{allergenInfo}</p>
+                            <p className="text-sm text-orange-900 mt-1">{allergenInfoString}</p>
                           </div>
                         </div>
                       ) : (

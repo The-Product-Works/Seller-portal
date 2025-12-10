@@ -3,6 +3,8 @@
  * Amazon-Style Product Variant Compliance
  */
 
+import type { Json } from "@/integrations/supabase/database.types";
+
 // ============================================
 // P0 Compliance Types
 // ============================================
@@ -53,9 +55,8 @@ export interface VariantP0Images {
 }
 
 export interface VariantP0Fields extends VariantP0Images {
-  // Text fields
-  ingredient_list: string; // Complete ingredient list
-  allergen_info: string; // Allergen declaration (default 'NA')
+  // JSON fields (stored as JSONB in database)
+  ingredient_list: Json | string; // Complete ingredient list as JSON or string for forms
   fssai_number: string; // 14-digit FSSAI number
   
   // Dates
@@ -169,8 +170,7 @@ export interface VariantCompleteDetails {
   fssai_number?: string;
   fssai_expiry_date?: string;
   expiry_date?: string;
-  ingredient_list?: string;
-  allergen_info?: string;
+  ingredient_list?: Json | string;
   nutrient_breakdown?: NutrientBreakdown;
   
   // Attestation

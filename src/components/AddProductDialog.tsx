@@ -17,6 +17,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { X, Plus, Upload, Search, Image as ImageIcon } from "lucide-react";
+import { 
+  ingredientJsonToString, 
+  ingredientStringToJson,
+  allergenJsonToString,
+  allergenStringToJson,
+  isIngredientListValid,
+  isAllergenInfoValid
+} from "@/utils/jsonFieldHelpers";
 import {
   searchGlobalProducts,
   searchBrands,
@@ -228,7 +236,7 @@ export default function AddProductDialog({
     // Set basic details
     setSellerTitle(product.seller_title || "");
     setSellerDescription(product.seller_description || "");
-    setSellerIngredients(product.seller_ingredients || "");
+    // seller_ingredients removed - now stored per-variant
     setShelfLifeMonths(product.shelf_life_months || 12);
     setReturnDays(product.return_days || 7);
     setDiscountPercentage(product.discount_percentage || 0);
@@ -271,8 +279,7 @@ export default function AddProductDialog({
         ingredient_image_url: v.ingredient_image_url || null,
         nutrient_table_image_url: v.nutrient_table_image_url || null,
         fssai_label_image_url: v.fssai_label_image_url || null,
-        ingredient_list: v.ingredient_list || "",
-        allergen_info: v.allergen_info || "NA",
+        ingredient_list: ingredientJsonToString(v.ingredient_list) || "",
         fssai_number: v.fssai_number || "",
         fssai_expiry_date: v.fssai_expiry_date || null,
         nutrient_breakdown: v.nutrient_breakdown || {
@@ -500,7 +507,6 @@ export default function AddProductDialog({
         
         // P0 Fields
         ingredient_list: "",
-        allergen_info: "NA",
         fssai_number: "",
         accuracy_attested: false,
         nutrient_breakdown: {
@@ -664,7 +670,6 @@ export default function AddProductDialog({
           .update({
             seller_title: sellerTitle || productTitle,
             seller_description: sellerDescription,
-            seller_ingredients: null, // Removed - now per-variant
             health_score: healthScore,
             base_price: basePrice,
             total_stock_quantity: totalStock,
@@ -694,7 +699,6 @@ export default function AddProductDialog({
             seller_id: sellerId,
             seller_title: sellerTitle || productTitle,
             seller_description: sellerDescription,
-            seller_ingredients: null, // Removed - now per-variant
             health_score: healthScore,
             base_price: basePrice,
             total_stock_quantity: totalStock,
@@ -738,6 +742,12 @@ export default function AddProductDialog({
       // Handle variants
       if (variants.length > 0) {
         if (isEditing) {
+          // Get existing variants to preserve data before deleting
+          const { data: existingVariants } = await supabase
+            .from("listing_variants")
+            .select("variant_id, nutritional_info, ingredient_list, allergen_info")
+            .eq("listing_id", listing.listing_id);
+
           // Delete existing variants first
           const { error: deleteError } = await supabase
             .from("listing_variants")
@@ -832,7 +842,9 @@ export default function AddProductDialog({
               manufacture_date: variant.manufacture_date,
               batch_number: variant.batch_number,
               expiry_date: variant.expiry_date,
-              nutritional_info: variant.nutritional_info || {},
+              nutritional_info: variant.nutritional_info && Object.keys(variant.nutritional_info).length > 0 
+                ? { servingSize: "100g", ...variant.nutritional_info } 
+                : null,
               is_available: variant.is_available,
               
               // P0 Fields
@@ -840,8 +852,8 @@ export default function AddProductDialog({
               ingredient_image_url: ingredientImageUrl,
               nutrient_table_image_url: nutrientImageUrl,
               fssai_label_image_url: fssaiImageUrl,
-              ingredient_list: variant.ingredient_list,
-              allergen_info: variant.allergen_info || 'NA',
+              ingredient_list: ingredientStringToJson(variant.ingredient_list as string),
+              allergen_info: allergenStringToJson(variant.allergen_info as string),
               fssai_number: variant.fssai_number,
               fssai_expiry_date: variant.fssai_expiry_date,
               nutrient_breakdown: {
@@ -1878,11 +1890,11 @@ export default function AddProductDialog({
                     </Label>
                     <Textarea
                       placeholder="List all ingredients in descending order by weight..."
-                      value={variant.ingredient_list || ""}
+                      value={typeof variant.ingredient_list === 'string' ? variant.ingredient_list : ingredientJsonToString(variant.ingredient_list)}
                       onChange={(e) => updateVariant(index, "ingredient_list", e.target.value)}
                       className="text-sm min-h-[60px]"
                     />
-                    {variant.ingredient_list && variant.ingredient_list.length < 10 && (
+                    {!isIngredientListValid(variant.ingredient_list) && (
                       <div className="mt-1 text-xs text-red-500">Minimum 10 characters required</div>
                     )}
                   </div>
@@ -1924,9 +1936,7 @@ export default function AddProductDialog({
                      variant.nutrient_table_image_url && 
                      variant.fssai_label_image_url && 
                      variant.fssai_number?.length === 14 &&
-                     variant.ingredient_list && 
-                     variant.ingredient_list.length >= 10 &&
-                     variant.allergen_info &&
+                     isIngredientListValid(variant.ingredient_list) &&
                      variant.nutritional_info?.calories &&
                      variant.nutritional_info?.calories > 0 &&
                      Boolean(variant.accuracy_attested) ? (
@@ -1945,8 +1955,7 @@ export default function AddProductDialog({
                           {!variant.nutrient_table_image_url && <li>Nutrition Facts</li>}
                           {!variant.fssai_label_image_url && <li>FSSAI Certificate</li>}
                           {variant.fssai_number?.length !== 14 && <li>FSSAI Number (14 digits)</li>}
-                          {(!variant.ingredient_list || variant.ingredient_list.length < 10) && <li>Ingredient List (min 10 chars)</li>}
-                          {!variant.allergen_info && <li>Allergen Information</li>}
+                          {!isIngredientListValid(variant.ingredient_list) && <li>Ingredient List (min 10 chars)</li>}
                           {(!variant.nutritional_info?.calories || variant.nutritional_info?.calories === 0) && <li>Nutritional Information (at least Calories)</li>}
                           {!variant.accuracy_attested && <li>Accuracy Attestation (checkbox above)</li>}
                         </ul>
@@ -2329,7 +2338,6 @@ export default function AddProductDialog({
             ? {
                 seller_title: sellerTitle || selectedGlobalProduct?.product_name || "Product",
                 seller_description: sellerDescription,
-                seller_ingredients: null, // Removed - now per-variant
                 base_price: variants.length > 0
                   ? Math.min(...variants.map(v => v.price))
                   : undefined,

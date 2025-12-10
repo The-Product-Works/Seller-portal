@@ -1,5 +1,7 @@
 // Type definitions for inventory management
 
+import type { Json } from "@/integrations/supabase/database.types";
+
 export interface VariantForm {
   variant_id?: string;
   sku: string;
@@ -21,8 +23,7 @@ export interface VariantForm {
   ingredient_image_url?: string;
   nutrient_table_image_url?: string;
   fssai_label_image_url?: string;
-  ingredient_list?: string;
-  allergen_info?: string;
+  ingredient_list?: Json | string; // Can be JSON from DB or string from form
   fssai_number?: string;
   fssai_expiry_date?: string;
   nutrient_breakdown?: Record<string, unknown>;
@@ -46,7 +47,6 @@ export interface ProductForm {
   category_id?: string;
   seller_title: string;
   seller_description: string;
-  seller_ingredients?: string;
   allergen_ids: string[];
   health_score?: number;
   shelf_life_months?: number;
@@ -91,7 +91,6 @@ export interface ListingWithDetails {
   seller_id: string;
   seller_title: string;
   seller_description: string;
-  seller_ingredients?: string;
   health_score?: number;
   base_price: number;
   discounted_price?: number;
