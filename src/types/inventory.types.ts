@@ -52,7 +52,7 @@ export interface ProductForm {
   shelf_life_months?: number;
   return_policy?: string;
   shipping_info?: string;
-  status: "draft" | "active" | "inactive";
+  status: "draft" | "active" | "inactive" | "pending_approval" | "failed_approval";
   variants: VariantForm[];
   certificate_urls: string[];
   trust_certificate_urls: string[];
@@ -82,7 +82,7 @@ export interface FilterOptions {
   priceRange?: { min: number; max: number };
   discountRange?: { min: number; max: number };
   stockRange?: { min: number; max: number };
-  status?: "draft" | "active" | "inactive";
+  status?: "draft" | "active" | "inactive" | "pending_approval" | "failed_approval";
 }
 
 export interface ListingWithDetails {
@@ -104,6 +104,7 @@ export interface ListingWithDetails {
   review_count: number;
   status: string;
   is_verified: boolean;
+  verification_notes?: string;
   slug: string;
   published_at?: string;
   created_at: string;
@@ -134,7 +135,7 @@ export interface BundleWithDetails {
   discount_percentage?: number;
   total_items: number;
   total_stock_quantity: number;
-  status: 'draft' | 'active';
+  status: 'draft' | 'active' | 'inactive' | 'suspended';
   published_at?: string;
   slug: string;
   thumbnail_url?: string;

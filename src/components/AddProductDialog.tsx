@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { X, Plus, Upload, Search, Image as ImageIcon } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { X, Plus, Upload, Search, Image as ImageIcon, AlertTriangle } from "lucide-react";
 import { 
   ingredientJsonToString, 
   ingredientStringToJson,
@@ -125,7 +126,7 @@ export default function AddProductDialog({
   const [shelfLifeMonths, setShelfLifeMonths] = useState<number>(12);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [sellerCommission, setSellerCommission] = useState<number>(0); // Additional commission seller adds on top of 2%
-  const [status, setStatus] = useState<"draft" | "active">("draft");
+  const [status, setStatus] = useState<"draft" | "pending_approval" | "failed_approval">("draft");
   const [showBrandInput, setShowBrandInput] = useState(false);
   const [showCategoryInput, setShowCategoryInput] = useState(false);
   const [showProductInput, setShowProductInput] = useState(false);
@@ -240,7 +241,7 @@ export default function AddProductDialog({
     setShelfLifeMonths(product.shelf_life_months || 12);
     setReturnDays(product.return_days || 7);
     setDiscountPercentage(product.discount_percentage || 0);
-    setStatus(product.status as "draft" | "active" || "draft");
+    setStatus(product.status as "draft" | "pending_approval" | "failed_approval" || "draft");
     setReturnPolicy(product.return_policy || "");
     setShippingInfo(product.shipping_info || "");
     
@@ -538,7 +539,7 @@ export default function AddProductDialog({
     setVariants(updated);
   }
 
-  async function handleSave(overrideStatus?: "draft" | "active") {
+  async function handleSave(overrideStatus?: "draft" | "pending_approval") {
     const finalStatus = overrideStatus || status;
     console.log("handleSave called with status:", finalStatus, "override:", overrideStatus, "state:", status);
     if (!sellerId) {
@@ -680,7 +681,7 @@ export default function AddProductDialog({
             shipping_info: shippingInfo,
             seller_certifications: (sellerCertifications.length > 0 ? sellerCertifications : null) as unknown as Json,
             status: finalStatus,
-            published_at: finalStatus === "active" ? new Date().toISOString() : null,
+            published_at: finalStatus === "pending_approval" ? new Date().toISOString() : null,
             updated_at: new Date().toISOString()
           })
           .eq("listing_id", editingProduct.listing_id)
@@ -712,7 +713,7 @@ export default function AddProductDialog({
             slug: listingSlug,
             review_count: 0,
             is_verified: false,
-            published_at: finalStatus === "active" ? new Date().toISOString() : null,
+            published_at: finalStatus === "pending_approval" ? new Date().toISOString() : null,
           })
           .select()
           .single();
@@ -1016,11 +1017,11 @@ export default function AddProductDialog({
       setStatus(finalStatus);
       
       const action = isEditing 
-        ? (finalStatus === "active" ? "updated and published" : "updated and saved as draft")
-        : (finalStatus === "draft" ? "saved as draft" : "published");
+        ? (finalStatus === "pending_approval" ? "submitted for admin approval" : "saved as draft")
+        : (finalStatus === "draft" ? "saved as draft" : "submitted for admin approval");
       toast({ 
-        title: `Product ${action} successfully`,
-        description: finalStatus === "active" ? "Your product is now live in the marketplace" : "You can publish this product later"
+        title: `Product ${action}`,
+        description: finalStatus === "pending_approval" ? "Your product will be visible on marketplace once admin approves it" : "You can submit this product for approval later"
       });
       onSuccess();
       onOpenChange(false);
@@ -1066,6 +1067,29 @@ export default function AddProductDialog({
             {editingProduct ? 'Edit Product' : 'Add Product'}
           </DialogTitle>
         </DialogHeader>
+
+        {/* Show verification notes if product approval failed */}
+        {editingProduct && editingProduct.status === 'failed_approval' && editingProduct.verification_notes && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <div className="ml-2">
+              <h4 className="font-semibold">Product Approval Failed</h4>
+              <AlertDescription className="mt-2">
+                <strong>Admin Notes:</strong> {editingProduct.verification_notes}
+              </AlertDescription>
+              <p className="text-xs mt-2">Please address the issues mentioned above and resubmit for approval.</p>
+            </div>
+          </Alert>
+        )}
+
+        {/* Show pending approval status */}
+        {editingProduct && editingProduct.status === 'pending_approval' && (
+          <Alert className="mb-4">
+            <AlertDescription>
+              <strong>Status:</strong> This product is currently pending admin approval. You can still edit it, but will need to resubmit for approval after making changes.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <Tabs defaultValue="basic" className="w-full">
           <TabsList className="grid w-full grid-cols-6">
@@ -2293,12 +2317,12 @@ export default function AddProductDialog({
                 </Button>
                 <Button
                   onClick={() => {
-                    console.log("Add Product - Publish Now clicked");
-                    handleSave("active");
+                    console.log("Add Product - Submit for Approval clicked");
+                    handleSave("pending_approval");
                   }}
                   disabled={loading}
                 >
-                  Publish Now
+                  Submit for Approval
                 </Button>
               </>
             ) : (
@@ -2316,12 +2340,12 @@ export default function AddProductDialog({
                 </Button>
                 <Button
                   onClick={() => {
-                    console.log("Edit Product - Publish Now clicked");
-                    handleSave("active");
+                    console.log("Edit Product - Submit for Approval clicked");
+                    handleSave("pending_approval");
                   }}
                   disabled={loading}
                 >
-                  Publish Now
+                  Submit for Approval
                 </Button>
               </>
             )}
