@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { Package, AlertTriangle, X } from "lucide-react";
 import { ingredientJsonToString, allergenJsonToString } from "@/utils/jsonFieldHelpers";
+import { getAllergens } from "@/lib/inventory-helpers";
 
 interface ListingImage {
   image_url: string;
@@ -49,25 +50,130 @@ export function ProductDetailModal({
   productId,
   bundleId,
 }: ProductDetailModalProps) {
+  console.log("🚀 ProductDetailModal RENDER v2.0", { open, productId, bundleId });
+  
   const [product, setProduct] = useState<Record<string, unknown> | null>(null);
   const [bundle, setBundle] = useState<Record<string, unknown> | null>(null);
   const [bundleItems, setBundleItems] = useState<Array<Record<string, unknown>>>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<"overview" | "details" | "allergens" | "transparency">("overview");
   const [allImages, setAllImages] = useState<ListingImage[]>([]);
+  const [displayImages, setDisplayImages] = useState<ListingImage[]>([]); // Filtered images for selected variant
   const [selectedImage, setSelectedImage] = useState(0);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(null);
+  const [allergens, setAllergens] = useState<Array<{ allergen_id: string; name: string }>>([]);
+
+  // Filter images when selected variant changes - include P0 compliance images
+  useEffect(() => {
+    if (selectedVariantId && allImages.length > 0) {
+      // Get product display images for this variant
+      const variantImages = allImages.filter(img => img.variant_id === selectedVariantId);
+      
+      console.log("🖼️ ProductDetailModal - Filtering images for variant:", selectedVariantId);
+      console.log("🖼️ Product display images found:", variantImages.length, variantImages);
+      
+      // Get P0 compliance images for this variant from product data
+      const p0Images: ListingImage[] = [];
+      if (product) {
+        const variants = (product as any).listing_variants || [];
+        const selectedVariant = variants.find((v: any) => v.variant_id === selectedVariantId);
+        
+        console.log("🖼️ Selected variant data:", selectedVariant);
+        
+        if (selectedVariant) {
+          // Add product photo (image_url)
+          if (selectedVariant.image_url) {
+            console.log("🖼️ Adding product image:", selectedVariant.image_url);
+            p0Images.push({
+              image_id: `product_${selectedVariantId}`,
+              image_url: selectedVariant.image_url,
+              is_primary: false,
+              variant_id: selectedVariantId
+            });
+          }
+          if (selectedVariant.ingredient_image_url) {
+            console.log("🖼️ Adding ingredient image:", selectedVariant.ingredient_image_url);
+            p0Images.push({
+              image_id: `ingredient_${selectedVariantId}`,
+              image_url: selectedVariant.ingredient_image_url,
+              is_primary: false,
+              variant_id: selectedVariantId
+            });
+          }
+          if (selectedVariant.nutrient_table_image_url) {
+            console.log("🖼️ Adding nutrient image:", selectedVariant.nutrient_table_image_url);
+            p0Images.push({
+              image_id: `nutrient_${selectedVariantId}`,
+              image_url: selectedVariant.nutrient_table_image_url,
+              is_primary: false,
+              variant_id: selectedVariantId
+            });
+          }
+          if (selectedVariant.fssai_label_image_url) {
+            console.log("🖼️ Adding FSSAI image:", selectedVariant.fssai_label_image_url);
+            p0Images.push({
+              image_id: `fssai_${selectedVariantId}`,
+              image_url: selectedVariant.fssai_label_image_url,
+              is_primary: false,
+              variant_id: selectedVariantId
+            });
+          }
+        }
+      }
+      
+      // Combine: primary first, then other product images, then P0 images
+      const primaryImage = variantImages.find(img => img.is_primary);
+      const otherImages = variantImages.filter(img => !img.is_primary);
+      const combinedImages = primaryImage 
+        ? [primaryImage, ...otherImages, ...p0Images]
+        : [...variantImages, ...p0Images];
+      
+      console.log(`🖼️ Total images for variant: ${variantImages.length} product + ${p0Images.length} P0 = ${combinedImages.length} total`);
+      console.log("🖼️ Combined images:", combinedImages);
+      setDisplayImages(combinedImages);
+      setSelectedImage(0); // Reset to first image
+    } else {
+      console.log("🖼️ No variant selected or no images, showing all images:", allImages.length);
+      setDisplayImages(allImages);
+    }
+  }, [selectedVariantId, allImages, product]);
 
   useEffect(() => {
-    if (open && productId) {
-      console.log("Loading product with ID:", productId);
-      loadProduct();
-    } else if (open && bundleId) {
-      console.log("Loading bundle with ID:", bundleId);
-      loadBundle();
+    if (open) {
+      console.log("🔵 Modal opened - state:", { productId, bundleId, open });
+      console.log("🔵 About to call loadAllergens...");
+      loadAllergens();
+      
+      if (productId) {
+        console.log("Loading product with ID:", productId);
+        loadProduct();
+      } else if (bundleId) {
+        console.log("Loading bundle with ID:", bundleId);
+        loadBundle();
+      }
+    } else {
+      console.log("🔵 Modal closed - resetting allergens");
+      setAllergens([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, productId, bundleId]);
+
+  const loadAllergens = async () => {
+    console.log("🔄 loadAllergens FUNCTION CALLED in ProductDetailModal");
+
+    try {
+      console.log("📞 Calling getAllergens() helper...");
+      const data = await getAllergens();
+      console.log("📦 getAllergens() returned:", data);
+      console.log("✅ Loaded", data?.length || 0, "allergens:", data?.map(a => a.name).join(", "));
+      
+      setAllergens(data || []);
+      console.log("💾 setAllergens called, state should now have", data?.length || 0, "items");
+    } catch (error) {
+      console.error("❌ Exception loading allergens:", error);
+      setAllergens([]);
+    }
+  };
 
   const loadProduct = async () => {
     setLoading(true);
@@ -82,7 +188,23 @@ export function ProductDetailModal({
             product_name,
             brands (name)
           ),
-          listing_images (image_url, is_primary),
+          listing_images (image_url, is_primary, variant_id),
+          product_transparency (
+            transparency_id,
+            certifications_summary,
+            manufacturing_info,
+            testing_info,
+            ingredient_source,
+            quality_assurance,
+            sustainability_info,
+            ethical_sourcing,
+            clinical_data,
+            third_party_tested,
+            testing_lab,
+            test_date,
+            test_report_number,
+            test_report_url
+          ),
           listing_variants (
             variant_id,
             variant_name,
@@ -92,7 +214,7 @@ export function ProductDetailModal({
             price,
             original_price,
             stock_quantity,
-            product_image_url,
+            image_url,
             ingredient_image_url,
             nutrient_table_image_url,
             fssai_label_image_url,
@@ -101,7 +223,6 @@ export function ProductDetailModal({
             fssai_number,
             fssai_expiry_date,
             nutrient_breakdown,
-            nutritional_info,
             accuracy_attested,
             attested_by,
             attested_at,
@@ -121,6 +242,11 @@ export function ProductDetailModal({
       }
       
       console.log("Product data loaded:", data);
+      console.log("Variants with allergen_info:", data.listing_variants?.map((v: any) => ({
+        name: v.variant_name,
+        allergen_info: v.allergen_info,
+        type: typeof v.allergen_info
+      })));
       setProduct(data);
       setAllImages(data.listing_images || []);
       if (data.listing_images && data.listing_images.length > 0) {
@@ -181,28 +307,20 @@ export function ProductDetailModal({
 
   const handleRestock = async (variantId: string, newStock: number) => {
     try {
-      // First get the variant to preserve its nutritional_info
+      // First get the variant to preserve its nutrient_breakdown
       const { data: variant, error: fetchError } = await supabase
         .from("listing_variants")
-        .select("nutritional_info")
+        .select("nutrient_breakdown")
         .eq("variant_id", variantId)
         .single();
 
       if (fetchError) throw fetchError;
 
-      // Ensure nutritional_info has servingSize if it exists
-      let nutritionalInfo = variant?.nutritional_info;
-      if (nutritionalInfo && typeof nutritionalInfo === 'object') {
-        if (!nutritionalInfo.servingSize) {
-          nutritionalInfo = { ...nutritionalInfo, servingSize: "100g" };
-        }
-      }
-
+      // Just update stock quantity, nutrient_breakdown doesn't need servingSize check
       const { error } = await supabase
         .from("listing_variants")
         .update({ 
-          stock_quantity: newStock,
-          nutritional_info: nutritionalInfo
+          stock_quantity: newStock
         })
         .eq("variant_id", variantId);
 
@@ -242,9 +360,8 @@ export function ProductDetailModal({
     const variants = (p.listing_variants as Array<Record<string, unknown>>) || [];
     const selectedVariant = selectedVariantId ? variants.find(v => v.variant_id === selectedVariantId) : variants[0];
     
-    // Use selected variant's product image if available, otherwise use listing images
-    const variantImage = selectedVariant?.product_image_url as string | undefined;
-    const primaryImage = variantImage ? { image_url: variantImage, is_primary: true } : (allImages?.find((img) => img.is_primary) || allImages?.[selectedImage]);
+    // Use images from the selected variant (displayImages is already filtered)
+    const primaryImage = displayImages?.find((img) => img.is_primary) || displayImages?.[selectedImage];
     
     const globalProducts = p.global_products as GlobalProduct | undefined;
     const brandName = globalProducts?.brands?.name || "Unknown Brand";
@@ -319,9 +436,9 @@ export function ProductDetailModal({
             </div>
           )}
           
-          {allImages && allImages.length > 1 && (
+          {displayImages && displayImages.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-2">
-              {allImages.map((img, idx) => (
+              {displayImages.map((img, idx) => (
                 <button
                   key={idx}
                   onClick={() => setSelectedImage(idx)}
@@ -472,6 +589,14 @@ export function ProductDetailModal({
                     const nutrientBreakdown = variant.nutrient_breakdown ?
                       (typeof variant.nutrient_breakdown === 'string' ? JSON.parse(variant.nutrient_breakdown as string) : variant.nutrient_breakdown) as Record<string, unknown> : null;
                     
+                    // Debug: Log variant P0 images
+                    console.log("🖼️ Details Tab - Variant P0 Images:", {
+                      variant_name: variant.variant_name,
+                      ingredient_image_url: variant.ingredient_image_url,
+                      nutrient_table_image_url: variant.nutrient_table_image_url,
+                      fssai_label_image_url: variant.fssai_label_image_url
+                    });
+                    
                     return (
                       <Card key={variant.variant_id as string} className="p-4">
                         {/* Variant Header */}
@@ -531,12 +656,12 @@ export function ProductDetailModal({
                           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                             <div className="space-y-1">
                               <p className="text-xs text-muted-foreground font-medium">Product Photo</p>
-                              {variant.product_image_url ? (
+                              {variant.image_url ? (
                                 <img 
-                                  src={variant.product_image_url as string} 
+                                  src={variant.image_url as string} 
                                   alt="Product"
                                   className="w-full h-32 object-cover rounded border cursor-pointer hover:opacity-80"
-                                  onClick={() => window.open(variant.product_image_url as string, '_blank')}
+                                  onClick={() => window.open(variant.image_url as string, '_blank')}
                                 />
                               ) : (
                                 <div className="w-full h-32 bg-muted rounded border flex items-center justify-center text-xs text-muted-foreground">
@@ -657,9 +782,57 @@ export function ProductDetailModal({
                         {variant.allergen_info && (
                           <div className="mb-4">
                             <h4 className="font-semibold mb-2 text-sm">Allergen Information</h4>
-                            <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
-                              <p className="text-sm text-orange-900">{allergenJsonToString(variant.allergen_info)}</p>
-                            </div>
+                            {(() => {
+                              const allergenInfo = variant.allergen_info as any;
+                              const allergenIds = allergenInfo?.allergen_ids || [];
+                              const customAllergens = allergenInfo?.custom_allergens || [];
+                              const containsAllergens = allergenInfo?.contains_allergens;
+                              
+                              console.log(`🔍 [${variant.variant_name}] Allergen Debug:`);
+                              console.log('  - allergens state:', allergens.length, 'items');
+                              console.log('  - allergenIds from variant:', allergenIds);
+                              console.log('  - customAllergens:', customAllergens);
+                              
+                              // Map allergen IDs to names
+                              const allergenNames = allergenIds
+                                .map((id: string) => {
+                                  const allergen = allergens.find(a => a.allergen_id === id);
+                                  console.log(`  - Mapping ${id} -> ${allergen?.name || 'NOT FOUND'}`);
+                                  return allergen?.name;
+                                })
+                                .filter(Boolean);
+                              
+                              // Combine database allergens with custom allergens
+                              const allAllergens = [...allergenNames, ...customAllergens];
+                              
+                              console.log("  - Final allAllergens:", allAllergens);
+                              
+                              if (containsAllergens && allAllergens.length > 0) {
+                                return (
+                                  <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                                    <div className="flex items-start gap-2">
+                                      <AlertTriangle className="h-4 w-4 text-orange-600 flex-shrink-0 mt-0.5" />
+                                      <div>
+                                        <p className="font-semibold text-orange-800 text-sm">Contains Allergens</p>
+                                        <div className="flex flex-wrap gap-1 mt-2">
+                                          {allAllergens.map((name, idx) => (
+                                            <Badge key={idx} variant="destructive" className="text-xs">
+                                              {name}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              } else {
+                                return (
+                                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                                    <p className="text-sm text-green-800 font-medium">✓ No Known Allergens</p>
+                                  </div>
+                                );
+                              }
+                            })()}
                           </div>
                         )}
 
@@ -898,21 +1071,57 @@ export function ProductDetailModal({
         {activeTab === "allergens" && (
           <div className="space-y-4">
             <h3 className="font-semibold mb-3">Allergen Information by Variant</h3>
+            {(() => {
+              console.log("🎨 RENDERING ALLERGENS TAB");
+              console.log("  - allergens state length:", allergens.length);
+              console.log("  - allergens state:", allergens);
+              return null;
+            })()}
+            <div className="text-xs text-muted-foreground mb-2">
+              Debug: {allergens.length} allergens loaded - {allergens.map(a => `${a.name}(${a.allergen_id})`).join(', ')}
+            </div>
             {variants && variants.length > 0 ? (
               <div className="space-y-3">
                 {variants.map((variant) => {
-                  const allergenInfoString = allergenJsonToString(variant.allergen_info);
-                  const hasAllergens = allergenInfoString && allergenInfoString !== 'NA' && allergenInfoString.trim() !== '';
+                  const allergenInfo = variant.allergen_info as any;
+                  const allergenIds = allergenInfo?.allergen_ids || [];
+                  const hasAllergens = allergenIds.length > 0;
+                  
+                  // Map allergen IDs to names
+                  const allergenNames = allergenIds
+                    .map((id: string) => {
+                      const allergen = allergens.find(a => a.allergen_id === id);
+                      console.log(`Looking for allergen ${id}, found:`, allergen);
+                      return allergen?.name;
+                    })
+                    .filter(Boolean);
+                  
+                  console.log(`Variant ${variant.variant_name}:`, {
+                    allergenInfo,
+                    allergenIds,
+                    allergenNames,
+                    allergensState: allergens,
+                    hasAllergens
+                  });
                   
                   return (
                     <Card key={variant.variant_id as string} className="p-3">
                       <h4 className="font-medium mb-2">{variant.variant_name as string}</h4>
-                      {hasAllergens ? (
+                      <div className="text-xs text-gray-500 mb-2">
+                        IDs: {JSON.stringify(allergenIds)} | Names: {JSON.stringify(allergenNames)}
+                      </div>
+                      {hasAllergens && allergenNames.length > 0 ? (
                         <div className="flex items-start gap-2 p-3 bg-orange-50 rounded-lg border border-orange-200">
                           <AlertTriangle className="h-5 w-5 text-orange-600 flex-shrink-0 mt-0.5" />
                           <div>
                             <p className="font-semibold text-orange-800 text-sm">Contains Allergens</p>
-                            <p className="text-sm text-orange-900 mt-1">{allergenInfoString}</p>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {allergenNames.map((name, idx) => (
+                                <Badge key={idx} variant="destructive" className="text-xs">
+                                  {name}
+                                </Badge>
+                              ))}
+                            </div>
                           </div>
                         </div>
                       ) : (
@@ -937,32 +1146,93 @@ export function ProductDetailModal({
         {/* TRANSPARENCY TAB */}
         {activeTab === "transparency" && (
           <div className="space-y-4">
-            {p.certifications || p.third_party_testing || p.sourcing_info ? (
-              <>
-                {p.certifications && (
-                  <Card className="p-4">
-                    <h3 className="font-semibold mb-2">Certifications</h3>
-                    <p className="text-sm whitespace-pre-wrap">{p.certifications as string}</p>
-                  </Card>
-                )}
-                {p.third_party_testing && (
-                  <Card className="p-4">
-                    <h3 className="font-semibold mb-2">Third-Party Testing</h3>
-                    <p className="text-sm whitespace-pre-wrap">{p.third_party_testing as string}</p>
-                  </Card>
-                )}
-                {p.sourcing_info && (
-                  <Card className="p-4">
-                    <h3 className="font-semibold mb-2">Sourcing Information</h3>
-                    <p className="text-sm whitespace-pre-wrap">{p.sourcing_info as string}</p>
-                  </Card>
-                )}
-              </>
-            ) : (
-              <div className="p-4 bg-muted/50 rounded-lg text-center">
-                <p className="text-muted-foreground">No transparency information added yet.</p>
-              </div>
-            )}
+            {(() => {
+              const transparencyArray = (p as any).product_transparency;
+              const transparencyData = Array.isArray(transparencyArray) ? transparencyArray[0] : transparencyArray;
+              const hasData = transparencyData && (
+                transparencyData.certifications_summary ||
+                transparencyData.manufacturing_info ||
+                transparencyData.testing_info ||
+                transparencyData.ingredient_source ||
+                transparencyData.quality_assurance ||
+                transparencyData.sustainability_info ||
+                transparencyData.ethical_sourcing ||
+                transparencyData.clinical_data
+              );
+              
+              return hasData ? (
+                <>
+                  {transparencyData.certifications_summary && (
+                    <Card className="p-4">
+                      <h3 className="font-semibold mb-2">Certifications</h3>
+                      <p className="text-sm whitespace-pre-wrap">{transparencyData.certifications_summary}</p>
+                    </Card>
+                  )}
+                  {transparencyData.manufacturing_info && (
+                    <Card className="p-4">
+                      <h3 className="font-semibold mb-2">Manufacturing Information</h3>
+                      <p className="text-sm whitespace-pre-wrap">{transparencyData.manufacturing_info}</p>
+                    </Card>
+                  )}
+                  {transparencyData.testing_info && (
+                    <Card className="p-4">
+                      <h3 className="font-semibold mb-2">Testing Information</h3>
+                      <p className="text-sm whitespace-pre-wrap">{transparencyData.testing_info}</p>
+                      {transparencyData.third_party_tested && (
+                        <div className="mt-3 p-3 bg-green-50 rounded">
+                          <p className="text-xs font-semibold text-green-800">✓ Third-Party Tested</p>
+                          {transparencyData.testing_lab && (
+                            <p className="text-xs text-green-700 mt-1">Lab: {transparencyData.testing_lab}</p>
+                          )}
+                          {transparencyData.test_date && (
+                            <p className="text-xs text-green-700">Date: {new Date(transparencyData.test_date).toLocaleDateString()}</p>
+                          )}
+                          {transparencyData.test_report_url && (
+                            <a href={transparencyData.test_report_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline mt-1 block">
+                              View Test Report →
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </Card>
+                  )}
+                  {transparencyData.ingredient_source && (
+                    <Card className="p-4">
+                      <h3 className="font-semibold mb-2">Ingredient Sourcing</h3>
+                      <p className="text-sm whitespace-pre-wrap">{transparencyData.ingredient_source}</p>
+                    </Card>
+                  )}
+                  {transparencyData.quality_assurance && (
+                    <Card className="p-4">
+                      <h3 className="font-semibold mb-2">Quality Assurance</h3>
+                      <p className="text-sm whitespace-pre-wrap">{transparencyData.quality_assurance}</p>
+                    </Card>
+                  )}
+                  {transparencyData.sustainability_info && (
+                    <Card className="p-4">
+                      <h3 className="font-semibold mb-2">Sustainability</h3>
+                      <p className="text-sm whitespace-pre-wrap">{transparencyData.sustainability_info}</p>
+                    </Card>
+                  )}
+                  {transparencyData.ethical_sourcing && (
+                    <Card className="p-4">
+                      <h3 className="font-semibold mb-2">Ethical Sourcing</h3>
+                      <p className="text-sm whitespace-pre-wrap">{transparencyData.ethical_sourcing}</p>
+                    </Card>
+                  )}
+                  {transparencyData.clinical_data && (
+                    <Card className="p-4">
+                      <h3 className="font-semibold mb-2">Clinical Data</h3>
+                      <p className="text-sm whitespace-pre-wrap">{transparencyData.clinical_data}</p>
+                    </Card>
+                  )}
+                </>
+              ) : (
+                <div className="p-4 bg-muted/50 rounded-lg text-center">
+                  <p className="text-muted-foreground">No transparency information added yet.</p>
+                </div>
+              );
+            })()}
           </div>
         )}
       </div>

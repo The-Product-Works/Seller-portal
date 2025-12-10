@@ -60,7 +60,7 @@ interface BundleItem {
   [key: string]: unknown;
 }
 
-interface BundleWithImages {
+interface BundleWithImages extends Partial<BundleWithDetails> {
   bundle_items?: BundleItem[];
   [key: string]: unknown;
 }
@@ -148,7 +148,7 @@ export default function Inventory() {
   const [editingListing, setEditingListing] = useState<ListingWithDetails | null>(null);
   const [imageManagerOpen, setImageManagerOpen] = useState(false);
   const [bundleDialogOpen, setBundleDialogOpen] = useState(false);
-  const [editingBundle, setEditingBundle] = useState<Record<string, unknown> | null>(null);
+  const [editingBundle, setEditingBundle] = useState<BundleWithDetails | null>(null);
   const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
 
   // Delete confirmation
@@ -167,7 +167,11 @@ export default function Inventory() {
   } | null>(null);
 
   // Bundle restock dialog
-  const [bundleRestockTarget, setBundleRestockTarget] = useState<Omit<BundleWithDetails, 'itemType'> | null>(null);
+  const [bundleRestockTarget, setBundleRestockTarget] = useState<{
+    bundle_id: string;
+    bundle_name: string;
+    total_stock_quantity: number;
+  } | null>(null);
 
   // Product/Bundle detail modal
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -207,8 +211,42 @@ export default function Inventory() {
             brand_id,
             brands(name, logo_url)
           ),
-          listing_variants(*),
-          listing_images(image_id, image_url, is_primary)
+          listing_variants(
+            variant_id,
+            listing_id,
+            variant_name,
+            sku,
+            price,
+            original_price,
+            stock_quantity,
+            reserved_quantity,
+            size,
+            flavor,
+            serving_count,
+            batch_number,
+            manufacture_date,
+            expiry_date,
+            is_available,
+            ingredient_list,
+            allergen_info,
+            nutrient_breakdown,
+            ingredient_image_url,
+            nutrient_table_image_url,
+            fssai_label_image_url,
+            fssai_number,
+            fssai_expiry_date,
+            accuracy_attested,
+            attested_by,
+            attested_at,
+            is_p0_compliant,
+            health_score,
+            created_at,
+            updated_at,
+            ingredient_image_uploaded_at,
+            nutrient_table_image_uploaded_at,
+            fssai_label_image_uploaded_at
+          ),
+          listing_images(image_id, image_url, is_primary, variant_id)
         `
         )
         .eq("seller_id", seller_id)
@@ -281,9 +319,9 @@ export default function Inventory() {
             console.warn(`Filtering out bundle ${bundle.bundle_name} (${bundle.bundle_id}) - no valid items`);
           }
           return isValid;
-        });
+        }).map(bundle => ({ ...bundle, itemType: 'bundle' as const }));
         
-        setBundles((validBundles as Array<Record<string, unknown>>) || []);
+        setBundles(validBundles as BundleWithDetails[]);
         console.log("Valid bundles after filtering:", validBundles.length);
       } else {
         console.log("No bundles data returned from query");
@@ -1274,9 +1312,9 @@ export default function Inventory() {
             </Button>
           </div>
         ) : (
-          filteredListings.map((item: ListingWithDetails | BundleWithDetails) => {
+          filteredListings.map((item) => {
             // Handle both products and bundles
-            if (item.itemType === 'bundle') {
+            if ('itemType' in item && item.itemType === 'bundle') {
               const bundle = item as BundleWithDetails;
               console.log("Rendering bundle:", bundle.bundle_id, bundle.bundle_name);
               const bundleName = bundle.bundle_name;
@@ -1287,7 +1325,7 @@ export default function Inventory() {
                   <div className="relative">
                     <div className="aspect-square bg-muted relative">
                       {/* Bundle Product Images Scroller */}
-                      <BundleImageScroller bundle={bundle} />
+                      <BundleImageScroller bundle={bundle as unknown as BundleWithImages} />
                     </div>
                     <div className="absolute top-2 right-2 flex gap-2">
                       <Badge
@@ -1355,8 +1393,11 @@ export default function Inventory() {
                           variant="outline"
                           onClick={() => {
                             console.log("Restock clicked for bundle:", bundle.bundle_id);
-                            const { itemType, ...bundleData } = bundle;
-                            setBundleRestockTarget(bundleData);
+                            setBundleRestockTarget({
+                              bundle_id: bundle.bundle_id,
+                              bundle_name: bundle.bundle_name,
+                              total_stock_quantity: bundle.total_stock_quantity,
+                            });
                           }}
                           title="Restock Bundle"
                         >
@@ -1369,7 +1410,7 @@ export default function Inventory() {
                           onClick={() =>
                             setDeleteTarget({
                               type: "bundle",
-                              id: item.bundle_id,
+                              id: bundle.bundle_id,
                               name: bundleName,
                             })
                           }
@@ -1391,11 +1432,55 @@ export default function Inventory() {
             const variantCount = listing.listing_variants?.length || 0;
             const discount = listing.discount_percentage || 0;
 
+            // Combine product display images with P0 compliance images
+            const productImages = listing.listing_images || [];
+            const p0Images: Array<{image_id: string; image_url: string; is_primary: boolean}> = [];
+            
+            // Add P0 images from all variants
+            listing.listing_variants?.forEach((variant: any) => {
+              // Add product photo (image_url)
+              if (variant.image_url) {
+                p0Images.push({
+                  image_id: `product_${variant.variant_id}`,
+                  image_url: variant.image_url,
+                  is_primary: false
+                });
+              }
+              if (variant.ingredient_image_url) {
+                p0Images.push({
+                  image_id: `ingredient_${variant.variant_id}`,
+                  image_url: variant.ingredient_image_url,
+                  is_primary: false
+                });
+              }
+              if (variant.nutrient_table_image_url) {
+                p0Images.push({
+                  image_id: `nutrient_${variant.variant_id}`,
+                  image_url: variant.nutrient_table_image_url,
+                  is_primary: false
+                });
+              }
+              if (variant.fssai_label_image_url) {
+                p0Images.push({
+                  image_id: `fssai_${variant.variant_id}`,
+                  image_url: variant.fssai_label_image_url,
+                  is_primary: false
+                });
+              }
+            });
+            
+            // Combine: primary image first, then other product images, then P0 images
+            const primaryImage = productImages.find(img => img.is_primary);
+            const otherImages = productImages.filter(img => !img.is_primary);
+            const allImages = primaryImage 
+              ? [primaryImage, ...otherImages, ...p0Images]
+              : [...productImages, ...p0Images];
+
             return (
               <Card key={listing.listing_id} className="overflow-hidden">
                 <div className="relative">
                   <ProductImageGalleryCard
-                    images={listing.listing_images}
+                    images={allImages}
                     productName={productName}
                     className="aspect-square"
                   />
@@ -1642,7 +1727,14 @@ export default function Inventory() {
           setEditingBundle(null);
           if (sellerId) loadListings(sellerId);
         }}
-        editingBundle={editingBundle}
+        editingBundle={editingBundle ? {
+          bundle_id: editingBundle.bundle_id,
+          bundle_name: editingBundle.bundle_name,
+          description: editingBundle.description,
+          discount_percentage: editingBundle.discount_percentage,
+          status: editingBundle.status,
+          total_stock_quantity: editingBundle.total_stock_quantity,
+        } : undefined}
       />
 
       {/* Restock Dialog for Bundles */}

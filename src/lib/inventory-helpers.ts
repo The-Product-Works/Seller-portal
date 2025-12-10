@@ -285,11 +285,12 @@ export async function createCategory(categoryName: string) {
 export async function getAllergens() {
   const { data, error } = await supabase
     .from("allergens")
-    .select("*")
+    .select("allergen_id, name")
     .order("name");
 
   if (error) throw error;
-  return data;
+  
+  return data || [];
 }
 
 /**

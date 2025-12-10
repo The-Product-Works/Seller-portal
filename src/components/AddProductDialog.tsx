@@ -52,6 +52,7 @@ import { ImageGalleryManager, type ImageFile } from "@/components/ImageGalleryMa
 import { ProductPreviewModal } from "@/components/ProductPreviewModal";
 import { ImageManager } from "@/components/ImageManager";
 import { CommissionWarning } from "@/components/CommissionWarning";
+import { AttestationDialog } from "@/components/AttestationDialog";
 
 // Type alias for Json type
 type Json = Database["public"]["Tables"]["seller_product_listings"]["Row"]["seller_certifications"];
@@ -119,6 +120,8 @@ export default function AddProductDialog({
   const [newAllergenName, setNewAllergenName] = useState("");
   
   const [variants, setVariants] = useState<VariantForm[]>([]);
+  const [deletedImageIds, setDeletedImageIds] = useState<string[]>([]); // Track deleted product images for database cleanup
+  const [deletedImagePaths, setDeletedImagePaths] = useState<string[]>([]); // Track deleted image paths for storage cleanup on save
   const [returnPolicy, setReturnPolicy] = useState("");
   const [returnDays, setReturnDays] = useState<number>(7);
   const [shippingInfo, setShippingInfo] = useState("");
@@ -130,13 +133,14 @@ export default function AddProductDialog({
   const [showCategoryInput, setShowCategoryInput] = useState(false);
   const [showProductInput, setShowProductInput] = useState(false);
   
-  const [productImages, setProductImages] = useState<File[]>([]);
-  const [galleryImages, setGalleryImages] = useState<ImageFile[]>([]);
+  // Old gallery system removed - images now managed per-variant
   const [certificateFiles, setCertificateFiles] = useState<File[]>([]);
   const [trustCertificateFiles, setTrustCertificateFiles] = useState<File[]>([]);
   
   const [showPreview, setShowPreview] = useState(false);
   const [showImageManager, setShowImageManager] = useState(false);
+  const [showAttestation, setShowAttestation] = useState(false);
+  const [pendingAction, setPendingAction] = useState<"draft" | "publish" | null>(null);
   
   interface CertificateData {
     name: string;
@@ -165,8 +169,8 @@ export default function AddProductDialog({
   useEffect(() => {
     if (editingProduct && open) {
       loadEditingProduct(editingProduct as ListingWithDetails);
-    } else {
-      // Reset form when not editing
+    } else if (!open) {
+      // Only reset form when dialog is closing (not when opening for new product)
       setSellerTitle("");
       setSellerDescription("");
       // sellerIngredients removed - now per-variant
@@ -179,8 +183,7 @@ export default function AddProductDialog({
       setDiscountPercentage(0);
       setSellerCommission(0);
       setStatus("draft");
-      setProductImages([]);
-      setGalleryImages([]);
+      // Old gallery image state removed
       setCertificateFiles([]);
       setTrustCertificateFiles([]);
       setSellerCertifications([]);
@@ -213,6 +216,8 @@ export default function AddProductDialog({
     setCategories(categoriesData || []);
     setBrands(allBrands || []);
     setGlobalProducts(allProducts || []);
+    
+    console.log("Loaded allergens:", allergensData?.length, allergensData);
   }, [toast]);
 
   async function loadEditingProduct(product: ListingWithDetails) {
@@ -244,62 +249,85 @@ export default function AddProductDialog({
     setReturnPolicy(product.return_policy || "");
     setShippingInfo(product.shipping_info || "");
     
-    // Load existing images
-    if (product.listing_images && product.listing_images.length > 0) {
-      setGalleryImages(
-        product.listing_images.map((img) => ({
-          id: img.image_id,
-          url: img.image_url,
-          isPrimary: img.is_primary,
-          altText: '',
-          isExisting: true,
-        }))
-      );
-    }
+    // Old gallery image loading removed - images now loaded per-variant
     
     // Set variants if they exist
     if (product.listing_variants) {
-      setVariants(product.listing_variants.map(v => ({
-        variant_id: v.variant_id,
+      console.log("Loading variants with allergen_info:", product.listing_variants.map(v => ({
         variant_name: v.variant_name,
-        sku: v.sku,
-        size: v.size,
-        flavor: v.flavor,
-        serving_count: v.serving_count,
-        price: v.price,
-        original_price: v.original_price,
-        stock_quantity: v.stock_quantity,
-        manufacture_date: v.manufacture_date,
-        batch_number: v.batch_number,
-        expiry_date: v.expiry_date,
-        nutritional_info: v.nutritional_info || {},
-        is_available: v.is_available,
-        // P0 Fields
-        product_image_url: v.product_image_url || null,
-        ingredient_image_url: v.ingredient_image_url || null,
-        nutrient_table_image_url: v.nutrient_table_image_url || null,
-        fssai_label_image_url: v.fssai_label_image_url || null,
-        ingredient_list: ingredientJsonToString(v.ingredient_list) || "",
-        fssai_number: v.fssai_number || "",
-        fssai_expiry_date: v.fssai_expiry_date || null,
-        nutrient_breakdown: v.nutrient_breakdown || {
-          servingSize: "100g",
-          energyKcal: 0,
-          macronutrients: {
-            protein: { value: 0, unit: "g" },
-            carbohydrate: { value: 0, unit: "g", ofWhichSugars: 0 },
-            fat: { value: 0, unit: "g", saturated: 0, trans: 0 },
-          },
-        },
-        accuracy_attested: v.accuracy_attested || false,
-        attested_by: v.attested_by || null,
-        attested_at: v.attested_at || null,
-        // File upload states (null for existing data)
-        productImageFile: null,
-        ingredientImageFile: null,
-        nutrientImageFile: null,
-        fssaiImageFile: null,
+        allergen_info: v.allergen_info
       })));
+      
+      setVariants(product.listing_variants.map(v => {
+        // Find product display images for this variant from listing_images
+        const variantImages = product.listing_images?.filter(
+          img => (img as any).variant_id === v.variant_id
+        ) || [];
+        
+        console.log(`📦 Loading variant ${v.variant_name}:`);
+        console.log(`  - Found ${variantImages.length} product display images:`, variantImages);
+        console.log(`  - P0 image_url:`, v.image_url ? 'EXISTS' : 'MISSING');
+        console.log(`  - ingredient_image_url:`, v.ingredient_image_url ? 'EXISTS' : 'MISSING');
+        console.log(`  - nutrient_table_image_url:`, v.nutrient_table_image_url ? 'EXISTS' : 'MISSING');
+        console.log(`  - fssai_label_image_url:`, v.fssai_label_image_url ? 'EXISTS' : 'MISSING');
+        
+        return {
+          variant_id: v.variant_id,
+          variant_name: v.variant_name,
+          sku: v.sku,
+          size: v.size,
+          flavor: v.flavor,
+          serving_count: v.serving_count,
+          price: v.price,
+          original_price: v.original_price,
+          stock_quantity: v.stock_quantity,
+          manufacture_date: v.manufacture_date,
+          batch_number: v.batch_number,
+          expiry_date: v.expiry_date,
+          is_available: v.is_available,
+          // P0 Fields
+          image_url: v.image_url || null,
+          ingredient_image_url: v.ingredient_image_url || null,
+          nutrient_table_image_url: v.nutrient_table_image_url || null,
+          fssai_label_image_url: v.fssai_label_image_url || null,
+          ingredient_list: ingredientJsonToString(v.ingredient_list) || "",
+          fssai_number: v.fssai_number || "",
+          fssai_expiry_date: v.fssai_expiry_date || null,
+          nutrient_breakdown: v.nutrient_breakdown || {
+            servingSize: "100g",
+            energyKcal: 0,
+            macronutrients: {
+              protein: { value: 0, unit: "g" },
+              carbohydrate: { value: 0, unit: "g", ofWhichSugars: 0 },
+              fat: { value: 0, unit: "g", saturated: 0, trans: 0 },
+            },
+          },
+          // Load allergen info
+          allergen_info: v.allergen_info || {
+            allergen_ids: [],
+            custom_allergens: [],
+            contains_allergens: false,
+            updated_at: new Date().toISOString()
+          },
+          accuracy_attested: v.accuracy_attested || false,
+          attested_by: v.attested_by || null,
+          attested_at: v.attested_at || null,
+          // Load existing product images as objects with is_primary flag and sort_order
+          existingProductImages: variantImages
+            .sort((a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0))
+            .map((img, idx) => ({
+              image_url: img.image_url,
+              is_primary: img.is_primary || false,
+              image_id: (img as any).image_id,
+              sort_order: (img as any).sort_order || idx
+            })),
+          // File upload states (null for new uploads)
+          ingredientImageFile: null,
+          nutrientImageFile: null,
+          fssaiImageFile: null,
+          newImagePrimaryIndex: 0, // First new image is primary by default
+        };
+      }));
     }
   }
 
@@ -541,6 +569,12 @@ export default function AddProductDialog({
   async function handleSave(overrideStatus?: "draft" | "active") {
     const finalStatus = overrideStatus || status;
     console.log("handleSave called with status:", finalStatus, "override:", overrideStatus, "state:", status);
+    console.log("🔍 Variants allergen_info before save:", variants.map(v => ({
+      name: v.variant_name,
+      allergen_info: v.allergen_info,
+      allergen_ids: (v.allergen_info as any)?.allergen_ids
+    })));
+    
     if (!sellerId) {
       toast({ title: "Not authenticated", variant: "destructive" });
       return;
@@ -564,29 +598,60 @@ export default function AddProductDialog({
     try {
       setLoading(true);
 
-      // For new products, upload all files. For editing, only upload new files.
-      const filesToUpload = isEditing 
-        ? galleryImages.filter(img => !img.isExisting && img.file).map(img => img.file!)
-        : productImages;
-
-      // Upload files
-      const uploadedImages = await Promise.all(
-        filesToUpload.map((file) => uploadFile(file, sellerId, "product-images"))
-      );
+      // Product images are now handled per-variant in the Media tab
+      // This old gallery system is deprecated and should not upload images
+      const uploadedImages: string[] = [];
       
+      // Upload certificates and update metadata with URLs
       const uploadedCerts = await Promise.all(
-        certificateFiles.map((file) => uploadFile(file, sellerId, "certificates"))
+        certificateFiles.map(async (file, index) => {
+          const filePath = `${sellerId}/certificates/${Date.now()}_${file.name}`;
+          const { data, error } = await supabase.storage
+            .from('product')
+            .upload(filePath, file, { upsert: true });
+          
+          if (error) throw error;
+          
+          const { data: { publicUrl } } = supabase.storage
+            .from('product')
+            .getPublicUrl(filePath);
+          
+          return { index, url: publicUrl };
+        })
       );
       
+      // Update sellerCertifications with uploaded URLs
+      const updatedCertifications = sellerCertifications.map((cert, index) => {
+        const uploadedCert = uploadedCerts.find(u => u.index === index);
+        if (uploadedCert && cert.url?.startsWith('Will be uploaded:')) {
+          return { ...cert, url: uploadedCert.url };
+        }
+        return cert;
+      });
+      
+      // Upload trust certificates to product bucket (if any)
       const uploadedTrustCerts = await Promise.all(
-        trustCertificateFiles.map((file) => uploadFile(file, sellerId, "trust-certificates"))
+        trustCertificateFiles.map(async (file) => {
+          const filePath = `${sellerId}/trust-certificates/${Date.now()}_${file.name}`;
+          const { data, error } = await supabase.storage
+            .from('product')
+            .upload(filePath, file, { upsert: true });
+          
+          if (error) throw error;
+          
+          const { data: { publicUrl } } = supabase.storage
+            .from('product')
+            .getPublicUrl(filePath);
+          
+          return publicUrl;
+        })
       );
 
       // Calculate health score
       const healthScore = calculateHealthScore({
-        certificateCount: uploadedCerts.length + uploadedTrustCerts.length,
+        certificateCount: updatedCertifications.length + uploadedTrustCerts.length,
         allergenCount: selectedAllergens.length,
-        hasNutritionInfo: variants.some(v => v.nutritional_info && Object.keys(v.nutritional_info).length > 0),
+        hasNutritionInfo: variants.some(v => v.nutrient_breakdown && Object.keys(v.nutrient_breakdown).length > 0),
         hasTransparencyData: !!transparency.manufacturing_info || !!transparency.testing_info,
         ingredientCount: variants.length > 0 ? 1 : 0, // Changed: ingredients now per-variant
       });
@@ -678,7 +743,7 @@ export default function AddProductDialog({
             return_policy: returnPolicy,
             discount_percentage: discountPercentage,
             shipping_info: shippingInfo,
-            seller_certifications: (sellerCertifications.length > 0 ? sellerCertifications : null) as unknown as Json,
+            seller_certifications: (updatedCertifications.length > 0 ? updatedCertifications : null) as unknown as Json,
             status: finalStatus,
             published_at: finalStatus === "active" ? new Date().toISOString() : null,
             updated_at: new Date().toISOString()
@@ -707,7 +772,7 @@ export default function AddProductDialog({
             return_policy: returnPolicy,
             discount_percentage: discountPercentage,
             shipping_info: shippingInfo,
-            seller_certifications: (sellerCertifications.length > 0 ? sellerCertifications : null) as unknown as Json,
+            seller_certifications: (updatedCertifications.length > 0 ? updatedCertifications : null) as unknown as Json,
             status: finalStatus,
             slug: listingSlug,
             review_count: 0,
@@ -745,7 +810,7 @@ export default function AddProductDialog({
           // Get existing variants to preserve data before deleting
           const { data: existingVariants } = await supabase
             .from("listing_variants")
-            .select("variant_id, nutritional_info, ingredient_list, allergen_info")
+            .select("variant_id, nutrient_breakdown, ingredient_list, allergen_info")
             .eq("listing_id", listing.listing_id);
 
           // Delete existing variants first
@@ -762,72 +827,77 @@ export default function AddProductDialog({
 
         // Insert all variants (both for new products and updates)
         for (const variant of variants) {
-          // Upload P0 images first if they exist
-          let productImageUrl = variant.product_image_url;
+          // Upload P0 compliance images from Media tab
+          let productImageUrl = variant.image_url;
           let ingredientImageUrl = variant.ingredient_image_url;
           let nutrientImageUrl = variant.nutrient_table_image_url;
           let fssaiImageUrl = variant.fssai_label_image_url;
 
-          // Create a temporary variant ID for image paths
+          // Create a temporary variant ID for image paths (will be replaced with actual ID)
           const tempVariantId = variant.variant_id || `temp-${Date.now()}-${Math.random()}`;
 
-          if (variant.productImageFile) {
-            const filePath = `${sellerId}/${listing.listing_id}/${tempVariantId}/product.jpg`;
-            const { data, error } = await supabase.storage
-              .from('products')
-              .upload(filePath, variant.productImageFile, { upsert: true });
+          // Upload product image if provided in Media tab
+          if ((variant as any).productImage) {
+            const filePath = `${sellerId}/variants/${tempVariantId}/product_image/${Date.now()}_${(variant as any).productImage.name}`;
+            const { error } = await supabase.storage
+              .from('product')
+              .upload(filePath, (variant as any).productImage, { upsert: true });
             
             if (!error) {
               const { data: { publicUrl } } = supabase.storage
-                .from('products')
+                .from('product')
                 .getPublicUrl(filePath);
               productImageUrl = publicUrl;
             }
           }
 
-          if (variant.ingredientImageFile) {
-            const filePath = `${sellerId}/${listing.listing_id}/${tempVariantId}/ingredient.jpg`;
-            const { data, error } = await supabase.storage
-              .from('products')
-              .upload(filePath, variant.ingredientImageFile, { upsert: true });
+          // Upload ingredient image if provided in Media tab
+          if ((variant as any).ingredientImage) {
+            const filePath = `${sellerId}/variants/${tempVariantId}/ingredient_image/${Date.now()}_${(variant as any).ingredientImage.name}`;
+            const { error } = await supabase.storage
+              .from('product')
+              .upload(filePath, (variant as any).ingredientImage, { upsert: true });
             
             if (!error) {
               const { data: { publicUrl } } = supabase.storage
-                .from('products')
+                .from('product')
                 .getPublicUrl(filePath);
               ingredientImageUrl = publicUrl;
             }
           }
 
-          if (variant.nutrientImageFile) {
-            const filePath = `${sellerId}/${listing.listing_id}/${tempVariantId}/nutrient.jpg`;
-            const { data, error } = await supabase.storage
-              .from('products')
-              .upload(filePath, variant.nutrientImageFile, { upsert: true });
+          // Upload nutrition table image if provided in Media tab
+          if ((variant as any).nutritionImage) {
+            const filePath = `${sellerId}/variants/${tempVariantId}/nutrient_table_image/${Date.now()}_${(variant as any).nutritionImage.name}`;
+            const { error } = await supabase.storage
+              .from('product')
+              .upload(filePath, (variant as any).nutritionImage, { upsert: true });
             
             if (!error) {
               const { data: { publicUrl } } = supabase.storage
-                .from('products')
+                .from('product')
                 .getPublicUrl(filePath);
               nutrientImageUrl = publicUrl;
             }
           }
 
-          if (variant.fssaiImageFile) {
-            const filePath = `${sellerId}/${listing.listing_id}/${tempVariantId}/fssai.jpg`;
-            const { data, error } = await supabase.storage
-              .from('products')
-              .upload(filePath, variant.fssaiImageFile, { upsert: true });
+          // Upload FSSAI label image if provided in Media tab
+          if ((variant as any).fssaiImage) {
+            const filePath = `${sellerId}/variants/${tempVariantId}/fssai_label_image/${Date.now()}_${(variant as any).fssaiImage.name}`;
+            const { error } = await supabase.storage
+              .from('product')
+              .upload(filePath, (variant as any).fssaiImage, { upsert: true });
             
             if (!error) {
               const { data: { publicUrl } } = supabase.storage
-                .from('products')
+                .from('product')
                 .getPublicUrl(filePath);
               fssaiImageUrl = publicUrl;
             }
           }
 
-          const { error: variantError } = await supabase
+          // Insert variant with P0 compliance images
+          const { data: insertedVariant, error: variantError } = await supabase
             .from("listing_variants")
             .insert({
               listing_id: listing.listing_id,
@@ -842,151 +912,126 @@ export default function AddProductDialog({
               manufacture_date: variant.manufacture_date,
               batch_number: variant.batch_number,
               expiry_date: variant.expiry_date,
-              nutritional_info: variant.nutritional_info && Object.keys(variant.nutritional_info).length > 0 
-                ? { servingSize: "100g", ...variant.nutritional_info } 
-                : null,
               is_available: variant.is_available,
               
-              // P0 Fields
-              product_image_url: productImageUrl,
+              // P0 Compliance Images
+              image_url: productImageUrl,
               ingredient_image_url: ingredientImageUrl,
               nutrient_table_image_url: nutrientImageUrl,
               fssai_label_image_url: fssaiImageUrl,
+              
+              // Per-variant data
               ingredient_list: ingredientStringToJson(variant.ingredient_list as string),
-              allergen_info: allergenStringToJson(variant.allergen_info as string),
+              allergen_info: variant.allergen_info || {
+                allergen_ids: [],
+                custom_allergens: [],
+                contains_allergens: false,
+                updated_at: new Date().toISOString()
+              },
               fssai_number: variant.fssai_number,
               fssai_expiry_date: variant.fssai_expiry_date,
-              nutrient_breakdown: {
-                servingSize: "100g",
-                energyKcal: variant.nutritional_info?.calories || 0,
-                energyKj: Math.round((variant.nutritional_info?.calories || 0) * 4.184),
-                macronutrients: {
-                  protein: { value: variant.nutritional_info?.protein || 0, unit: "g" },
-                  carbohydrate: { value: variant.nutritional_info?.carbohydrates || 0, unit: "g", ofWhichSugars: 0 },
-                  fat: { 
-                    value: variant.nutritional_info?.fat || 0, 
-                    unit: "g", 
-                    saturated: variant.nutritional_info?.saturated_fat || 0, 
-                    trans: 0 
-                  }
-                },
-                micronutrients: {
-                  sodium: { value: variant.nutritional_info?.sodium || 0, unit: "mg" },
-                  calcium: { value: variant.nutritional_info?.calcium || 0, unit: "mg" },
-                  iron: { value: variant.nutritional_info?.iron || 0, unit: "mg" },
-                  zinc: { value: variant.nutritional_info?.zinc || 0, unit: "mg" },
-                  potassium: { value: variant.nutritional_info?.potassium || 0, unit: "mg" },
-                  magnesium: { value: variant.nutritional_info?.magnesium || 0, unit: "mg" },
-                  vitaminA: { value: variant.nutritional_info?.vitamin_a || 0, unit: "mcg" },
-                  vitaminC: { value: variant.nutritional_info?.vitamin_c || 0, unit: "mg" },
-                  vitaminD: { value: variant.nutritional_info?.vitamin_d || 0, unit: "mcg" }
-                },
-                fiber: { value: variant.nutritional_info?.fiber || 0, unit: "g" },
-                cholesterol: { value: 0, unit: "mg" }
-              },
+              nutrient_breakdown: variant.nutrient_breakdown,
               accuracy_attested: variant.accuracy_attested || false,
               attested_by: variant.attested_by || sellerId,
               attested_at: variant.attested_at || (variant.accuracy_attested ? new Date().toISOString() : null),
-            });
+            })
+            .select()
+            .single();
 
           if (variantError) {
-            console.error("❌ RLS ERROR on listing_variants:", variantError);
-            throw new Error(`Failed to ${isEditing ? 'update' : 'create'} variant: ${variantError.message}`);
+            console.error("❌ Error inserting variant:", variantError);
+            throw new Error(`Failed to save variant: ${variantError.message}`);
           }
-        }
-      }
 
-      // Handle images
-      if (isEditing) {
-        // Get the current gallery images to understand what needs to be updated
-        const existingImages = galleryImages.filter(img => img.isExisting && img.url);
-        const newImages = galleryImages.filter(img => !img.isExisting && img.file);
-        
-        // Only delete images that are no longer in the gallery (user removed them)
-        const { data: currentImages } = await supabase
-          .from("listing_images")
-          .select("image_id, image_url")
-          .eq("listing_id", listing.listing_id);
+          // Upload product display images to listing_images table
+          if ((variant as any).productImages && (variant as any).productImages.length > 0) {
+            const productImageFiles = (variant as any).productImages as File[];
+            const primaryIndex = (variant as any).newImagePrimaryIndex || 0;
 
-        if (currentImages) {
-          const existingImageUrls = existingImages.map(img => img.url);
-          const imagesToDelete = currentImages.filter(img => !existingImageUrls.includes(img.image_url));
-          
-          if (imagesToDelete.length > 0) {
-            const imageIdsToDelete = imagesToDelete.map(img => img.image_id);
-            const { error: deleteImageError } = await supabase
-              .from("listing_images")
-              .delete()
-              .in("image_id", imageIdsToDelete);
+            for (let i = 0; i < productImageFiles.length; i++) {
+              const imageFile = productImageFiles[i];
+              const imagePath = `${sellerId}/variants/${insertedVariant.variant_id}/product_images/${Date.now()}_${i}_${imageFile.name}`;
+              
+              const { error: uploadError } = await supabase.storage
+                .from('product')
+                .upload(imagePath, imageFile, { upsert: true });
+              
+              if (!uploadError) {
+                const { data: { publicUrl } } = supabase.storage
+                  .from('product')
+                  .getPublicUrl(imagePath);
+                
+                // Insert into listing_images table with variant_id
+                await supabase
+                  .from("listing_images")
+                  .insert({
+                    listing_id: listing.listing_id,
+                    variant_id: insertedVariant.variant_id,
+                    image_url: publicUrl,
+                    is_primary: i === primaryIndex, // Use seller's choice
+                    sort_order: i, // Preserve image order
+                  });
+              }
+            }
+          }
 
-            if (deleteImageError) {
-              console.error("❌ Error deleting removed images:", deleteImageError);
-              throw new Error(`Failed to update images: ${deleteImageError.message}`);
+          // Update existing images' is_primary flag if user changed it
+          if ((variant as any).existingProductImages && (variant as any).existingProductImages.length > 0) {
+            const existingImages = (variant as any).existingProductImages;
+            console.log(`Updating is_primary for ${existingImages.length} existing images in variant ${variant.variant_name}`);
+            
+            for (const img of existingImages) {
+              if (img.image_id) {
+                console.log(`  - Image ${img.image_id}: is_primary = ${img.is_primary}`);
+                // Update is_primary flag for each existing image
+                const { error: updateError } = await supabase
+                  .from("listing_images")
+                  .update({ is_primary: img.is_primary || false })
+                  .eq('image_id', img.image_id);
+                
+                if (updateError) {
+                  console.error("Error updating is_primary:", updateError);
+                } else {
+                  console.log(`  ✓ Updated image ${img.image_id}`);
+                }
+              }
             }
           }
         }
 
-        // Insert new images (uploadedImages contains only newly uploaded files)
-        for (let i = 0; i < uploadedImages.length; i++) {
-          const { error: imageError } = await supabase.from("listing_images").insert({
-            listing_id: listing.listing_id,
-            image_url: uploadedImages[i],
-            is_primary: false, // We'll update primary status separately
-            sort_order: existingImages.length + i,
-          });
-          
-          if (imageError) {
-            console.error("❌ RLS ERROR on listing_images:", imageError);
-            throw new Error(`Failed to upload new image: ${imageError.message}`);
-          }
-        }
-
-        // Update primary image status for all images
-        const allImages = [...existingImages, ...newImages];
-        const primaryImage = allImages.find(img => img.isPrimary);
-        
-        if (primaryImage) {
-          // Reset all images to non-primary first
+        // Delete images marked for deletion from database
+        if (deletedImageIds.length > 0) {
           await supabase
             .from("listing_images")
-            .update({ is_primary: false })
-            .eq("listing_id", listing.listing_id);
+            .delete()
+            .in('image_id', deletedImageIds);
           
-          // Set the primary image
-          let primaryImageUrl = primaryImage.url;
-          if (!primaryImageUrl && primaryImage.file) {
-            // This is a new image, find its uploaded URL
-            const newImageIndex = newImages.findIndex(img => img.id === primaryImage.id);
-            if (newImageIndex !== -1 && newImageIndex < uploadedImages.length) {
-              primaryImageUrl = uploadedImages[newImageIndex];
-            }
-          }
-          
-          if (primaryImageUrl) {
-            await supabase
-              .from("listing_images")
-              .update({ is_primary: true })
-              .eq("listing_id", listing.listing_id)
-              .eq("image_url", primaryImageUrl);
-          }
+          // Clear the deleted IDs list
+          setDeletedImageIds([]);
         }
-      } else {
-        // For new products, handle all images normally
-        // Insert new images
-        for (let i = 0; i < uploadedImages.length; i++) {
-          const { error: imageError } = await supabase.from("listing_images").insert({
-            listing_id: listing.listing_id,
-            image_url: uploadedImages[i],
-            is_primary: i === 0,
-            sort_order: i,
-          });
+
+        // Delete images from storage after database cleanup
+        if (deletedImagePaths.length > 0) {
+          console.log("Deleting images from storage:", deletedImagePaths);
+          const { error: storageError } = await supabase.storage
+            .from('product')
+            .remove(deletedImagePaths);
           
-          if (imageError) {
-            console.error("❌ RLS ERROR on listing_images:", imageError);
-            throw new Error(`Failed to upload image: ${imageError.message}`);
+          if (storageError) {
+            console.error("Error deleting images from storage:", storageError);
+          } else {
+            console.log("Successfully deleted", deletedImagePaths.length, "images from storage");
           }
+          
+          // Clear the deleted paths list
+          setDeletedImagePaths([]);
         }
+
+        console.log("✅ All variants and images saved successfully");
       }
+
+      // Old gallery image system removed - images are now handled per-variant above
+      // All product images are associated with specific variants via the Media tab
 
       // Insert transparency data
       if (transparency.manufacturing_info || transparency.testing_info) {
@@ -1051,8 +1096,7 @@ export default function AddProductDialog({
     setShelfLifeMonths(12);
     setDiscountPercentage(0);
     setSellerCommission(0);
-    setProductImages([]);
-    setGalleryImages([]);
+    // Old gallery state removed
     setCertificateFiles([]);
     setTrustCertificateFiles([]);
     setStatus("draft");
@@ -1508,6 +1552,7 @@ export default function AddProductDialog({
                 {/* Nutritional Info */}
                 <div className="border-t pt-3">
                   <Label className="font-semibold mb-2 block">Nutritional Information <span className="text-red-500">*</span></Label>
+                  <p className="text-xs text-gray-500 mb-3">Using nutrient_breakdown format. You can add ANY custom nutrients!</p>
                   
                   {/* Macronutrients */}
                   <div className="mb-3">
@@ -1518,10 +1563,15 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="250"
-                          value={typeof variant.nutritional_info?.calories === 'number' ? variant.nutritional_info.calories : ""}
+                          value={variant.nutrient_breakdown?.energyKcal || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, calories: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const value = Number(e.target.value) || 0;
+                            updateVariant(index, "nutrient_breakdown", {
+                              ...variant.nutrient_breakdown,
+                              servingSize: "100g",
+                              energyKcal: value,
+                              energyKj: Math.round(value * 4.184)
+                            });
                           }}
                         />
                       </div>
@@ -1530,10 +1580,12 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="10"
-                          value={typeof variant.nutritional_info?.protein === 'number' ? variant.nutritional_info.protein : ""}
+                          value={variant.nutrient_breakdown?.macronutrients?.protein?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, protein: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.macronutrients) nb.macronutrients = {};
+                            nb.macronutrients.protein = { value: Number(e.target.value) || 0, unit: 'g' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1542,10 +1594,16 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="30"
-                          value={typeof variant.nutritional_info?.carbohydrates === 'number' ? variant.nutritional_info.carbohydrates : ""}
+                          value={variant.nutrient_breakdown?.macronutrients?.carbohydrate?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, carbohydrates: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.macronutrients) nb.macronutrients = {};
+                            nb.macronutrients.carbohydrate = {
+                              value: Number(e.target.value) || 0,
+                              unit: 'g',
+                              ofWhichSugars: nb.macronutrients?.carbohydrate?.ofWhichSugars || 0
+                            };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1554,10 +1612,17 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="5"
-                          value={typeof variant.nutritional_info?.fat === 'number' ? variant.nutritional_info.fat : ""}
+                          value={variant.nutrient_breakdown?.macronutrients?.fat?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, fat: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.macronutrients) nb.macronutrients = {};
+                            nb.macronutrients.fat = {
+                              value: Number(e.target.value) || 0,
+                              unit: 'g',
+                              saturated: nb.macronutrients?.fat?.saturated || 0,
+                              trans: nb.macronutrients?.fat?.trans || 0
+                            };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1566,10 +1631,13 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="2"
-                          value={typeof variant.nutritional_info?.saturated_fat === 'number' ? variant.nutritional_info.saturated_fat : ""}
+                          value={variant.nutrient_breakdown?.macronutrients?.fat?.saturated || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, saturated_fat: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.macronutrients) nb.macronutrients = {};
+                            if (!nb.macronutrients.fat) nb.macronutrients.fat = { value: 0, unit: 'g', trans: 0 };
+                            nb.macronutrients.fat.saturated = Number(e.target.value) || 0;
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1578,10 +1646,11 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="5"
-                          value={typeof variant.nutritional_info?.fiber === 'number' ? variant.nutritional_info.fiber : ""}
+                          value={variant.nutrient_breakdown?.fiber?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, fiber: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            nb.fiber = { value: Number(e.target.value) || 0, unit: 'g' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1597,10 +1666,12 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="150"
-                          value={typeof variant.nutritional_info?.sodium === 'number' ? variant.nutritional_info.sodium : ""}
+                          value={variant.nutrient_breakdown?.micronutrients?.sodium?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, sodium: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.micronutrients) nb.micronutrients = {};
+                            nb.micronutrients.sodium = { value: Number(e.target.value) || 0, unit: 'mg' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1609,10 +1680,12 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="120"
-                          value={typeof variant.nutritional_info?.calcium === 'number' ? variant.nutritional_info.calcium : ""}
+                          value={variant.nutrient_breakdown?.micronutrients?.calcium?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, calcium: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.micronutrients) nb.micronutrients = {};
+                            nb.micronutrients.calcium = { value: Number(e.target.value) || 0, unit: 'mg' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1622,10 +1695,12 @@ export default function AddProductDialog({
                           type="number"
                           placeholder="2.5"
                           step="0.1"
-                          value={typeof variant.nutritional_info?.iron === 'number' ? variant.nutritional_info.iron : ""}
+                          value={variant.nutrient_breakdown?.micronutrients?.iron?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, iron: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.micronutrients) nb.micronutrients = {};
+                            nb.micronutrients.iron = { value: Number(e.target.value) || 0, unit: 'mg' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1635,10 +1710,12 @@ export default function AddProductDialog({
                           type="number"
                           placeholder="1.2"
                           step="0.1"
-                          value={typeof variant.nutritional_info?.zinc === 'number' ? variant.nutritional_info.zinc : ""}
+                          value={variant.nutrient_breakdown?.micronutrients?.zinc?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, zinc: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.micronutrients) nb.micronutrients = {};
+                            nb.micronutrients.zinc = { value: Number(e.target.value) || 0, unit: 'mg' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1647,10 +1724,12 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="200"
-                          value={typeof variant.nutritional_info?.potassium === 'number' ? variant.nutritional_info.potassium : ""}
+                          value={variant.nutrient_breakdown?.micronutrients?.potassium?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, potassium: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.micronutrients) nb.micronutrients = {};
+                            nb.micronutrients.potassium = { value: Number(e.target.value) || 0, unit: 'mg' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1659,10 +1738,12 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="50"
-                          value={typeof variant.nutritional_info?.magnesium === 'number' ? variant.nutritional_info.magnesium : ""}
+                          value={variant.nutrient_breakdown?.micronutrients?.magnesium?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, magnesium: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.micronutrients) nb.micronutrients = {};
+                            nb.micronutrients.magnesium = { value: Number(e.target.value) || 0, unit: 'mg' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1671,10 +1752,12 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="800"
-                          value={typeof variant.nutritional_info?.vitamin_a === 'number' ? variant.nutritional_info.vitamin_a : ""}
+                          value={variant.nutrient_breakdown?.micronutrients?.vitaminA?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, vitamin_a: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.micronutrients) nb.micronutrients = {};
+                            nb.micronutrients.vitaminA = { value: Number(e.target.value) || 0, unit: 'mcg' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1683,10 +1766,12 @@ export default function AddProductDialog({
                         <Input
                           type="number"
                           placeholder="25"
-                          value={typeof variant.nutritional_info?.vitamin_c === 'number' ? variant.nutritional_info.vitamin_c : ""}
+                          value={variant.nutrient_breakdown?.micronutrients?.vitaminC?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, vitamin_c: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.micronutrients) nb.micronutrients = {};
+                            nb.micronutrients.vitaminC = { value: Number(e.target.value) || 0, unit: 'mg' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
@@ -1696,271 +1781,16 @@ export default function AddProductDialog({
                           type="number"
                           placeholder="5"
                           step="0.1"
-                          value={typeof variant.nutritional_info?.vitamin_d === 'number' ? variant.nutritional_info.vitamin_d : ""}
+                          value={variant.nutrient_breakdown?.micronutrients?.vitaminD?.value || ""}
                           onChange={(e) => {
-                            const newNutrInfo = { ...variant.nutritional_info, vitamin_d: Number(e.target.value) || 0 };
-                            updateVariant(index, "nutritional_info", newNutrInfo);
+                            const nb = { ...variant.nutrient_breakdown };
+                            if (!nb.micronutrients) nb.micronutrients = {};
+                            nb.micronutrients.vitaminD = { value: Number(e.target.value) || 0, unit: 'mcg' };
+                            updateVariant(index, "nutrient_breakdown", nb);
                           }}
                         />
                       </div>
                     </div>
-                  </div>
-                </div>
-
-                {/* P0 Compliance Section */}
-                <div className="border-t pt-3 bg-blue-50 p-3 rounded">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Badge variant="outline">P0 Required</Badge>
-                    <Label className="font-semibold">Mandatory Compliance Fields</Label>
-                  </div>
-                  
-                  {/* 4 P0 Images */}
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    {/* Product Image */}
-                    <div>
-                      <Label className="text-sm flex items-center gap-1">
-                        Product Photo <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0] || null;
-                          updateVariant(index, "productImageFile", file);
-                          if (file) {
-                            const url = URL.createObjectURL(file);
-                            updateVariant(index, "product_image_url", url);
-                          }
-                        }}
-                        className="text-sm"
-                      />
-                      {variant.product_image_url && (
-                        <div className="mt-2 space-y-1">
-                          <div className="text-xs text-green-600 font-medium">✓ Image uploaded</div>
-                          <img 
-                            src={variant.product_image_url as string} 
-                            alt="Product preview" 
-                            className="w-20 h-20 object-cover rounded border"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Ingredient Label Image */}
-                    <div>
-                      <Label className="text-sm flex items-center gap-1">
-                        Ingredient Label <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0] || null;
-                          updateVariant(index, "ingredientImageFile", file);
-                          if (file) {
-                            const url = URL.createObjectURL(file);
-                            updateVariant(index, "ingredient_image_url", url);
-                          }
-                        }}
-                        className="text-sm"
-                      />
-                      {variant.ingredient_image_url && (
-                        <div className="mt-2 space-y-1">
-                          <div className="text-xs text-green-600 font-medium">✓ Image uploaded</div>
-                          <img 
-                            src={variant.ingredient_image_url as string} 
-                            alt="Ingredient label preview" 
-                            className="w-20 h-20 object-cover rounded border"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Nutrition Facts Image */}
-                    <div>
-                      <Label className="text-sm flex items-center gap-1">
-                        Nutrition Facts <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0] || null;
-                          updateVariant(index, "nutrientImageFile", file);
-                          if (file) {
-                            const url = URL.createObjectURL(file);
-                            updateVariant(index, "nutrient_table_image_url", url);
-                          }
-                        }}
-                        className="text-sm"
-                      />
-                      {variant.nutrient_table_image_url && (
-                        <div className="mt-2 space-y-1">
-                          <div className="text-xs text-green-600 font-medium">✓ Image uploaded</div>
-                          <img 
-                            src={variant.nutrient_table_image_url as string} 
-                            alt="Nutrition facts preview" 
-                            className="w-20 h-20 object-cover rounded border"
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    {/* FSSAI Certificate Image */}
-                    <div>
-                      <Label className="text-sm flex items-center gap-1">
-                        FSSAI Certificate <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0] || null;
-                          updateVariant(index, "fssaiImageFile", file);
-                          if (file) {
-                            const url = URL.createObjectURL(file);
-                            updateVariant(index, "fssai_label_image_url", url);
-                          }
-                        }}
-                        className="text-sm"
-                      />
-                      {variant.fssai_label_image_url && (
-                        <div className="mt-2 space-y-1">
-                          <div className="text-xs text-green-600 font-medium">✓ Image uploaded</div>
-                          <img 
-                            src={variant.fssai_label_image_url as string} 
-                            alt="FSSAI certificate preview" 
-                            className="w-20 h-20 object-cover rounded border"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* FSSAI Number & Dates */}
-                  <div className="grid grid-cols-3 gap-3 mb-3">
-                    <div>
-                      <Label className="text-sm flex items-center gap-1">
-                        FSSAI Number <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="text"
-                        placeholder="14 digit number"
-                        maxLength={14}
-                        value={variant.fssai_number || ""}
-                        onChange={(e) => {
-                          const value = e.target.value.replace(/\D/g, '');
-                          updateVariant(index, "fssai_number", value);
-                        }}
-                        className="text-sm"
-                      />
-                      {variant.fssai_number && variant.fssai_number.length !== 14 && (
-                        <div className="mt-1 text-xs text-red-500">Must be 14 digits</div>
-                      )}
-                    </div>
-
-                    <div>
-                      <Label className="text-sm">FSSAI Expiry Date</Label>
-                      <Input
-                        type="date"
-                        value={variant.fssai_expiry_date || ""}
-                        onChange={(e) => updateVariant(index, "fssai_expiry_date", e.target.value)}
-                        className="text-sm"
-                      />
-                    </div>
-
-                    <div>
-                      <Label className="text-sm flex items-center gap-1">
-                        Allergen Info <span className="text-red-500">*</span>
-                      </Label>
-                      <Input
-                        type="text"
-                        placeholder="NA if none"
-                        value={variant.allergen_info || "NA"}
-                        onChange={(e) => updateVariant(index, "allergen_info", e.target.value)}
-                        className="text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Ingredient List */}
-                  <div className="mb-3">
-                    <Label className="text-sm flex items-center gap-1">
-                      Complete Ingredient List <span className="text-red-500">*</span>
-                    </Label>
-                    <Textarea
-                      placeholder="List all ingredients in descending order by weight..."
-                      value={typeof variant.ingredient_list === 'string' ? variant.ingredient_list : ingredientJsonToString(variant.ingredient_list)}
-                      onChange={(e) => updateVariant(index, "ingredient_list", e.target.value)}
-                      className="text-sm min-h-[60px]"
-                    />
-                    {!isIngredientListValid(variant.ingredient_list) && (
-                      <div className="mt-1 text-xs text-red-500">Minimum 10 characters required</div>
-                    )}
-                  </div>
-
-                  {/* Accuracy Attestation */}
-                  <div className="flex items-center space-x-2 p-3 bg-yellow-50 border border-yellow-200 rounded">
-                    <Checkbox
-                      checked={Boolean(variant.accuracy_attested)}
-                      onCheckedChange={(checked) => {
-                        console.log("Attestation checkbox clicked:", checked, "for variant", index);
-                        const isChecked = Boolean(checked);
-                        console.log("Setting accuracy_attested to:", isChecked);
-                        
-                        const updated = [...variants];
-                        updated[index] = { 
-                          ...updated[index], 
-                          accuracy_attested: isChecked,
-                          attested_by: isChecked ? (sellerId || "seller") : null,
-                          attested_at: isChecked ? new Date().toISOString() : null
-                        };
-                        setVariants(updated);
-                        console.log("Updated variant:", updated[index]);
-                      }}
-                      id={`attestation-${index}`}
-                    />
-                    <Label 
-                      htmlFor={`attestation-${index}`}
-                      className="text-sm font-medium cursor-pointer flex-1"
-                    >
-                      ✓ I confirm that all ingredient and nutrition information is accurate
-                      <span className="text-red-500 ml-1">*</span>
-                    </Label>
-                  </div>
-
-                  {/* P0 Status Indicator */}
-                  <div className="mt-3">
-                    {variant.product_image_url && 
-                     variant.ingredient_image_url && 
-                     variant.nutrient_table_image_url && 
-                     variant.fssai_label_image_url && 
-                     variant.fssai_number?.length === 14 &&
-                     isIngredientListValid(variant.ingredient_list) &&
-                     variant.nutritional_info?.calories &&
-                     variant.nutritional_info?.calories > 0 &&
-                     Boolean(variant.accuracy_attested) ? (
-                      <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-300 rounded">
-                        <Badge variant="default" className="bg-green-600">✓ P0 Compliant</Badge>
-                        <span className="text-xs text-green-700 font-medium">
-                          All mandatory compliance fields completed
-                        </span>
-                      </div>
-                    ) : (
-                      <div className="p-2 bg-orange-50 border border-orange-300 rounded">
-                        <p className="text-xs text-orange-700 font-medium">⚠ Complete all P0 fields to enable compliance:</p>
-                        <ul className="text-xs text-orange-600 mt-1 ml-4 list-disc">
-                          {!variant.product_image_url && <li>Product Photo</li>}
-                          {!variant.ingredient_image_url && <li>Ingredient Label</li>}
-                          {!variant.nutrient_table_image_url && <li>Nutrition Facts</li>}
-                          {!variant.fssai_label_image_url && <li>FSSAI Certificate</li>}
-                          {variant.fssai_number?.length !== 14 && <li>FSSAI Number (14 digits)</li>}
-                          {!isIngredientListValid(variant.ingredient_list) && <li>Ingredient List (min 10 chars)</li>}
-                          {(!variant.nutritional_info?.calories || variant.nutritional_info?.calories === 0) && <li>Nutritional Information (at least Calories)</li>}
-                          {!variant.accuracy_attested && <li>Accuracy Attestation (checkbox above)</li>}
-                        </ul>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -1981,93 +1811,685 @@ export default function AddProductDialog({
 
           {/* Allergens Tab */}
           <TabsContent value="allergens" className="space-y-4">
-            <Label>Select Allergens</Label>
-            <div className="flex flex-wrap gap-2">
-              {allergens.map((allergen) => (
-                <Badge
-                  key={allergen.allergen_id}
-                  variant={selectedAllergens.includes(allergen.allergen_id) ? "default" : "outline"}
-                  className="cursor-pointer"
-                  onClick={() => {
-                    setSelectedAllergens(
-                      selectedAllergens.includes(allergen.allergen_id)
-                        ? selectedAllergens.filter((id) => id !== allergen.allergen_id)
-                        : [...selectedAllergens, allergen.allergen_id]
-                    );
-                  }}
-                >
-                  {allergen.name}
-                </Badge>
-              ))}
-            </div>
+            {variants.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No variants added yet. Add variants in the Variants tab first.
+              </p>
+            ) : (
+              <div className="space-y-6">
+                {variants.map((variant, index) => (
+                  <div key={index} className="border rounded-lg p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">Variant {index + 1}: {variant.variant_name || 'Unnamed'}</h3>
+                      <Badge variant="outline">{variant.variant_size} {variant.variant_unit}</Badge>
+                    </div>
 
-            <div className="space-y-2">
-              <Label>Add New Allergen</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={newAllergenName}
-                  onChange={(e) => setNewAllergenName(e.target.value)}
-                  placeholder="Enter allergen name"
-                />
-                <Button onClick={handleCreateAllergen}>Add</Button>
+                    <div className="space-y-2">
+                      <Label>Select Allergens for this Variant</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {allergens.length === 0 && (
+                          <p className="text-sm text-muted-foreground">Loading allergens...</p>
+                        )}
+                        {allergens.map((allergen) => {
+                          const variantAllergenIds = (variant.allergen_info as any)?.allergen_ids || [];
+                          const isSelected = variantAllergenIds.includes(allergen.allergen_id);
+                          
+                          if (index === 0) {
+                            console.log(`Allergen ${allergen.name}: isSelected=${isSelected}, variantAllergenIds=`, variantAllergenIds);
+                          }
+                          
+                          return (
+                            <Badge
+                              key={allergen.allergen_id}
+                              variant={isSelected ? "default" : "outline"}
+                              className="cursor-pointer"
+                              onClick={() => {
+                                const updatedVariants = [...variants];
+                                const currentAllergenIds = (updatedVariants[index].allergen_info as any)?.allergen_ids || [];
+                                
+                                console.log(`Toggling allergen ${allergen.name} for variant ${variant.variant_name}`);
+                                console.log('Before:', currentAllergenIds);
+                                
+                                updatedVariants[index] = {
+                                  ...updatedVariants[index],
+                                  allergen_info: {
+                                    allergen_ids: isSelected
+                                      ? currentAllergenIds.filter((id: string) => id !== allergen.allergen_id)
+                                      : [...currentAllergenIds, allergen.allergen_id],
+                                    custom_allergens: (updatedVariants[index].allergen_info as any)?.custom_allergens || [],
+                                    contains_allergens: true,
+                                    updated_at: new Date().toISOString()
+                                  }
+                                };
+                                
+                                console.log('After:', updatedVariants[index].allergen_info);
+                                setVariants(updatedVariants);
+                              }}
+                            >
+                              {allergen.name}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="border-t pt-4 space-y-2">
+                  <Label>Add New Allergen (Available for All Variants)</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={newAllergenName}
+                      onChange={(e) => setNewAllergenName(e.target.value)}
+                      placeholder="Enter allergen name"
+                    />
+                    <Button onClick={handleCreateAllergen}>Add</Button>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </TabsContent>
 
           {/* Media Tab */}
           <TabsContent value="media" className="space-y-4">
-            <div className="flex justify-between items-center">
-              <Label>Product Images</Label>
-              <Button 
-                variant="outline" 
-                onClick={() => setShowImageManager(true)}
-              >
-                <ImageIcon className="h-4 w-4 mr-2" />
-                Select from Manage Images
-              </Button>
-            </div>
-            
-            <ImageGalleryManager
-              images={galleryImages}
-              onImagesChange={(images) => {
-                setGalleryImages(images);
-                // Update productImages with only new files for upload
-                const newFiles = images.map(img => img.file).filter((f): f is File => f !== undefined);
-                setProductImages(newFiles);
-              }}
-              maxImages={10}
-            />
-
-            <div className="space-y-2 mt-6 pt-6 border-t">
-              <Label>Certificates</Label>
-              <Input
-                type="file"
-                multiple
-                accept=".pdf,.jpg,.jpeg,.png"
-                onChange={(e) => setCertificateFiles(Array.from(e.target.files || []))}
-              />
-              <p className="text-xs text-muted-foreground">
-                {certificateFiles.length} certificate(s) selected
+            {variants.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No variants added yet. Add variants in the Variants tab first.
               </p>
-            </div>
+            ) : (
+              <div className="space-y-6">
+                {variants.map((variant, index) => (
+                  <div key={index} className="border rounded-lg p-4 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold">Variant {index + 1}: {variant.variant_name || 'Unnamed'}</h3>
+                      <Badge variant="outline">{variant.variant_size} {variant.variant_unit}</Badge>
+                    </div>
 
-            <div className="space-y-2">
-              <Label>Trust Certificates</Label>
-              <Input
-                type="file"
-                multiple
-                accept=".pdf,.jpg,.jpeg,.png"
-                onChange={(e) => setTrustCertificateFiles(Array.from(e.target.files || []))}
-              />
-              <p className="text-xs text-muted-foreground">
-                {trustCertificateFiles.length} trust certificate(s) selected
-              </p>
-            </div>
+                    {/* Product Display Images */}
+                    <div className="space-y-2">
+                      <Label>Product Display Images (Add as many as you want)</Label>
+                      
+                      {/* Show existing images if editing */}
+                      {(variant as any).existingProductImages && (variant as any).existingProductImages.length > 0 && (
+                        <div className="mb-2">
+                          <p className="text-xs text-green-600 mb-2">✓ {(variant as any).existingProductImages.length} existing image(s)</p>
+                          <div className="flex flex-wrap gap-2">
+                            {(variant as any).existingProductImages.map((img: any, imgIdx: number) => {
+                              const isPrimary = img.is_primary || false;
+                              return (
+                                <div key={imgIdx} className="relative group">
+                                  <img 
+                                    src={img.image_url || img} 
+                                    alt={`Product ${imgIdx + 1}`} 
+                                    className={`w-20 h-20 object-cover rounded border-2 ${isPrimary ? 'border-blue-500' : 'border-gray-300'}`}
+                                  />
+                                  {isPrimary && (
+                                    <div className="absolute top-0 left-0 bg-blue-500 text-white text-xs px-1 rounded-br">
+                                      Primary
+                                    </div>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (!confirm('Delete this image? This cannot be undone.')) return;
+                                      
+                                      const updatedVariants = [...variants];
+                                      const existingImages = [...((updatedVariants[index] as any).existingProductImages || [])];
+                                      const imageToDelete = existingImages[imgIdx];
+                                      
+                                      // Track image_id for database deletion on save
+                                      if (imageToDelete.image_id) {
+                                        setDeletedImageIds(prev => [...prev, imageToDelete.image_id]);
+                                      }
+                                      
+                                      // Track image path for storage deletion on save
+                                      if (imageToDelete.image_url) {
+                                        const urlParts = imageToDelete.image_url.split('/product/');
+                                        if (urlParts.length > 1) {
+                                          setDeletedImagePaths(prev => [...prev, urlParts[1]]);
+                                        }
+                                      }
+                                      
+                                      // Remove from state (UI update)
+                                      existingImages.splice(imgIdx, 1);
+                                      updatedVariants[index] = {
+                                        ...updatedVariants[index],
+                                        existingProductImages: existingImages
+                                      };
+                                      setVariants(updatedVariants);
+                                    }}
+                                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                    ×
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updatedVariants = [...variants];
+                                      const existingImages = [...((updatedVariants[index] as any).existingProductImages || [])];
+                                      // Set all to not primary, then set this one as primary
+                                      const updatedImages = existingImages.map((img: any, idx: number) => ({
+                                        ...(typeof img === 'string' ? { image_url: img, is_primary: false } : img),
+                                        is_primary: idx === imgIdx
+                                      }));
+                                      updatedVariants[index] = {
+                                        ...updatedVariants[index],
+                                        existingProductImages: updatedImages
+                                      };
+                                      setVariants(updatedVariants);
+                                    }}
+                                    className="absolute bottom-0 left-0 right-0 bg-blue-500 text-white text-xs py-0.5 opacity-0 group-hover:opacity-90 transition-opacity"
+                                  >
+                                    Set Primary
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Show new images to upload */}
+                      {(variant as any).productImages && (variant as any).productImages.length > 0 && (
+                        <div className="mb-2">
+                          <p className="text-xs text-blue-600 mb-2">📎 {(variant as any).productImages.length} new image(s) to upload</p>
+                          <div className="flex flex-wrap gap-2">
+                            {(variant as any).productImages.map((file: File, imgIdx: number) => {
+                              const isPrimary = (variant as any).newImagePrimaryIndex === imgIdx;
+                              return (
+                                <div key={imgIdx} className="relative group">
+                                  <img 
+                                    src={URL.createObjectURL(file)} 
+                                    alt={`New ${imgIdx + 1}`} 
+                                    className={`w-20 h-20 object-cover rounded border-2 ${isPrimary ? 'border-blue-500' : 'border-blue-400'}`}
+                                  />
+                                  {isPrimary && (
+                                    <div className="absolute top-0 left-0 bg-blue-500 text-white text-xs px-1 rounded-br">
+                                      Primary
+                                    </div>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updatedVariants = [...variants];
+                                      const newImages = [...((updatedVariants[index] as any).productImages || [])];
+                                      newImages.splice(imgIdx, 1);
+                                      updatedVariants[index] = {
+                                        ...updatedVariants[index],
+                                        productImages: newImages,
+                                        newImagePrimaryIndex: (updatedVariants[index] as any).newImagePrimaryIndex === imgIdx ? 0 : (updatedVariants[index] as any).newImagePrimaryIndex
+                                      };
+                                      setVariants(updatedVariants);
+                                    }}
+                                    className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                                  >
+                                    ×
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const updatedVariants = [...variants];
+                                      updatedVariants[index] = {
+                                        ...updatedVariants[index],
+                                        newImagePrimaryIndex: imgIdx
+                                      };
+                                      setVariants(updatedVariants);
+                                    }}
+                                    className="absolute bottom-0 left-0 right-0 bg-blue-500 text-white text-xs py-0.5 opacity-0 group-hover:opacity-90 transition-opacity"
+                                  >
+                                    Set Primary
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      <Input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+                          if (files.length > 0) {
+                            const updatedVariants = [...variants];
+                            const existingFiles = (updatedVariants[index] as any).productImages || [];
+                            updatedVariants[index] = {
+                              ...updatedVariants[index],
+                              productImages: [...existingFiles, ...files]
+                            };
+                            setVariants(updatedVariants);
+                          }
+                        }}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Click to add more images. Total: {((variant as any).existingProductImages?.length || 0) + ((variant as any).productImages?.length || 0)} images
+                      </p>
+                    </div>
+
+                      {/* P0 Compliance Images */}
+                      <div className="border-t pt-4 space-y-4">
+                        <h4 className="text-sm font-semibold">P0 Compliance Images</h4>
+                        
+                        {/* Product Image */}
+                        <div className="space-y-2">
+                          <Label>Product Photo *</Label>
+                          {(() => {
+                            console.log(`[P0 Product Image Debug] Variant: ${variant.variant_name}`);
+                            console.log('  - image_url:', variant.image_url);
+                            console.log('  - productImage:', (variant as any).productImage);
+                            console.log('  - Should show existing?', variant.image_url && !(variant as any).productImage);
+                            return null;
+                          })()}
+                          {variant.image_url && !(variant as any).productImage && (
+                            <div className="mb-2">
+                              <p className="text-xs text-green-600 mb-1">✓ Existing image</p>
+                              <div className="relative group inline-block">
+                                <img src={variant.image_url as string} alt="Product" className="w-32 h-32 object-cover rounded border" />
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!confirm('Delete product photo? This cannot be undone.')) return;
+                                    
+                                    const updatedVariants = [...variants];
+                                    // Track for storage deletion on save
+                                    const urlParts = (variant.image_url as string).split('/product/');
+                                    if (urlParts.length > 1) {
+                                      setDeletedImagePaths(prev => [...prev, urlParts[1]]);
+                                    }
+                                    
+                                    // Clear from state (will be saved to DB as NULL)
+                                    updatedVariants[index] = {
+                                      ...updatedVariants[index],
+                                      image_url: null
+                                    };
+                                    setVariants(updatedVariants);
+                                  }}
+                                  className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const updatedVariants = [...variants];
+                                updatedVariants[index] = {
+                                  ...updatedVariants[index],
+                                  productImage: file,
+                                  productImagePreview: URL.createObjectURL(file)
+                                };
+                                setVariants(updatedVariants);
+                              }
+                            }}
+                          />
+                          {(variant as any).productImage && (
+                            <div className="mt-2">
+                              <p className="text-xs text-blue-600">📎 New image selected</p>
+                              <img src={(variant as any).productImagePreview as string} alt="Product" className="w-32 h-32 object-cover rounded border border-blue-400 mt-1" />
+                            </div>
+                          )}
+                          {!variant.image_url && (
+                            <p className="text-xs text-muted-foreground">Upload a clear photo of the product</p>
+                          )}
+                        </div>
+
+                        {/* Ingredient Image */}
+                        <div className="space-y-2">
+                          <Label>Ingredient List Image *</Label>
+                          {variant.ingredient_image_url && !(variant as any).ingredientImage && (
+                            <div className="mb-2">
+                              <p className="text-xs text-green-600 mb-1">✓ Existing image</p>
+                              <div className="relative group inline-block">
+                                <img src={variant.ingredient_image_url as string} alt="Ingredient" className="w-32 h-32 object-cover rounded border" />
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!confirm('Delete ingredient image? This cannot be undone.')) return;
+                                    
+                                    const updatedVariants = [...variants];
+                                    // Track for storage deletion on save
+                                    const urlParts = (variant.ingredient_image_url as string).split('/product/');
+                                    if (urlParts.length > 1) {
+                                      setDeletedImagePaths(prev => [...prev, urlParts[1]]);
+                                    }
+                                    
+                                    // Clear from state
+                                    updatedVariants[index] = {
+                                      ...updatedVariants[index],
+                                      ingredient_image_url: null
+                                    };
+                                    setVariants(updatedVariants);
+                                  }}
+                                  className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const updatedVariants = [...variants];
+                                updatedVariants[index] = {
+                                  ...updatedVariants[index],
+                                  ingredientImage: file,
+                                  ingredientImagePreview: URL.createObjectURL(file)
+                                };
+                                setVariants(updatedVariants);
+                              }
+                            }}
+                          />
+                          {(variant as any).ingredientImage && (
+                            <div className="mt-2">
+                              <p className="text-xs text-blue-600">📎 New image selected</p>
+                              <img src={(variant as any).ingredientImagePreview as string} alt="Ingredient" className="w-32 h-32 object-cover rounded border border-blue-400 mt-1" />
+                            </div>
+                          )}
+                          {!variant.ingredient_image_url && (
+                            <p className="text-xs text-muted-foreground">Upload a clear photo of the ingredient list</p>
+                          )}
+                        </div>
+
+                        {/* Nutrition Table Image */}
+                        <div className="space-y-2">
+                          <Label>Nutrition Facts Table Image *</Label>
+                          {variant.nutrient_table_image_url && !(variant as any).nutritionImage && (
+                            <div className="mb-2">
+                              <p className="text-xs text-green-600 mb-1">✓ Existing image</p>
+                              <div className="relative group inline-block">
+                                <img src={variant.nutrient_table_image_url as string} alt="Nutrition" className="w-32 h-32 object-cover rounded border" />
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!confirm('Delete nutrition image? This cannot be undone.')) return;
+                                    
+                                    const updatedVariants = [...variants];
+                                    // Track for storage deletion on save
+                                    const urlParts = (variant.nutrient_table_image_url as string).split('/product/');
+                                    if (urlParts.length > 1) {
+                                      setDeletedImagePaths(prev => [...prev, urlParts[1]]);
+                                    }
+                                    
+                                    // Clear from state
+                                    updatedVariants[index] = {
+                                      ...updatedVariants[index],
+                                      nutrient_table_image_url: null
+                                    };
+                                    setVariants(updatedVariants);
+                                  }}
+                                  className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const updatedVariants = [...variants];
+                                updatedVariants[index] = {
+                                  ...updatedVariants[index],
+                                  nutritionImage: file,
+                                  nutritionImagePreview: URL.createObjectURL(file)
+                                };
+                                setVariants(updatedVariants);
+                              }
+                            }}
+                          />
+                          {(variant as any).nutritionImage && (
+                            <div className="mt-2">
+                              <p className="text-xs text-blue-600">📎 New image selected</p>
+                              <img src={(variant as any).nutritionImagePreview as string} alt="Nutrition" className="w-32 h-32 object-cover rounded border border-blue-400 mt-1" />
+                            </div>
+                          )}
+                          {!variant.nutrient_table_image_url && (
+                            <p className="text-xs text-muted-foreground">Upload a clear photo of the nutrition facts table</p>
+                          )}
+                        </div>
+
+                        {/* FSSAI Label Image */}
+                        <div className="space-y-2">
+                          <Label>FSSAI Label Image *</Label>
+                          {variant.fssai_label_image_url && !(variant as any).fssaiImage && (
+                            <div className="mb-2">
+                              <p className="text-xs text-green-600 mb-1">✓ Existing image</p>
+                              <div className="relative group inline-block">
+                                <img src={variant.fssai_label_image_url as string} alt="FSSAI" className="w-32 h-32 object-cover rounded border" />
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (!confirm('Delete FSSAI image? This cannot be undone.')) return;
+                                    
+                                    const updatedVariants = [...variants];
+                                    // Track for storage deletion on save
+                                    const urlParts = (variant.fssai_label_image_url as string).split('/product/');
+                                    if (urlParts.length > 1) {
+                                      setDeletedImagePaths(prev => [...prev, urlParts[1]]);
+                                    }
+                                    
+                                    // Clear from state
+                                    updatedVariants[index] = {
+                                      ...updatedVariants[index],
+                                      fssai_label_image_url: null
+                                    };
+                                    setVariants(updatedVariants);
+                                  }}
+                                  className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                          <Input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const updatedVariants = [...variants];
+                                updatedVariants[index] = {
+                                  ...updatedVariants[index],
+                                  fssaiImage: file,
+                                  fssaiImagePreview: URL.createObjectURL(file)
+                                };
+                                setVariants(updatedVariants);
+                              }
+                            }}
+                          />
+                          {(variant as any).fssaiImage && (
+                            <div className="mt-2">
+                              <p className="text-xs text-blue-600">📎 New image selected</p>
+                              <img src={(variant as any).fssaiImagePreview as string} alt="FSSAI" className="w-32 h-32 object-cover rounded border border-blue-400 mt-1" />
+                            </div>
+                          )}
+                          {!variant.fssai_label_image_url && (
+                            <p className="text-xs text-muted-foreground">Upload a clear photo of the FSSAI label</p>
+                          )}
+                        </div>
+
+                        {/* FSSAI Number */}
+                        <div className="space-y-2">
+                          <Label>FSSAI Number *</Label>
+                          <Input
+                            type="text"
+                            placeholder="14 digit number"
+                            maxLength={14}
+                            value={variant.fssai_number || ""}
+                            onChange={(e) => {
+                              const value = e.target.value.replace(/\D/g, '');
+                              const updatedVariants = [...variants];
+                              updatedVariants[index] = {
+                                ...updatedVariants[index],
+                                fssai_number: value
+                              };
+                              setVariants(updatedVariants);
+                            }}
+                          />
+                          {variant.fssai_number && variant.fssai_number.length !== 14 && (
+                            <p className="text-xs text-red-500">Must be 14 digits</p>
+                          )}
+                        </div>
+
+                        {/* FSSAI Expiry Date */}
+                        <div className="space-y-2">
+                          <Label>FSSAI Expiry Date</Label>
+                          <Input
+                            type="date"
+                            value={variant.fssai_expiry_date || ""}
+                            onChange={(e) => {
+                              const updatedVariants = [...variants];
+                              updatedVariants[index] = {
+                                ...updatedVariants[index],
+                                fssai_expiry_date: e.target.value
+                              };
+                              setVariants(updatedVariants);
+                            }}
+                          />
+                        </div>
+
+                        {/* Ingredient List */}
+                        <div className="space-y-2">
+                          <Label>Complete Ingredient List *</Label>
+                          <Textarea
+                            placeholder="List all ingredients in descending order by weight..."
+                            value={typeof variant.ingredient_list === 'string' ? variant.ingredient_list : ingredientJsonToString(variant.ingredient_list)}
+                            onChange={(e) => {
+                              const updatedVariants = [...variants];
+                              updatedVariants[index] = {
+                                ...updatedVariants[index],
+                                ingredient_list: e.target.value
+                              };
+                              setVariants(updatedVariants);
+                            }}
+                            className="min-h-[60px]"
+                          />
+                          {!isIngredientListValid(variant.ingredient_list) && (
+                            <p className="text-xs text-red-500">Minimum 10 characters required</p>
+                          )}
+                        </div>
+
+                        {/* Accuracy Attestation */}
+                        <div className="flex items-center space-x-2 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                          <Checkbox
+                            checked={Boolean(variant.accuracy_attested)}
+                            onCheckedChange={(checked) => {
+                              const isChecked = Boolean(checked);
+                              const updatedVariants = [...variants];
+                              updatedVariants[index] = {
+                                ...updatedVariants[index],
+                                accuracy_attested: isChecked,
+                                attested_by: isChecked ? (sellerId || "seller") : null,
+                                attested_at: isChecked ? new Date().toISOString() : null
+                              };
+                              setVariants(updatedVariants);
+                            }}
+                            id={`media-attestation-${index}`}
+                          />
+                          <Label 
+                            htmlFor={`media-attestation-${index}`}
+                            className="text-sm font-medium cursor-pointer flex-1"
+                          >
+                            ✓ I confirm that all ingredient and nutrition information is accurate
+                            <span className="text-red-500 ml-1">*</span>
+                          </Label>
+                        </div>
+
+                        {/* P0 Status Indicator */}
+                        <div className="mt-3">
+                          {variant.ingredient_image_url && 
+                           variant.nutrient_table_image_url && 
+                           variant.fssai_label_image_url && 
+                           variant.fssai_number?.length === 14 &&
+                           isIngredientListValid(variant.ingredient_list) &&
+                           variant.nutrient_breakdown?.energyKcal &&
+                           variant.nutrient_breakdown?.energyKcal > 0 &&
+                           Boolean(variant.accuracy_attested) ? (
+                            <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-300 rounded">
+                              <Badge variant="default" className="bg-green-600">✓ P0 Compliant</Badge>
+                              <span className="text-xs text-green-700 font-medium">
+                                All mandatory compliance fields completed
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="p-2 bg-orange-50 border border-orange-300 rounded">
+                              <p className="text-xs text-orange-700 font-medium">⚠ Complete all P0 fields to enable compliance:</p>
+                              <ul className="text-xs text-orange-600 mt-1 ml-4 list-disc">
+                                {!variant.ingredient_image_url && <li>Ingredient Label Image</li>}
+                                {!variant.nutrient_table_image_url && <li>Nutrition Facts Image</li>}
+                                {!variant.fssai_label_image_url && <li>FSSAI Label Image</li>}
+                                {variant.fssai_number?.length !== 14 && <li>FSSAI Number (14 digits)</li>}
+                                {!isIngredientListValid(variant.ingredient_list) && <li>Ingredient List (min 10 chars)</li>}
+                                {(!variant.nutrient_breakdown?.energyKcal || variant.nutrient_breakdown?.energyKcal === 0) && <li>Nutritional Information (enter in Variants tab)</li>}
+                                {!variant.accuracy_attested && <li>Accuracy Attestation (checkbox above)</li>}
+                              </ul>
+                            </div>
+                          )}
+                        </div>                      {/* Set as Primary Button */}
+                      <div className="flex items-center space-x-2 pt-2">
+                        <Checkbox
+                          id={`primary-${index}`}
+                          checked={(variant as any).isPrimary || false}
+                          onCheckedChange={(checked) => {
+                            const updatedVariants = variants.map((v, i) => ({
+                              ...v,
+                              isPrimary: i === index ? checked : false
+                            }));
+                            setVariants(updatedVariants as VariantForm[]);
+                          }}
+                        />
+                        <Label htmlFor={`primary-${index}`} className="text-sm font-normal cursor-pointer">
+                          Set as Primary Variant (main product display)
+                        </Label>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </TabsContent>
 
           {/* Certificates Tab */}
           <TabsContent value="certificates" className="space-y-4">
             <div className="space-y-4">
+              {/* Product Images Preview */}
+              {variants.some(v => (v as any).productImages?.length > 0) && (
+                <div className="border-b pb-4">
+                  <h3 className="font-semibold mb-3">Product Display Images</h3>
+                  <div className="grid grid-cols-4 gap-2">
+                    {variants.map((variant, vIndex) => 
+                      (variant as any).productImages?.map((file: File, imgIndex: number) => (
+                        <div key={`${vIndex}-${imgIndex}`} className="relative">
+                          <img 
+                            src={URL.createObjectURL(file)} 
+                            alt={`Product ${vIndex + 1}`}
+                            className="w-full h-24 object-cover rounded border"
+                          />
+                          {(variant as any).isPrimary && imgIndex === 0 && (
+                            <Badge className="absolute top-1 right-1 text-xs bg-blue-600">Primary</Badge>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
               <h3 className="font-semibold">Seller Certificates & Certifications</h3>
               
               {/* Existing Certificates List */}
@@ -2161,13 +2583,40 @@ export default function AddProductDialog({
                   </div>
 
                   <div className="space-y-2">
-                    <Label>Certificate URL (Optional)</Label>
+                    <Label>Certificate File (Upload to Product Bucket)</Label>
                     <Input
-                      placeholder="Link to certificate or verification page"
+                      type="file"
+                      accept=".pdf,.jpg,.jpeg,.png"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        
+                        // Add to certificateFiles for upload on save
+                        setCertificateFiles([...certificateFiles, file]);
+                        
+                        // Update URL field to show file will be uploaded
+                        setNewCertificate({ 
+                          ...newCertificate, 
+                          url: `Will be uploaded: ${file.name}` 
+                        });
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      PDF or image file - will be uploaded to product bucket on save
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Or External Certificate URL</Label>
+                    <Input
+                      placeholder="Paste external certificate URL here"
                       type="url"
                       value={newCertificate.url || ""}
                       onChange={(e) => setNewCertificate({ ...newCertificate, url: e.target.value })}
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Optional: Link to external certificate (if not uploading file above)
+                    </p>
                   </div>
 
                   <Button
@@ -2285,7 +2734,8 @@ export default function AddProductDialog({
                   variant="outline"
                   onClick={() => {
                     console.log("Add Product - Save as Draft clicked");
-                    handleSave("draft");
+                    setPendingAction("draft");
+                    setShowAttestation(true);
                   }}
                   disabled={loading}
                 >
@@ -2294,7 +2744,8 @@ export default function AddProductDialog({
                 <Button
                   onClick={() => {
                     console.log("Add Product - Publish Now clicked");
-                    handleSave("active");
+                    setPendingAction("publish");
+                    setShowAttestation(true);
                   }}
                   disabled={loading}
                 >
@@ -2308,7 +2759,8 @@ export default function AddProductDialog({
                   variant="outline"
                   onClick={() => {
                     console.log("Edit Product - Save as Draft clicked");
-                    handleSave("draft");
+                    setPendingAction("draft");
+                    setShowAttestation(true);
                   }}
                   disabled={loading}
                 >
@@ -2317,7 +2769,8 @@ export default function AddProductDialog({
                 <Button
                   onClick={() => {
                     console.log("Edit Product - Publish Now clicked");
-                    handleSave("active");
+                    setPendingAction("publish");
+                    setShowAttestation(true);
                   }}
                   disabled={loading}
                 >
@@ -2356,27 +2809,42 @@ export default function AddProductDialog({
                   trust: trustCertificateFiles.length,
                   total: certificateFiles.length + trustCertificateFiles.length
                 },
-                images: galleryImages
-                  .map(img => {
-                    let imageUrl = img.url || '';
-                    // For new files, create a data URL for preview
-                    if (img.file && !imageUrl) {
-                      imageUrl = URL.createObjectURL(img.file);
+                images: (() => {
+                  const allImages: any[] = [];
+                  variants.forEach((v) => {
+                    // Product display images
+                    if ((v as any).productImages) {
+                      (v as any).productImages.forEach((file: File, i: number) => {
+                        allImages.push({
+                          image_url: URL.createObjectURL(file),
+                          is_primary: (v as any).isPrimary && i === 0,
+                        });
+                      });
                     }
-                    return {
-                      image_url: imageUrl,
-                      is_primary: img.isPrimary,
-                    };
-                  })
-                  .filter(img => img.image_url),
+                    // P0 compliance images
+                    if (v.ingredient_image_url) {
+                      allImages.push({ image_url: v.ingredient_image_url as string, is_primary: false });
+                    }
+                    if (v.nutrient_table_image_url) {
+                      allImages.push({ image_url: v.nutrient_table_image_url as string, is_primary: false });
+                    }
+                    if (v.fssai_label_image_url) {
+                      allImages.push({ image_url: v.fssai_label_image_url as string, is_primary: false });
+                    }
+                  });
+                  return allImages;
+                })(),
                 variants: variants.map(v => ({
                   variant_name: v.variant_name,
                   flavor: v.flavor,
                   size: v.size,
                   price: v.price,
                   stock_quantity: v.stock_quantity,
-                  nutritional_info: v.nutritional_info,
+                  nutrient_breakdown: v.nutrient_breakdown,
+                  ingredient_list: v.ingredient_list,
+                  allergen_info: v.allergen_info,
                   manufacture_date: v.manufacture_date,
+                  fssai_number: v.fssai_number,
                 })),
               }
             : null
@@ -2387,6 +2855,23 @@ export default function AddProductDialog({
       <ImageManager
         open={showImageManager}
         onOpenChange={setShowImageManager}
+      />
+
+      {/* Attestation Dialog */}
+      <AttestationDialog
+        open={showAttestation}
+        onOpenChange={setShowAttestation}
+        onConfirm={() => {
+          setShowAttestation(false);
+          if (pendingAction === "draft") {
+            handleSave("draft");
+          } else if (pendingAction === "publish") {
+            handleSave("active");
+          }
+          setPendingAction(null);
+        }}
+        productName={sellerTitle || selectedGlobalProduct?.product_name || "Product"}
+        actionType={pendingAction || "draft"}
       />
     </Dialog>
   );

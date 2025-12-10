@@ -24,6 +24,7 @@ export interface VariantForm {
   nutrient_table_image_url?: string;
   fssai_label_image_url?: string;
   ingredient_list?: Json | string; // Can be JSON from DB or string from form
+  allergen_info?: Json | string; // Can be JSON from DB or string from form
   fssai_number?: string;
   fssai_expiry_date?: string;
   nutrient_breakdown?: Record<string, unknown>;
@@ -47,6 +48,7 @@ export interface ProductForm {
   category_id?: string;
   seller_title: string;
   seller_description: string;
+  seller_ingredients?: string;
   allergen_ids: string[];
   health_score?: number;
   shelf_life_months?: number;
@@ -91,6 +93,7 @@ export interface ListingWithDetails {
   seller_id: string;
   seller_title: string;
   seller_description: string;
+  seller_ingredients?: string;
   health_score?: number;
   base_price: number;
   discounted_price?: number;
@@ -108,6 +111,7 @@ export interface ListingWithDetails {
   published_at?: string;
   created_at: string;
   updated_at: string;
+  itemType?: 'listing';
   global_products?: {
     product_name: string;
     brand_id: string;
@@ -121,6 +125,7 @@ export interface ListingWithDetails {
     image_id: string;
     image_url: string;
     is_primary: boolean;
+    variant_id?: string;
   }>;
 }
 
@@ -141,4 +146,5 @@ export interface BundleWithDetails {
   created_at: string;
   updated_at: string;
   itemType: 'bundle';
+  [key: string]: unknown;
 }
