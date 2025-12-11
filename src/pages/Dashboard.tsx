@@ -22,6 +22,20 @@ import { Bundle } from "@/types/bundle.types";
 import { SimpleRestockDialog } from "@/components/SimpleRestockDialog";
 import { SellerRaiseDispute } from "@/components/SellerRaiseDispute";
 
+// Extended Bundle type for dashboard with bundle items
+interface BundleWithItems extends Bundle {
+  bundle_items?: Array<{
+    quantity: number;
+    listing_id: string;
+    seller_product_listings?: {
+      listing_id: string;
+      seller_title: string;
+      total_stock_quantity: number;
+      listing_images?: Array<{ image_url: string; is_primary: boolean }>;
+    };
+  }>;
+}
+
 interface ListingWithDetails {
   listing_id: string;
   seller_id: string;
@@ -132,11 +146,11 @@ export default function Dashboard() {
   const [stockFilter, setStockFilter] = useState<string>("all"); // New: all, instock, lowstock, outofstock
   const [categoryData, setCategoryData] = useState<CategoryRevenue[]>([]);
   const [listings, setListings] = useState<ListingWithDetails[]>([]);
-  const [bundles, setBundles] = useState<Bundle[]>([]);
+  const [bundles, setBundles] = useState<BundleWithItems[]>([]);
   const [performanceMetrics, setPerformanceMetrics] = useState<ProductPerformanceMetric[]>([]);
   const [raiseDisputeOpen, setRaiseDisputeOpen] = useState(false);
   const [lowStockProducts, setLowStockProducts] = useState<ListingWithDetails[]>([]);
-  const [lowStockBundles, setLowStockBundles] = useState<Bundle[]>([]);
+  const [lowStockBundles, setLowStockBundles] = useState<BundleWithItems[]>([]);
   const [restockBundleTarget, setRestockBundleTarget] = useState<{
     bundleId: string;
     bundleName: string;
@@ -205,13 +219,7 @@ export default function Dashboard() {
       .from("bundles")
       .select(
         `
-        bundle_id,
-        bundle_name,
-        total_stock_quantity,
-        base_price,
-        discounted_price,
-        status,
-        created_at,
+        *,
         bundle_items(
           quantity,
           listing_id,
@@ -226,16 +234,35 @@ export default function Dashboard() {
       )
       .eq("seller_id", seller_id)
       .eq("status", "active")
-      .lte("total_stock_quantity", 10)
-      .gt("total_stock_quantity", 0)
-      .order("total_stock_quantity", { ascending: true });
+      .order("created_at", { ascending: false });
 
     if (error) {
       console.error("Error loading low stock bundles:", error);
       return;
     }
 
-    setLowStockBundles((data as Bundle[]) || []);
+    // Calculate actual stock and filter for low stock bundles
+    const processedBundles = (data || []).map(bundle => {
+      const bundleItems = bundle.bundle_items || [];
+      let calculatedStock = 0;
+      
+      if (bundleItems.length > 0) {
+        const possibleBundles = bundleItems.map((item: { seller_product_listings?: { total_stock_quantity?: number }; quantity: number }) => {
+          const productStock = item.seller_product_listings?.total_stock_quantity || 0;
+          const requiredPerBundle = item.quantity || 1;
+          return Math.floor(productStock / requiredPerBundle);
+        });
+        calculatedStock = possibleBundles.length > 0 ? Math.min(...possibleBundles) : 0;
+      }
+      
+      return {
+        ...bundle,
+        total_stock_quantity: calculatedStock
+      };
+    }).filter(bundle => bundle.total_stock_quantity > 0 && bundle.total_stock_quantity <= 10)
+      .sort((a, b) => a.total_stock_quantity - b.total_stock_quantity);
+
+    setLowStockBundles(processedBundles as Bundle[]);
   }, []);
 
   const loadBundles = useCallback(async (seller_id: string) => {
@@ -264,13 +291,32 @@ export default function Dashboard() {
       return;
     }
 
-    // Process bundles to calculate total stock
-    const processedBundles = data?.map(bundle => ({
-      ...bundle,
-      total_stock_quantity: bundle.bundle_items?.reduce((total: number, item: { seller_product_listings?: { total_stock_quantity?: number }; quantity: number }) => {
-        return total + (item.seller_product_listings?.total_stock_quantity || 0) * item.quantity;
-      }, 0) || 0
-    })) || [];
+    // Process bundles to calculate actual stock from bundle items
+    // Bundle stock = minimum number of complete bundles that can be made
+    const processedBundles = data?.map(bundle => {
+      const bundleItems = bundle.bundle_items || [];
+      
+      // Calculate actual available bundle stock based on the minimum stock of items
+      // For example: if bundle needs 2 units of product A (stock: 10) and 1 unit of product B (stock: 5)
+      // Then we can make min(10/2, 5/1) = min(5, 5) = 5 bundles
+      let calculatedStock = 0;
+      
+      if (bundleItems.length > 0) {
+        const possibleBundles = bundleItems.map((item: { seller_product_listings?: { total_stock_quantity?: number }; quantity: number }) => {
+          const productStock = item.seller_product_listings?.total_stock_quantity || 0;
+          const requiredPerBundle = item.quantity || 1;
+          return Math.floor(productStock / requiredPerBundle);
+        });
+        
+        // The minimum determines how many complete bundles we can make
+        calculatedStock = possibleBundles.length > 0 ? Math.min(...possibleBundles) : 0;
+      }
+      
+      return {
+        ...bundle,
+        total_stock_quantity: calculatedStock
+      };
+    }) || [];
 
     console.log("✅ Loaded bundles:", processedBundles?.length || 0, "bundles", processedBundles);
     setBundles(processedBundles as Bundle[]);
@@ -772,7 +818,7 @@ export default function Dashboard() {
                 healthScore.score >= 40 ? 'bg-orange-600' : 
                 'bg-red-600'
               }`}
-              style={{ width: `${Math.min(100, healthScore.score)}%` }}
+              style={{ width: `${Math.min(100, healthScore.score)}%` } as React.CSSProperties}
             />
           </div>
 
@@ -886,7 +932,7 @@ export default function Dashboard() {
                             <div className="w-full bg-gray-200 rounded h-2 overflow-hidden">
                               <div 
                                 className="bg-blue-600 h-2 rounded transition-all"
-                                style={{ width: `${pct}%` }}
+                                style={{ width: `${pct}%` } as React.CSSProperties}
                               />
                             </div>
                             <p className="text-xs text-gray-500 mt-1">{pct.toFixed(1)}% of total</p>
@@ -1124,7 +1170,7 @@ export default function Dashboard() {
                           
                           return true;
                         })
-                        .map((bundle: Bundle) => {
+                        .map((bundle: BundleWithItems) => {
                         const isLowStock = bundle.total_stock_quantity <= 10 && bundle.total_stock_quantity > 0;
                         const isOutOfStock = bundle.total_stock_quantity === 0;
                         

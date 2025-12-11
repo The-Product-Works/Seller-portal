@@ -967,10 +967,39 @@ export default function AddProductDialog({
             throw new Error(`Failed to save variant: ${variantError.message}`);
           }
 
-          // Upload product display images to listing_images table
+          // Re-insert existing product display images first (they were deleted when variants were deleted)
+          if ((variant as any).existingProductImages && (variant as any).existingProductImages.length > 0) {
+            const existingImages = (variant as any).existingProductImages;
+            console.log(`Re-inserting ${existingImages.length} existing images for variant ${variant.variant_name}`);
+            
+            for (let i = 0; i < existingImages.length; i++) {
+              const img = existingImages[i];
+              console.log(`  - Re-inserting image ${i}: ${img.image_url}, is_primary = ${img.is_primary}`);
+              
+              // Re-insert the existing image with new variant_id
+              const { error: insertError } = await supabase
+                .from("listing_images")
+                .insert({
+                  listing_id: listing.listing_id,
+                  variant_id: insertedVariant.variant_id,
+                  image_url: img.image_url,
+                  is_primary: img.is_primary || false,
+                  sort_order: img.sort_order || i,
+                });
+              
+              if (insertError) {
+                console.error("Error re-inserting existing image:", insertError);
+              } else {
+                console.log(`  ✓ Re-inserted image ${i}`);
+              }
+            }
+          }
+
+          // Upload NEW product display images to listing_images table
           if ((variant as any).productImages && (variant as any).productImages.length > 0) {
             const productImageFiles = (variant as any).productImages as File[];
             const primaryIndex = (variant as any).newImagePrimaryIndex || 0;
+            const existingImageCount = (variant as any).existingProductImages?.length || 0;
 
             for (let i = 0; i < productImageFiles.length; i++) {
               const imageFile = productImageFiles[i];
@@ -993,31 +1022,8 @@ export default function AddProductDialog({
                     variant_id: insertedVariant.variant_id,
                     image_url: publicUrl,
                     is_primary: i === primaryIndex, // Use seller's choice
-                    sort_order: i, // Preserve image order
+                    sort_order: existingImageCount + i, // Continue sort order after existing images
                   });
-              }
-            }
-          }
-
-          // Update existing images' is_primary flag if user changed it
-          if ((variant as any).existingProductImages && (variant as any).existingProductImages.length > 0) {
-            const existingImages = (variant as any).existingProductImages;
-            console.log(`Updating is_primary for ${existingImages.length} existing images in variant ${variant.variant_name}`);
-            
-            for (const img of existingImages) {
-              if (img.image_id) {
-                console.log(`  - Image ${img.image_id}: is_primary = ${img.is_primary}`);
-                // Update is_primary flag for each existing image
-                const { error: updateError } = await supabase
-                  .from("listing_images")
-                  .update({ is_primary: img.is_primary || false })
-                  .eq('image_id', img.image_id);
-                
-                if (updateError) {
-                  console.error("Error updating is_primary:", updateError);
-                } else {
-                  console.log(`  ✓ Updated image ${img.image_id}`);
-                }
               }
             }
           }

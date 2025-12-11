@@ -55,48 +55,115 @@ export default function BundleRestockDialog({
     try {
       setLoading(true);
 
-      // Update bundle total stock
-      const { error: bundleError } = await supabase
-        .from("bundles")
-        .update({ total_stock_quantity: newStock })
+      // IMPORTANT: Bundle stock is now calculated dynamically from product stocks
+      // We need to fetch bundle items and update each product's stock proportionally
+      
+      const { data: bundleItems, error: itemsError } = await supabase
+        .from("bundle_items")
+        .select(`
+          listing_id,
+          quantity,
+          seller_product_listings(
+            listing_id,
+            total_stock_quantity
+          )
+        `)
         .eq("bundle_id", bundle.bundle_id);
 
-      if (bundleError) throw bundleError;
+      if (itemsError) throw itemsError;
 
-      // If stock is now above 10, find and dismiss the low stock notification
+      if (!bundleItems || bundleItems.length === 0) {
+        toast({
+          title: "Error",
+          description: "Bundle has no items to restock",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
+      }
+
+      // Calculate how many units of each product we need to add
+      // If we're increasing bundle stock by 5, and bundle needs 2 units of product A,
+      // we need to add 5 * 2 = 10 units to product A's stock
+      
+      const updates: Promise<any>[] = [];
+      
+      for (const item of bundleItems) {
+        const product = item.seller_product_listings;
+        if (!product) continue;
+        
+        const currentProductStock = product.total_stock_quantity || 0;
+        const requiredPerBundle = item.quantity || 1;
+        const stockToAdd = restockAmount * requiredPerBundle;
+        const newProductStock = currentProductStock + stockToAdd;
+        
+        if (newProductStock < 0) {
+          toast({
+            title: "Invalid operation",
+            description: `Cannot reduce stock below 0 for products in this bundle`,
+            variant: "destructive",
+          });
+          setLoading(false);
+          return;
+        }
+        
+        // Update product listing stock
+        updates.push(
+          Promise.resolve(
+            supabase
+              .from("seller_product_listings")
+              .update({
+                total_stock_quantity: newProductStock,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("listing_id", item.listing_id)
+          )
+        );
+      }
+
+      // Execute all updates
+      const results = await Promise.all(updates);
+      
+      // Check for errors
+      const failed = results.find(r => r.error);
+      if (failed?.error) {
+        throw failed.error;
+      }
+
+      // Also update the bundle's total_stock_quantity in DB (for reference, though it's calculated dynamically)
+      await supabase
+        .from("bundles")
+        .update({ 
+          total_stock_quantity: newStock,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("bundle_id", bundle.bundle_id);
+
+      // Handle low stock notifications
       if (newStock > 10) {
-        const { error: dismissError } = await supabase
+        await supabase
           .from("notifications")
           .update({ is_read: true })
           .eq("related_bundle_id", bundle.bundle_id)
           .eq("type", "low_stock")
           .eq("is_read", false);
-
-        if (dismissError) {
-          console.error("Error dismissing low stock notification:", dismissError);
-          // Do not throw, as the main action (restock) was successful
-        }
-      }
-      // Create low stock notification if stock is 10 or less
-      else if (newStock <= 10) {
+      } else if (newStock <= 10 && newStock > 0) {
         try {
-          const { error: notifError } = await supabase.from("notifications").insert({
+          await supabase.from("notifications").insert({
             related_seller_id: await getAuthenticatedSellerId(),
             type: "low_stock",
             title: "Low Stock Alert - Bundle",
             message: `Bundle "${bundle.bundle_name}" is running low on stock (${newStock} remaining). Stock threshold is 10 units.`,
             related_bundle_id: bundle.bundle_id,
           });
-          if (notifError) throw notifError;
         } catch (notifError) {
-          // Silently fail if notification creation fails
           console.error("Error creating notification:", notifError);
         }
       }
 
       toast({
         title: "Stock updated successfully",
-        description: `${bundle.bundle_name} stock updated to ${newStock} units`,
+        description: `${bundle.bundle_name} stock updated to ${newStock} units (all products restocked)`,
       });
 
       onSuccess();

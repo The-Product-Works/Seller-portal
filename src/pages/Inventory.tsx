@@ -279,7 +279,7 @@ export default function Inventory() {
     
     // Load bundles separately to avoid failing the entire load
     try {
-      // Load bundles with product images (using left joins to avoid missing bundles)
+      // Load bundles with product images AND stock quantities
       const { data: bundlesData, error: bundlesError } = await supabase
         .from("bundles")
         .select(`
@@ -289,6 +289,7 @@ export default function Inventory() {
             quantity,
             seller_product_listings(
               seller_title,
+              total_stock_quantity,
               listing_images(
                 image_url,
                 is_primary
@@ -302,25 +303,55 @@ export default function Inventory() {
       if (bundlesData) {
         console.log("Found", bundlesData.length, "bundles for seller", seller_id);
         
+        // Process bundles to calculate actual stock from bundle items (like Dashboard does)
+        const processedBundles = bundlesData.map(bundle => {
+          const bundleItems = bundle.bundle_items || [];
+          
+          // Calculate actual available bundle stock based on the minimum stock of items
+          // For example: if bundle needs 2 units of product A (stock: 10) and 1 unit of product B (stock: 5)
+          // Then we can make min(10/2, 5/1) = min(5, 5) = 5 bundles
+          let calculatedStock = 0;
+          
+          if (bundleItems.length > 0) {
+            const possibleBundles = bundleItems.map((item: any) => {
+              const productStock = item.seller_product_listings?.total_stock_quantity || 0;
+              const requiredPerBundle = item.quantity || 1;
+              return Math.floor(productStock / requiredPerBundle);
+            });
+            
+            // The minimum determines how many complete bundles we can make
+            calculatedStock = possibleBundles.length > 0 ? Math.min(...possibleBundles) : 0;
+          }
+          
+          console.log(`Bundle "${bundle.bundle_name}": DB stock=${bundle.total_stock_quantity}, Calculated stock=${calculatedStock}`);
+          
+          return {
+            ...bundle,
+            total_stock_quantity: calculatedStock, // Use calculated stock instead of DB value
+            itemType: 'bundle' as const
+          };
+        });
+        
         // Debug: Log each bundle's structure
-        bundlesData.forEach((bundle, idx) => {
+        processedBundles.forEach((bundle, idx) => {
           console.log(`Bundle ${idx + 1}:`, {
             id: bundle.bundle_id,
             name: bundle.bundle_name,
             status: bundle.status,
+            stock: bundle.total_stock_quantity,
             itemsCount: bundle.bundle_items?.length || 0,
             hasItems: !!bundle.bundle_items && Array.isArray(bundle.bundle_items)
           });
         });
         
-        // Filter out bundles with no valid bundle_items to prevent display issues
-        const validBundles = bundlesData.filter(bundle => {
+        // Include all bundles with valid bundle_items, even if stock is 0
+        const validBundles = processedBundles.filter(bundle => {
           const isValid = bundle.bundle_items && Array.isArray(bundle.bundle_items) && bundle.bundle_items.length > 0;
           if (!isValid) {
             console.warn(`Filtering out bundle ${bundle.bundle_name} (${bundle.bundle_id}) - no valid items`);
           }
           return isValid;
-        }).map(bundle => ({ ...bundle, itemType: 'bundle' as const }));
+        });
         
         setBundles(validBundles as BundleWithDetails[]);
         console.log("Valid bundles after filtering:", validBundles.length);
