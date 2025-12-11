@@ -769,7 +769,7 @@ export default function AddProductDialog({
             shipping_info: shippingInfo,
             seller_certifications: (updatedCertifications.length > 0 ? updatedCertifications : null) as unknown as Json,
             status: finalStatus,
-            published_at: finalStatus === "active" ? new Date().toISOString() : null,
+            published_at: finalStatus === "pending_approval" ? new Date().toISOString() : null,
             updated_at: new Date().toISOString()
           })
           .eq("listing_id", editingProduct.listing_id)
@@ -801,7 +801,7 @@ export default function AddProductDialog({
             slug: listingSlug,
             review_count: 0,
             is_verified: false,
-            published_at: finalStatus === "active" ? new Date().toISOString() : null,
+            published_at: finalStatus === "pending_approval" ? new Date().toISOString() : null,
           })
           .select()
           .single();
@@ -1085,11 +1085,11 @@ export default function AddProductDialog({
       setStatus(finalStatus);
       
       const action = isEditing 
-        ? (finalStatus === "active" ? "updated and published" : "updated and saved as draft")
-        : (finalStatus === "draft" ? "saved as draft" : "published");
+        ? (finalStatus === "pending_approval" ? "submitted for admin approval" : "saved as draft")
+        : (finalStatus === "draft" ? "saved as draft" : "submitted for admin approval");
       toast({ 
-        title: `Product ${action} successfully`,
-        description: finalStatus === "active" ? "Your product is now live in the marketplace" : "You can publish this product later"
+        title: `Product ${action}`,
+        description: finalStatus === "pending_approval" ? "Your product will be visible on marketplace once admin approves it" : "You can submit this product for approval later"
       });
       onSuccess();
       onOpenChange(false);
