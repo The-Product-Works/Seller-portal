@@ -20,6 +20,7 @@ const documentTypeSchema = z.enum([
   "selfie",
   "bank_statement",
   "address_proof",
+  "fssai_certificate",
   "other",
 ]);
 

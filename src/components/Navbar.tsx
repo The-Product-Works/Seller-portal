@@ -216,9 +216,7 @@ export function Navbar() {
           <div className="hidden md:flex items-center gap-1">
             {(isAdmin ? adminNavItems : sellerNavItems).map((item) => {
               const isKYCVerified = isAdmin || kycStatus === "approved" || kycStatus === "verified";
-              // Allow customer feedback even with pending KYC
-              const isCustomerFeedback = item.path === "/customer-feedback";
-              const isDisabled = !isAdmin && !isKYCVerified && !isCustomerFeedback;
+              const isDisabled = !isAdmin && !isKYCVerified;
               
               if (isDisabled) {
                 return (
@@ -271,8 +269,7 @@ export function Navbar() {
               <div className="px-4 py-2 space-y-1">
                 {(isAdmin ? adminNavItems : sellerNavItems).map((item) => {
                   const isKYCVerified = isAdmin || kycStatus === "approved" || kycStatus === "verified";
-                  const isCustomerFeedback = item.path === "/customer-feedback";
-                  const isDisabled = !isAdmin && !isKYCVerified && !isCustomerFeedback;
+                  const isDisabled = !isAdmin && !isKYCVerified;
                   
                   if (isDisabled) {
                     return (
