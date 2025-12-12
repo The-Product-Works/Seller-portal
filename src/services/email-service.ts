@@ -20,6 +20,7 @@ export type AlertType =
   | 'admin_new_seller_registration'
   | 'admin_seller_kyc_submitted'
   | 'admin_dispute_raised'
+  | 'admin_product_approval_required'
   // Test
   | 'test_email';
 

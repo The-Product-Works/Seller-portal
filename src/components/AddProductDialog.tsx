@@ -54,6 +54,7 @@ import { ProductPreviewModal } from "@/components/ProductPreviewModal";
 import { ImageManager } from "@/components/ImageManager";
 import { CommissionWarning } from "@/components/CommissionWarning";
 import { AttestationDialog } from "@/components/AttestationDialog";
+import { sendAdminProductApprovalEmail } from "@/lib/email/helpers/admin-product-approval";
 
 // Type alias for Json type
 type Json = Database["public"]["Tables"]["seller_product_listings"]["Row"]["seller_certifications"];
@@ -1083,6 +1084,72 @@ export default function AddProductDialog({
 
       // Update the component state to reflect the new status
       setStatus(finalStatus);
+      
+      // Send admin notification email if product requires approval
+      if (finalStatus === "pending_approval" && listing) {
+        const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
+        if (adminEmail) {
+          try {
+            // Fetch seller details for the email
+            const { data: sellerData } = await supabase
+              .from('sellers')
+              .select('email, business_name, name')
+              .eq('id', sellerId)
+              .single();
+
+            // Fetch global product and brand details
+            const { data: productData } = await supabase
+              .from('seller_product_listings')
+              .select(`
+                *,
+                global_products (
+                  product_name,
+                  brands (
+                    name
+                  )
+                )
+              `)
+              .eq('listing_id', listing.listing_id)
+              .single();
+
+            if (sellerData && productData && productData.global_products) {
+              // Calculate price range from variants
+              const prices = variants.map(v => v.price).filter(p => p > 0);
+              const priceRange = {
+                min: prices.length > 0 ? Math.min(...prices) : 0,
+                max: prices.length > 0 ? Math.max(...prices) : 0,
+              };
+
+              // Calculate total stock
+              const totalStock = variants.reduce((sum, v) => sum + (v.stock_quantity || 0), 0);
+
+              await sendAdminProductApprovalEmail({
+                adminEmail,
+                sellerName: sellerData.business_name || sellerData.name || sellerData.email || 'Seller',
+                sellerEmail: sellerData.email || '',
+                sellerId,
+                productName: sellerTitle || productData.global_products.product_name,
+                listingId: listing.listing_id,
+                isNewProduct: !isEditing,
+                globalProductName: productData.global_products.product_name,
+                brandName: productData.global_products.brands?.name || 'Unknown',
+                categoryName: selectedCategory,
+                variantCount: variants.length,
+                priceRange,
+                totalStock,
+                discountPercentage: discountPercentage > 0 ? discountPercentage : undefined,
+                submittedAt: new Date().toISOString(),
+                dashboardUrl: `${window.location.origin}/admin/products/${listing.listing_id}`,
+                productDescription: sellerDescription,
+              });
+              console.log('[AddProduct] Admin approval notification email sent successfully');
+            }
+          } catch (emailError) {
+            console.error('[AddProduct] Failed to send admin notification email:', emailError);
+            // Non-fatal - don't block user flow
+          }
+        }
+      }
       
       const action = isEditing 
         ? (finalStatus === "pending_approval" ? "submitted for admin approval" : "saved as draft")
