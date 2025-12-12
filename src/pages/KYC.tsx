@@ -103,12 +103,14 @@ export default function KYC() {
   const [selfiePhoto, setSelfiePhoto] = useState<File | null>(null);
   const [aadhaarPhoto, setAadhaarPhoto] = useState<File | null>(null);
   const [panPhoto, setPanPhoto] = useState<File | null>(null);
+  const [fssaiPhoto, setFssaiPhoto] = useState<File | null>(null);
 
   // Store uploaded documents URLs for display
   const [uploadedDocuments, setUploadedDocuments] = useState<{
     selfie?: string;
     aadhaar?: string;
     pan?: string;
+    fssai_certificate?: string;
   }>({});
 
   useEffect(() => {
@@ -237,7 +239,7 @@ export default function KYC() {
           console.log("Number of documents:", docs?.length);
 
           if (docs && docs.length > 0) {
-            const docMap: { selfie?: string; aadhaar?: string; pan?: string } = {};
+            const docMap: { selfie?: string; aadhaar?: string; pan?: string; fssai_certificate?: string } = {};
             
             // Group documents by type and take only the most recent one (already sorted by uploaded_at DESC)
             const latestDocs = new Map<string, typeof docs[0]>();
@@ -270,11 +272,13 @@ export default function KYC() {
                 docMap.aadhaar = displayUrl;
               } else if (docType === "pan") {
                 docMap.pan = displayUrl;
+              } else if (docType === "fssai_certificate") {
+                docMap.fssai_certificate = displayUrl;
               }
             }
             
-            console.log("Final docMap with all 3 docs:", docMap);
-            console.log("Selfie:", !!docMap.selfie, "Aadhaar:", !!docMap.aadhaar, "PAN:", !!docMap.pan);
+            console.log("Final docMap with all docs:", docMap);
+            console.log("Selfie:", !!docMap.selfie, "Aadhaar:", !!docMap.aadhaar, "PAN:", !!docMap.pan, "FSSAI:", !!docMap.fssai_certificate);
             setUploadedDocuments(docMap);
           } else {
             console.log("No documents found or docs is null/empty");
@@ -424,7 +428,8 @@ export default function KYC() {
           const uploadResults = {
             selfie: false,
             aadhaar: false,
-            pan: false
+            pan: false,
+            fssai_certificate: false
           };
           
           if (selfiePhoto) {
@@ -472,6 +477,21 @@ export default function KYC() {
             }
           }
           
+          if (fssaiPhoto) {
+            console.log("Uploading FSSAI certificate...");
+            const r = await uploadDocument(newSeller.id, fssaiPhoto, "fssai_certificate");
+            console.log("FSSAI certificate upload result:", r);
+            uploadResults.fssai_certificate = r.success;
+            if (!r.success) {
+              console.error("FSSAI certificate upload failed:", r.error);
+              toast({
+                title: "FSSAI certificate upload failed",
+                description: r.error || "Failed to upload FSSAI certificate",
+                variant: "destructive",
+              });
+            }
+          }
+          
           console.log("All document uploads completed. Results:", uploadResults);
           
           // Check if all required uploads succeeded
@@ -479,6 +499,7 @@ export default function KYC() {
           if (selfiePhoto && !uploadResults.selfie) failedUploads.push("Selfie");
           if (aadhaarPhoto && !uploadResults.aadhaar) failedUploads.push("Aadhaar");
           if (panPhoto && !uploadResults.pan) failedUploads.push("PAN");
+          if (fssaiPhoto && !uploadResults.fssai_certificate) failedUploads.push("FSSAI Certificate");
           
           if (failedUploads.length > 0) {
             toast({
@@ -511,6 +532,7 @@ export default function KYC() {
             if (selfiePhoto) documentsSubmitted.push('selfie');
             if (aadhaarPhoto) documentsSubmitted.push('aadhaar');
             if (panPhoto) documentsSubmitted.push('pan');
+            if (fssaiPhoto) documentsSubmitted.push('fssai_certificate');
             if (formData.gstin) documentsSubmitted.push('gstin');
 
             await sendAdminKYCSubmittedEmail({
@@ -585,7 +607,8 @@ export default function KYC() {
         const uploadResults = {
           selfie: false,
           aadhaar: false,
-          pan: false
+          pan: false,
+          fssai_certificate: false
         };
         
         if (selfiePhoto) {
@@ -628,6 +651,21 @@ export default function KYC() {
             toast({
               title: "PAN upload failed",
               description: r.error || "Failed to upload PAN",
+              variant: "destructive",
+            });
+          }
+        }
+        
+        if (fssaiPhoto) {
+          console.log("Uploading new FSSAI certificate...");
+          const r = await uploadDocument(seller.id, fssaiPhoto, "fssai_certificate");
+          console.log("FSSAI certificate upload result:", r);
+          uploadResults.fssai_certificate = r.success;
+          if (!r.success) {
+            console.error("FSSAI certificate upload failed:", r.error);
+            toast({
+              title: "FSSAI certificate upload failed",
+              description: r.error || "Failed to upload FSSAI certificate",
               variant: "destructive",
             });
           }
@@ -722,7 +760,7 @@ export default function KYC() {
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                       <Camera className="w-5 h-5" /> Upload Documents
                     </h3>
-                    <div className="grid md:grid-cols-3 gap-6">
+                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                       {/* Selfie */}
                       <div className="space-y-2">
                         <Label>Selfie Photo *</Label>
@@ -849,6 +887,52 @@ export default function KYC() {
                             />
                             <p className="text-xs text-muted-foreground">
                               Upload a clear PAN photo (required)
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* FSSAI Certificate Section */}
+                    <div className="mt-6">
+                      <h3 className="text-lg font-semibold mb-4">FSSAI License Certificate</h3>
+                      <div className="space-y-2">
+                        <Label>FSSAI Certificate Photo *</Label>
+                        {uploadedDocuments.fssai_certificate || fssaiPhoto ? (
+                          <div className="relative border-2 border-dashed rounded-lg p-2">
+                            <img
+                              src={
+                                fssaiPhoto
+                                  ? URL.createObjectURL(fssaiPhoto)
+                                  : uploadedDocuments.fssai_certificate
+                              }
+                              alt="FSSAI Certificate preview"
+                              className="w-full h-60 object-contain rounded"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFssaiPhoto(null);
+                                setUploadedDocuments({ ...uploadedDocuments, fssai_certificate: undefined });
+                              }}
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                              aria-label="Remove FSSAI certificate photo"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <Input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              onChange={(e) =>
+                                setFssaiPhoto(e.target.files?.[0] || null)
+                              }
+                              required
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Upload your FSSAI license certificate (required)
                             </p>
                           </div>
                         )}

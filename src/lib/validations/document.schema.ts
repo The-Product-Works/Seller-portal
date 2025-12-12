@@ -18,6 +18,7 @@ const documentTypeSchema = z.enum([
   "pan",
   "gstin",
   "selfie",
+  "fssai_certificate",
   "bank_statement",
   "address_proof",
   "other",
