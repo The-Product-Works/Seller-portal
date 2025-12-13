@@ -22,7 +22,7 @@ interface ProductPreviewData {
   shipping_info?: string;
   shelf_life_months?: number;
   health_score?: number;
-  status: 'draft' | 'active' | 'pending_approval' | 'failed_approval';
+  status: 'draft' | 'active' | 'pending_approval' | 'failed_approval' | 'expired';
   published_at?: string;
   manufacturing_info?: string;
   certificates?: {
@@ -166,9 +166,15 @@ export function ProductPreviewModal({
               <h2 className="text-2xl font-bold mb-2">{product.seller_title}</h2>
               <div className="flex items-center gap-2 mb-3">
                 <Badge
-                  variant={product.status === 'active' ? 'default' : 'secondary'}
+                  variant={
+                    product.status === 'active' ? 'default' : 
+                    product.status === 'expired' ? 'destructive' : 
+                    'secondary'
+                  }
                 >
-                  {product.status === 'active' ? '✓ Published' : '📋 Draft'}
+                  {product.status === 'active' ? '✓ Published' : 
+                   product.status === 'expired' ? '⚠️ Expired' :
+                   '📋 Draft'}
                 </Badge>
                 {product.health_score && (
                   <Badge variant="outline">

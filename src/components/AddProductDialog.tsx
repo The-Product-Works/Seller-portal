@@ -131,7 +131,7 @@ export default function AddProductDialog({
   const [shelfLifeMonths, setShelfLifeMonths] = useState<number>(12);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [sellerCommission, setSellerCommission] = useState<number>(0); // Additional commission seller adds on top of 2%
-  const [status, setStatus] = useState<"draft" | "active" | "pending_approval" | "failed_approval">("draft");
+  const [status, setStatus] = useState<"draft" | "active" | "pending_approval" | "failed_approval" | "expired">("draft");
   const [showBrandInput, setShowBrandInput] = useState(false);
   const [showCategoryInput, setShowCategoryInput] = useState(false);
   const [showProductInput, setShowProductInput] = useState(false);
@@ -591,7 +591,7 @@ export default function AddProductDialog({
     setVariants(updated);
   }
 
-  async function handleSave(overrideStatus?: "draft" | "active" | "pending_approval" | "failed_approval") {
+  async function handleSave(overrideStatus?: "draft" | "active" | "pending_approval" | "failed_approval" | "expired") {
     const finalStatus = overrideStatus || status;
     console.log("handleSave called with status:", finalStatus, "override:", overrideStatus, "state:", status);
     console.log("🔍 Variants allergen_info before save:", variants.map(v => ({
@@ -1221,6 +1221,43 @@ export default function AddProductDialog({
             <AlertTitle>Pending Admin Approval</AlertTitle>
             <AlertDescription>
               This product is awaiting admin review. You can still edit it, but it won't be visible to buyers until approved.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* FSSAI Expired Warning */}
+        {editingProduct && status === "expired" && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>⚠️ FSSAI Expired - Product Cannot Be Sold</AlertTitle>
+            <AlertDescription>
+              <p className="font-semibold mb-2">The FSSAI license for one or more variants has expired:</p>
+              <ul className="list-disc list-inside space-y-1">
+                {variants.filter(v => v.fssai_expiry_date && new Date(v.fssai_expiry_date) < new Date()).map((v, idx) => (
+                  <li key={idx} className="text-red-700">
+                    <strong>{v.variant_name || `Variant ${idx + 1}`}</strong>: FSSAI expired on {new Date(v.fssai_expiry_date!).toLocaleDateString()}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-sm font-medium">Please update the FSSAI information in the Variants tab to resume selling this product.</p>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Warning for any variant with expired FSSAI (even if product status is not expired) */}
+        {editingProduct && status !== "expired" && variants.some(v => v.fssai_expiry_date && new Date(v.fssai_expiry_date) < new Date()) && (
+          <Alert className="mb-4 border-orange-300 bg-orange-50">
+            <AlertTriangle className="h-4 w-4 text-orange-600" />
+            <AlertTitle className="text-orange-800">FSSAI Expiry Warning</AlertTitle>
+            <AlertDescription className="text-orange-700">
+              <p>Some variants have expired FSSAI dates. Please update them to avoid the product being marked as expired:</p>
+              <ul className="list-disc list-inside mt-1">
+                {variants.filter(v => v.fssai_expiry_date && new Date(v.fssai_expiry_date) < new Date()).map((v, idx) => (
+                  <li key={idx}>
+                    <strong>{v.variant_name || `Variant ${idx + 1}`}</strong>: expired on {new Date(v.fssai_expiry_date!).toLocaleDateString()}
+                  </li>
+                ))}
+              </ul>
             </AlertDescription>
           </Alert>
         )}
