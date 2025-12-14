@@ -62,7 +62,7 @@ export default function SellerVerification() {
         return;
       }
 
-      // load seller docs (aadhaar, pan, selfie)
+      // load seller docs (aadhaar, pan, selfie, fssai_certificate)
       const { data: sellerDocs } = await supabase
         .from("seller_documents")
         .select("doc_type, storage_path")
@@ -85,7 +85,7 @@ export default function SellerVerification() {
         }
       }
 
-      // Convert map to array ensuring we have all 3 doc types
+      // Convert map to array with all uploaded doc types
       const docsWithUrls = Array.from(latestDocsMap.values());
       console.log("Admin viewing documents:", docsWithUrls.length, "docs -", Array.from(latestDocsMap.keys()));
       console.log("Document URLs:", docsWithUrls.map(d => ({ type: d.doc_type, url: d.storage_path })));
@@ -189,7 +189,7 @@ export default function SellerVerification() {
                 <div>
                   <h4 className="text-md font-medium mt-3 mb-2">Uploaded Documents</h4>
                   {docs.length ? (
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                       {docs.map((d) => {
                         const docType = (d as Record<string, unknown>).doc_type as string | undefined;
                         const storagePath = (d as Record<string, unknown>).storage_path as string | undefined;

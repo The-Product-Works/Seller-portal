@@ -51,6 +51,7 @@ export default function SellerProfile() {
     "selfie",
     "bank_details",
     "gstin",
+    "fssai",
   ];
 
   // ✅ Instantly editable fields
@@ -422,6 +423,14 @@ export default function SellerProfile() {
                   <p className="text-sm font-medium">{seller?.gstin || "Not set"}</p>
                 </div>
                 <div>
+                  <Label className="text-sm font-medium text-muted-foreground">FSSAI License</Label>
+                  <p className="text-sm font-medium">{seller?.fssai_license_number || "Not set"}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-muted-foreground">FSSAI Expiry</Label>
+                  <p className="text-sm font-medium">{seller?.fssai_license_expiry_date ? new Date(seller.fssai_license_expiry_date).toLocaleDateString() : "Not set"}</p>
+                </div>
+                <div>
                   <Label className="text-sm font-medium text-muted-foreground">Seller ID</Label>
                   <p className="text-sm font-medium font-mono">{seller?.id || "Not set"}</p>
                 </div>
@@ -431,7 +440,7 @@ export default function SellerProfile() {
             {/* KYC Status */}
             <div className="mt-4 pt-4 border-t">
               <h4 className="text-sm font-semibold mb-2">KYC Documents Status</h4>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-4 gap-4">
                 <div className="text-center">
                   <div className={`w-3 h-3 rounded-full mx-auto mb-1 ${seller?.aadhaar ? 'bg-green-500' : 'bg-red-500'}`}></div>
                   <p className="text-xs">Aadhaar</p>
@@ -443,6 +452,10 @@ export default function SellerProfile() {
                 <div className="text-center">
                   <div className={`w-3 h-3 rounded-full mx-auto mb-1 ${docs.some(d => d.doc_type === 'selfie') ? 'bg-green-500' : 'bg-red-500'}`}></div>
                   <p className="text-xs">Selfie</p>
+                </div>
+                <div className="text-center">
+                  <div className={`w-3 h-3 rounded-full mx-auto mb-1 ${docs.some(d => d.doc_type === 'fssai_certificate') ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                  <p className="text-xs">FSSAI</p>
                 </div>
               </div>
             </div>
@@ -657,6 +670,59 @@ export default function SellerProfile() {
                 onClick={() => toggleRequestField("selfie")}
               >
                 <PlusCircle className={`h-4 w-4 ${requestedFields.includes("selfie") ? "text-blue-600" : ""}`} />
+              </Button>
+            </div>
+
+            {/* 🔒 FSSAI License */}
+            <div className="relative border rounded-md p-3 bg-gray-50 mb-4">
+              <div className="flex items-center justify-between mb-2">
+                <Label className="font-medium">FSSAI License</Label>
+                <span className="text-xs bg-red-100 text-red-700 px-2 py-1 rounded">Locked</span>
+              </div>
+              <p className="text-sm text-muted-foreground mb-2">
+                Current License: {seller?.fssai_license_number || "Not set"}
+              </p>
+              <p className="text-sm text-muted-foreground mb-2">
+                Expiry: {seller?.fssai_license_expiry_date ? new Date(seller.fssai_license_expiry_date).toLocaleDateString() : "Not set"}
+              </p>
+              <p className="text-sm text-muted-foreground mb-2">
+                Certificate: {docs.some(d => d.doc_type === 'fssai_certificate') ? "Uploaded" : "Not uploaded"}
+              </p>
+              <div className="space-y-2">
+                <div>
+                  <Label className="text-sm">License Number</Label>
+                  <Input
+                    placeholder="Enter 14-digit FSSAI license number"
+                    maxLength={14}
+                    disabled={!isAllowed("fssai") && !requestedFields.includes("fssai")}
+                    className={requestedFields.includes("fssai") ? "border-blue-400 bg-blue-50" : ""}
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm">Expiry Date</Label>
+                  <Input
+                    type="date"
+                    disabled={!isAllowed("fssai") && !requestedFields.includes("fssai")}
+                    className={requestedFields.includes("fssai") ? "border-blue-400 bg-blue-50" : ""}
+                  />
+                </div>
+                <div>
+                  <Label className="text-sm">Certificate Photo</Label>
+                  <Input
+                    type="file"
+                    accept="image/*,application/pdf"
+                    disabled={!isAllowed("fssai") && !requestedFields.includes("fssai")}
+                    placeholder="Upload FSSAI certificate"
+                  />
+                </div>
+              </div>
+              <Button
+                size="icon"
+                variant={requestedFields.includes("fssai") ? "secondary" : "outline"}
+                className="absolute right-2 top-2"
+                onClick={() => toggleRequestField("fssai")}
+              >
+                <PlusCircle className={`h-4 w-4 ${requestedFields.includes("fssai") ? "text-blue-600" : ""}`} />
               </Button>
             </div>
 

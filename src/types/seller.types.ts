@@ -7,6 +7,7 @@ export type DocumentType =
   | "pan" 
   | "gstin"
   | "selfie" 
+  | "fssai_certificate"
   | "bank_statement" 
   | "address_proof"
   | "fssai_certificate"

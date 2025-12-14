@@ -57,6 +57,7 @@ interface Stats {
   totalProducts: number;
   activeProducts: number;
   outOfStockProducts: number;
+  expiredProducts: number;
   pendingOrders: number;
   averageRating: number;
   lowStockCount: number;
@@ -111,6 +112,7 @@ export default function Dashboard() {
     totalProducts: 0,
     activeProducts: 0,
     outOfStockProducts: 0,
+    expiredProducts: 0,
     pendingOrders: 0,
     averageRating: 0,
     lowStockCount: 0,
@@ -396,6 +398,13 @@ export default function Dashboard() {
         .select("listing_id", { count: "exact" })
         .eq("seller_id", authSellerId);
 
+      // Get expired products count
+      const { count: expiredProductsCount } = await supabase
+        .from("seller_product_listings")
+        .select("listing_id", { count: "exact" })
+        .eq("seller_id", authSellerId)
+        .eq("status", "expired");
+
       const outOfStock = (activeProducts || []).filter(p => p.total_stock_quantity === 0).length;
       
       // Get actual low stock notifications count instead of manual calculation
@@ -656,6 +665,7 @@ export default function Dashboard() {
         totalProducts: totalProducts || 0,
         activeProducts: activeCount || 0,
         outOfStockProducts: outOfStock,
+        expiredProducts: expiredProductsCount || 0,
         pendingOrders: pendingOrdersCount || 0,
         averageRating: avgRating,
         lowStockCount: lowStock,
@@ -703,6 +713,7 @@ export default function Dashboard() {
     { title: "Total Products", value: stats.totalProducts.toString(), icon: Package, description: `${stats.activeProducts} active`, gradient: "from-purple-500 to-pink-600" },
     { title: "Pending Orders", value: stats.pendingOrders.toString(), icon: Clock, description: "Ready to process", gradient: "from-orange-500 to-red-600" },
     { title: "Out of Stock", value: stats.outOfStockProducts.toString(), icon: AlertCircle, description: `${stats.lowStockCount} low`, gradient: "from-red-500 to-pink-600" },
+    { title: "FSSAI Expired", value: stats.expiredProducts.toString(), icon: AlertCircle, description: "Update FSSAI to sell", gradient: "from-orange-600 to-red-700", isAlert: stats.expiredProducts > 0 },
     { title: "Avg Rating", value: `${stats.averageRating.toFixed(1)}★`, icon: Star, description: "Seller rating", gradient: "from-yellow-500 to-orange-600" },
   ];
 

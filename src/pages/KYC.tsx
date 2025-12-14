@@ -103,7 +103,7 @@ export default function KYC() {
   const [selfiePhoto, setSelfiePhoto] = useState<File | null>(null);
   const [aadhaarPhoto, setAadhaarPhoto] = useState<File | null>(null);
   const [panPhoto, setPanPhoto] = useState<File | null>(null);
-  const [fssaiCertificate, setFssaiCertificate] = useState<File | null>(null);
+  const [fssaiPhoto, setFssaiPhoto] = useState<File | null>(null);
 
   // Store uploaded documents URLs for display
   const [uploadedDocuments, setUploadedDocuments] = useState<{
@@ -345,18 +345,6 @@ export default function KYC() {
         return;
       }
 
-      // Additional validation: Check if FSSAI certificate is uploaded (for new submissions)
-      if (!seller && !fssaiCertificate) {
-        setErrors({ ...errors, fssaiCertificate: "FSSAI certificate is required" });
-        toast({
-          title: "Missing document",
-          description: "Please upload FSSAI certificate (PDF or image)",
-          variant: "destructive",
-        });
-        setSubmitting(false);
-        return;
-      }
-
       // Ensure GSTIN includes PAN
       if (
         formData.gstin &&
@@ -436,8 +424,6 @@ export default function KYC() {
           console.log("Selfie photo:", selfiePhoto?.name, selfiePhoto?.size);
           console.log("Aadhaar photo:", aadhaarPhoto?.name, aadhaarPhoto?.size);
           console.log("PAN photo:", panPhoto?.name, panPhoto?.size);
-          console.log("FSSAI certificate:", fssaiCertificate?.name, fssaiCertificate?.size, fssaiCertificate?.type);
-          console.log("FSSAI certificate:", fssaiCertificate?.name, fssaiCertificate?.size);
           
           const uploadResults = {
             selfie: false,
@@ -491,13 +477,10 @@ export default function KYC() {
             }
           }
           
-          if (fssaiCertificate) {
-            console.log("=== FSSAI CERTIFICATE UPLOAD START ===");
-            console.log("Seller ID:", newSeller.id);
-            console.log("File:", fssaiCertificate.name, fssaiCertificate.size, fssaiCertificate.type);
+          if (fssaiPhoto) {
             console.log("Uploading FSSAI certificate...");
-            const r = await uploadDocument(newSeller.id, fssaiCertificate, "fssai_certificate");
-            console.log("=== FSSAI CERTIFICATE UPLOAD RESULT ===", r);
+            const r = await uploadDocument(newSeller.id, fssaiPhoto, "fssai_certificate");
+            console.log("FSSAI certificate upload result:", r);
             uploadResults.fssai_certificate = r.success;
             if (!r.success) {
               console.error("FSSAI certificate upload failed:", r.error);
@@ -506,46 +489,6 @@ export default function KYC() {
                 description: r.error || "Failed to upload FSSAI certificate",
                 variant: "destructive",
               });
-            } else if (r.document) {
-              console.log("FSSAI upload successful, generating public URL...");
-              
-              // List all files in the seller's fssai_certificate folder to get the actual uploaded file
-              const { data: fileList, error: listError } = await supabase.storage
-                .from("seller_details")
-                .list(`${newSeller.id}/fssai_certificate`, {
-                  sortBy: { column: "created_at", order: "desc" }
-                });
-              
-              if (listError) {
-                console.error("Failed to list files:", listError);
-              } else if (fileList && fileList.length > 0) {
-                // Get the most recently uploaded file
-                const latestFile = fileList[0];
-                const filePath = `${newSeller.id}/fssai_certificate/${latestFile.name}`;
-                console.log("Found uploaded file path:", filePath);
-                
-                // Generate public URL
-                const { data: publicUrlData } = supabase.storage
-                  .from("seller_details")
-                  .getPublicUrl(filePath);
-                
-                const publicUrl = publicUrlData.publicUrl;
-                console.log("Generated public URL for FSSAI certificate:", publicUrl);
-                
-                // Update sellers table with public URL
-                const { error: updateError } = await supabase
-                  .from("sellers")
-                  .update({ fssai_certificate_url: publicUrl })
-                  .eq("id", newSeller.id);
-                
-                if (updateError) {
-                  console.error("Failed to update sellers.fssai_certificate_url:", updateError);
-                } else {
-                  console.log("Successfully updated sellers.fssai_certificate_url with public URL");
-                }
-              } else {
-                console.error("No files found in fssai_certificate folder");
-              }
             }
           }
           
@@ -556,7 +499,7 @@ export default function KYC() {
           if (selfiePhoto && !uploadResults.selfie) failedUploads.push("Selfie");
           if (aadhaarPhoto && !uploadResults.aadhaar) failedUploads.push("Aadhaar");
           if (panPhoto && !uploadResults.pan) failedUploads.push("PAN");
-          if (fssaiCertificate && !uploadResults.fssai_certificate) failedUploads.push("FSSAI Certificate");
+          if (fssaiPhoto && !uploadResults.fssai_certificate) failedUploads.push("FSSAI Certificate");
           
           if (failedUploads.length > 0) {
             toast({
@@ -589,7 +532,7 @@ export default function KYC() {
             if (selfiePhoto) documentsSubmitted.push('selfie');
             if (aadhaarPhoto) documentsSubmitted.push('aadhaar');
             if (panPhoto) documentsSubmitted.push('pan');
-            if (fssaiCertificate) documentsSubmitted.push('fssai_certificate');
+            if (fssaiPhoto) documentsSubmitted.push('fssai_certificate');
             if (formData.gstin) documentsSubmitted.push('gstin');
 
             await sendAdminKYCSubmittedEmail({
@@ -660,7 +603,6 @@ export default function KYC() {
         console.log("Selfie photo:", selfiePhoto?.name, selfiePhoto?.size);
         console.log("Aadhaar photo:", aadhaarPhoto?.name, aadhaarPhoto?.size);
         console.log("PAN photo:", panPhoto?.name, panPhoto?.size);
-        console.log("FSSAI certificate:", fssaiCertificate?.name, fssaiCertificate?.size);
         
         const uploadResults = {
           selfie: false,
@@ -714,13 +656,10 @@ export default function KYC() {
           }
         }
         
-        if (fssaiCertificate) {
-          console.log("=== FSSAI CERTIFICATE UPLOAD START (EDIT) ===");
-          console.log("Seller ID:", seller.id);
-          console.log("File:", fssaiCertificate.name, fssaiCertificate.size, fssaiCertificate.type);
+        if (fssaiPhoto) {
           console.log("Uploading new FSSAI certificate...");
-          const r = await uploadDocument(seller.id, fssaiCertificate, "fssai_certificate");
-          console.log("=== FSSAI CERTIFICATE UPLOAD RESULT (EDIT) ===", r);
+          const r = await uploadDocument(seller.id, fssaiPhoto, "fssai_certificate");
+          console.log("FSSAI certificate upload result:", r);
           uploadResults.fssai_certificate = r.success;
           if (!r.success) {
             console.error("FSSAI certificate upload failed:", r.error);
@@ -729,46 +668,6 @@ export default function KYC() {
               description: r.error || "Failed to upload FSSAI certificate",
               variant: "destructive",
             });
-          } else if (r.document) {
-            console.log("FSSAI upload successful, generating public URL...");
-            
-            // List all files in the seller's fssai_certificate folder to get the actual uploaded file
-            const { data: fileList, error: listError } = await supabase.storage
-              .from("seller_details")
-              .list(`${seller.id}/fssai_certificate`, {
-                sortBy: { column: "created_at", order: "desc" }
-              });
-            
-            if (listError) {
-              console.error("Failed to list files:", listError);
-            } else if (fileList && fileList.length > 0) {
-              // Get the most recently uploaded file
-              const latestFile = fileList[0];
-              const filePath = `${seller.id}/fssai_certificate/${latestFile.name}`;
-              console.log("Found uploaded file path:", filePath);
-              
-              // Generate public URL
-              const { data: publicUrlData } = supabase.storage
-                .from("seller_details")
-                .getPublicUrl(filePath);
-              
-              const publicUrl = publicUrlData.publicUrl;
-              console.log("Generated public URL for FSSAI certificate:", publicUrl);
-              
-              // Update sellers table with public URL
-              const { error: updateError } = await supabase
-                .from("sellers")
-                .update({ fssai_certificate_url: publicUrl })
-                .eq("id", seller.id);
-              
-              if (updateError) {
-                console.error("Failed to update sellers.fssai_certificate_url:", updateError);
-              } else {
-                console.log("Successfully updated sellers.fssai_certificate_url with public URL");
-              }
-            } else {
-              console.error("No files found in fssai_certificate folder");
-            }
           }
         }
         
@@ -861,7 +760,7 @@ export default function KYC() {
                     <h3 className="text-lg font-semibold flex items-center gap-2">
                       <Camera className="w-5 h-5" /> Upload Documents
                     </h3>
-                    <div className="grid md:grid-cols-3 gap-6">
+                    <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
                       {/* Selfie */}
                       <div className="space-y-2">
                         <Label>Selfie Photo *</Label>
@@ -988,6 +887,52 @@ export default function KYC() {
                             />
                             <p className="text-xs text-muted-foreground">
                               Upload a clear PAN photo (required)
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* FSSAI Certificate Section */}
+                    <div className="mt-6">
+                      <h3 className="text-lg font-semibold mb-4">FSSAI License Certificate</h3>
+                      <div className="space-y-2">
+                        <Label>FSSAI Certificate Photo *</Label>
+                        {uploadedDocuments.fssai_certificate || fssaiPhoto ? (
+                          <div className="relative border-2 border-dashed rounded-lg p-2">
+                            <img
+                              src={
+                                fssaiPhoto
+                                  ? URL.createObjectURL(fssaiPhoto)
+                                  : uploadedDocuments.fssai_certificate
+                              }
+                              alt="FSSAI Certificate preview"
+                              className="w-full h-60 object-contain rounded"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFssaiPhoto(null);
+                                setUploadedDocuments({ ...uploadedDocuments, fssai_certificate: undefined });
+                              }}
+                              className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                              aria-label="Remove FSSAI certificate photo"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <Input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              onChange={(e) =>
+                                setFssaiPhoto(e.target.files?.[0] || null)
+                              }
+                              required
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Upload your FSSAI license certificate (required)
                             </p>
                           </div>
                         )}
@@ -1304,74 +1249,6 @@ export default function KYC() {
                         <p className="text-sm text-destructive">
                           {errors.fssaiLicenseExpiryDate}
                         </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* FSSAI Certificate Upload */}
-                  <div className="space-y-4">
-                    <h3 className="font-semibold text-lg">FSSAI License Certificate *</h3>
-                    <div className="space-y-2">
-                      <Label>Upload FSSAI Certificate (PDF or Image) *</Label>
-                      {uploadedDocuments.fssai_certificate || fssaiCertificate ? (
-                        <div className="relative border-2 border-dashed rounded-lg p-4">
-                          {fssaiCertificate ? (
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1">
-                                <p className="font-medium text-sm">{fssaiCertificate.name}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {(fssaiCertificate.size / 1024).toFixed(2)} KB • {fssaiCertificate.type}
-                                </p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setFssaiCertificate(null)}
-                                className="bg-red-500 text-white rounded-full p-2 hover:bg-red-600"
-                                aria-label="Remove FSSAI certificate"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ) : uploadedDocuments.fssai_certificate ? (
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1">
-                                <a 
-                                  href={uploadedDocuments.fssai_certificate} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:underline font-medium"
-                                >
-                                  View Uploaded Certificate
-                                </a>
-                                <p className="text-xs text-green-600 mt-1">✓ Certificate uploaded</p>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => setUploadedDocuments({ ...uploadedDocuments, fssai_certificate: undefined })}
-                                className="bg-red-500 text-white rounded-full p-2 hover:bg-red-600"
-                                aria-label="Remove FSSAI certificate"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <div className="space-y-2">
-                          <Input
-                            type="file"
-                            accept="image/*,application/pdf"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              console.log("FSSAI certificate selected:", file?.name, file?.size, file?.type);
-                              setFssaiCertificate(file || null);
-                            }}
-                            required
-                          />
-                          <p className="text-xs text-muted-foreground">
-                            Upload FSSAI license certificate (PDF or image, max 10MB, required)
-                          </p>
-                        </div>
                       )}
                     </div>
                   </div>

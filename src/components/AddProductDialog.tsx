@@ -54,6 +54,7 @@ import { ProductPreviewModal } from "@/components/ProductPreviewModal";
 import { ImageManager } from "@/components/ImageManager";
 import { CommissionWarning } from "@/components/CommissionWarning";
 import { AttestationDialog } from "@/components/AttestationDialog";
+import { sendAdminProductApprovalEmail } from "@/lib/email/helpers/admin-product-approval";
 
 // Type alias for Json type
 type Json = Database["public"]["Tables"]["seller_product_listings"]["Row"]["seller_certifications"];
@@ -130,7 +131,7 @@ export default function AddProductDialog({
   const [shelfLifeMonths, setShelfLifeMonths] = useState<number>(12);
   const [discountPercentage, setDiscountPercentage] = useState<number>(0);
   const [sellerCommission, setSellerCommission] = useState<number>(0); // Additional commission seller adds on top of 2%
-  const [status, setStatus] = useState<"draft" | "active" | "pending_approval" | "failed_approval">("draft");
+  const [status, setStatus] = useState<"draft" | "active" | "pending_approval" | "failed_approval" | "expired">("draft");
   const [showBrandInput, setShowBrandInput] = useState(false);
   const [showCategoryInput, setShowCategoryInput] = useState(false);
   const [showProductInput, setShowProductInput] = useState(false);
@@ -590,7 +591,7 @@ export default function AddProductDialog({
     setVariants(updated);
   }
 
-  async function handleSave(overrideStatus?: "draft" | "active" | "pending_approval" | "failed_approval") {
+  async function handleSave(overrideStatus?: "draft" | "active" | "pending_approval" | "failed_approval" | "expired") {
     const finalStatus = overrideStatus || status;
     console.log("handleSave called with status:", finalStatus, "override:", overrideStatus, "state:", status);
     console.log("🔍 Variants allergen_info before save:", variants.map(v => ({
@@ -769,7 +770,7 @@ export default function AddProductDialog({
             shipping_info: shippingInfo,
             seller_certifications: (updatedCertifications.length > 0 ? updatedCertifications : null) as unknown as Json,
             status: finalStatus,
-            published_at: finalStatus === "active" ? new Date().toISOString() : null,
+            published_at: finalStatus === "pending_approval" ? new Date().toISOString() : null,
             updated_at: new Date().toISOString()
           })
           .eq("listing_id", editingProduct.listing_id)
@@ -801,7 +802,7 @@ export default function AddProductDialog({
             slug: listingSlug,
             review_count: 0,
             is_verified: false,
-            published_at: finalStatus === "active" ? new Date().toISOString() : null,
+            published_at: finalStatus === "pending_approval" ? new Date().toISOString() : null,
           })
           .select()
           .single();
@@ -1090,12 +1091,78 @@ export default function AddProductDialog({
       // Update the component state to reflect the new status
       setStatus(finalStatus);
       
+      // Send admin notification email if product requires approval
+      if (finalStatus === "pending_approval" && listing) {
+        const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
+        if (adminEmail) {
+          try {
+            // Fetch seller details for the email
+            const { data: sellerData } = await supabase
+              .from('sellers')
+              .select('email, business_name, name')
+              .eq('id', sellerId)
+              .single();
+
+            // Fetch global product and brand details
+            const { data: productData } = await supabase
+              .from('seller_product_listings')
+              .select(`
+                *,
+                global_products (
+                  product_name,
+                  brands (
+                    name
+                  )
+                )
+              `)
+              .eq('listing_id', listing.listing_id)
+              .single();
+
+            if (sellerData && productData && productData.global_products) {
+              // Calculate price range from variants
+              const prices = variants.map(v => v.price).filter(p => p > 0);
+              const priceRange = {
+                min: prices.length > 0 ? Math.min(...prices) : 0,
+                max: prices.length > 0 ? Math.max(...prices) : 0,
+              };
+
+              // Calculate total stock
+              const totalStock = variants.reduce((sum, v) => sum + (v.stock_quantity || 0), 0);
+
+              await sendAdminProductApprovalEmail({
+                adminEmail,
+                sellerName: sellerData.business_name || sellerData.name || sellerData.email || 'Seller',
+                sellerEmail: sellerData.email || '',
+                sellerId,
+                productName: sellerTitle || productData.global_products.product_name,
+                listingId: listing.listing_id,
+                isNewProduct: !isEditing,
+                globalProductName: productData.global_products.product_name,
+                brandName: productData.global_products.brands?.name || 'Unknown',
+                categoryName: selectedCategory,
+                variantCount: variants.length,
+                priceRange,
+                totalStock,
+                discountPercentage: discountPercentage > 0 ? discountPercentage : undefined,
+                submittedAt: new Date().toISOString(),
+                dashboardUrl: `${window.location.origin}/admin/products/${listing.listing_id}`,
+                productDescription: sellerDescription,
+              });
+              console.log('[AddProduct] Admin approval notification email sent successfully');
+            }
+          } catch (emailError) {
+            console.error('[AddProduct] Failed to send admin notification email:', emailError);
+            // Non-fatal - don't block user flow
+          }
+        }
+      }
+      
       const action = isEditing 
-        ? (finalStatus === "active" ? "updated and published" : "updated and saved as draft")
-        : (finalStatus === "draft" ? "saved as draft" : "published");
+        ? (finalStatus === "pending_approval" ? "submitted for admin approval" : "saved as draft")
+        : (finalStatus === "draft" ? "saved as draft" : "submitted for admin approval");
       toast({ 
-        title: `Product ${action} successfully`,
-        description: finalStatus === "active" ? "Your product is now live in the marketplace" : "You can publish this product later"
+        title: `Product ${action}`,
+        description: finalStatus === "pending_approval" ? "Your product will be visible on marketplace once admin approves it" : "You can submit this product for approval later"
       });
       onSuccess();
       onOpenChange(false);
@@ -1160,6 +1227,43 @@ export default function AddProductDialog({
             <AlertTitle>Pending Admin Approval</AlertTitle>
             <AlertDescription>
               This product is awaiting admin review. You can still edit it, but it won't be visible to buyers until approved.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* FSSAI Expired Warning */}
+        {editingProduct && status === "expired" && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>⚠️ FSSAI Expired - Product Cannot Be Sold</AlertTitle>
+            <AlertDescription>
+              <p className="font-semibold mb-2">The FSSAI license for one or more variants has expired:</p>
+              <ul className="list-disc list-inside space-y-1">
+                {variants.filter(v => v.fssai_expiry_date && new Date(v.fssai_expiry_date) < new Date()).map((v, idx) => (
+                  <li key={idx} className="text-red-700">
+                    <strong>{v.variant_name || `Variant ${idx + 1}`}</strong>: FSSAI expired on {new Date(v.fssai_expiry_date!).toLocaleDateString()}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-3 text-sm font-medium">Please update the FSSAI information in the Variants tab to resume selling this product.</p>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Warning for any variant with expired FSSAI (even if product status is not expired) */}
+        {editingProduct && status !== "expired" && variants.some(v => v.fssai_expiry_date && new Date(v.fssai_expiry_date) < new Date()) && (
+          <Alert className="mb-4 border-orange-300 bg-orange-50">
+            <AlertTriangle className="h-4 w-4 text-orange-600" />
+            <AlertTitle className="text-orange-800">FSSAI Expiry Warning</AlertTitle>
+            <AlertDescription className="text-orange-700">
+              <p>Some variants have expired FSSAI dates. Please update them to avoid the product being marked as expired:</p>
+              <ul className="list-disc list-inside mt-1">
+                {variants.filter(v => v.fssai_expiry_date && new Date(v.fssai_expiry_date) < new Date()).map((v, idx) => (
+                  <li key={idx}>
+                    <strong>{v.variant_name || `Variant ${idx + 1}`}</strong>: expired on {new Date(v.fssai_expiry_date!).toLocaleDateString()}
+                  </li>
+                ))}
+              </ul>
             </AlertDescription>
           </Alert>
         )}
@@ -2201,14 +2305,44 @@ export default function AddProductDialog({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const updatedVariants = [...variants];
-                                const currentVariant = updatedVariants[index] as any;
-                                updatedVariants[index] = {
-                                  ...currentVariant,
-                                  productImage: file,
-                                  productImagePreview: URL.createObjectURL(file)
+                                // Validate file size (max 10MB)
+                                if (file.size > 10 * 1024 * 1024) {
+                                  toast({
+                                    title: "File too large",
+                                    description: "Product photo must be less than 10MB",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                // Check image resolution
+                                const img = new Image();
+                                img.onload = () => {
+                                  if (img.width < 800 || img.height < 800) {
+                                    toast({
+                                      title: "Low resolution image",
+                                      description: "Product photo should be at least 800x800 pixels for best quality. Recommended: 1200x1200px or higher.",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                  
+                                  const updatedVariants = [...variants];
+                                  const currentVariant = updatedVariants[index] as any;
+                                  updatedVariants[index] = {
+                                    ...currentVariant,
+                                    productImage: file,
+                                    productImagePreview: URL.createObjectURL(file)
+                                  };
+                                  setVariants(updatedVariants);
                                 };
-                                setVariants(updatedVariants);
+                                img.onerror = () => {
+                                  toast({
+                                    title: "Invalid image",
+                                    description: "Unable to load image file",
+                                    variant: "destructive"
+                                  });
+                                };
+                                img.src = URL.createObjectURL(file);
                               }
                             }}
                           />
@@ -2264,14 +2398,44 @@ export default function AddProductDialog({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const updatedVariants = [...variants];
-                                const currentVariant = updatedVariants[index] as any;
-                                updatedVariants[index] = {
-                                  ...currentVariant,
-                                  ingredientImage: file,
-                                  ingredientImagePreview: URL.createObjectURL(file)
+                                // Validate file size (max 10MB)
+                                if (file.size > 10 * 1024 * 1024) {
+                                  toast({
+                                    title: "File too large",
+                                    description: "Ingredient list image must be less than 10MB",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                // Check image resolution
+                                const img = new Image();
+                                img.onload = () => {
+                                  if (img.width < 800 || img.height < 800) {
+                                    toast({
+                                      title: "Low resolution image",
+                                      description: "Ingredient list image should be at least 800x800 pixels for clarity. Recommended: 1200x1200px or higher.",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                  
+                                  const updatedVariants = [...variants];
+                                  const currentVariant = updatedVariants[index] as any;
+                                  updatedVariants[index] = {
+                                    ...currentVariant,
+                                    ingredientImage: file,
+                                    ingredientImagePreview: URL.createObjectURL(file)
+                                  };
+                                  setVariants(updatedVariants);
                                 };
-                                setVariants(updatedVariants);
+                                img.onerror = () => {
+                                  toast({
+                                    title: "Invalid image",
+                                    description: "Unable to load image file",
+                                    variant: "destructive"
+                                  });
+                                };
+                                img.src = URL.createObjectURL(file);
                               }
                             }}
                           />
@@ -2282,7 +2446,7 @@ export default function AddProductDialog({
                             </div>
                           )}
                           {!variant.ingredient_image_url && (
-                            <p className="text-xs text-muted-foreground">Upload a clear photo of the ingredient list</p>
+                            <p className="text-xs text-muted-foreground">Upload high-quality photo (min 800x800px, max 10MB)</p>
                           )}
                         </div>
 
@@ -2327,14 +2491,44 @@ export default function AddProductDialog({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const updatedVariants = [...variants];
-                                const currentVariant = updatedVariants[index] as any;
-                                updatedVariants[index] = {
-                                  ...currentVariant,
-                                  nutritionImage: file,
-                                  nutritionImagePreview: URL.createObjectURL(file)
+                                // Validate file size (max 10MB)
+                                if (file.size > 10 * 1024 * 1024) {
+                                  toast({
+                                    title: "File too large",
+                                    description: "Nutrition table image must be less than 10MB",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                // Check image resolution
+                                const img = new Image();
+                                img.onload = () => {
+                                  if (img.width < 800 || img.height < 800) {
+                                    toast({
+                                      title: "Low resolution image",
+                                      description: "Nutrition table image should be at least 800x800 pixels for clarity. Recommended: 1200x1200px or higher.",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                  
+                                  const updatedVariants = [...variants];
+                                  const currentVariant = updatedVariants[index] as any;
+                                  updatedVariants[index] = {
+                                    ...currentVariant,
+                                    nutritionImage: file,
+                                    nutritionImagePreview: URL.createObjectURL(file)
+                                  };
+                                  setVariants(updatedVariants);
                                 };
-                                setVariants(updatedVariants);
+                                img.onerror = () => {
+                                  toast({
+                                    title: "Invalid image",
+                                    description: "Unable to load image file",
+                                    variant: "destructive"
+                                  });
+                                };
+                                img.src = URL.createObjectURL(file);
                               }
                             }}
                           />
@@ -2345,7 +2539,7 @@ export default function AddProductDialog({
                             </div>
                           )}
                           {!variant.nutrient_table_image_url && (
-                            <p className="text-xs text-muted-foreground">Upload a clear photo of the nutrition facts table</p>
+                            <p className="text-xs text-muted-foreground">Upload high-quality photo (min 800x800px, max 10MB)</p>
                           )}
                         </div>
 
@@ -2390,14 +2584,44 @@ export default function AddProductDialog({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const updatedVariants = [...variants];
-                                const currentVariant = updatedVariants[index] as any;
-                                updatedVariants[index] = {
-                                  ...currentVariant,
-                                  fssaiImage: file,
-                                  fssaiImagePreview: URL.createObjectURL(file)
+                                // Validate file size (max 10MB)
+                                if (file.size > 10 * 1024 * 1024) {
+                                  toast({
+                                    title: "File too large",
+                                    description: "FSSAI label image must be less than 10MB",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                // Check image resolution
+                                const img = new Image();
+                                img.onload = () => {
+                                  if (img.width < 800 || img.height < 800) {
+                                    toast({
+                                      title: "Low resolution image",
+                                      description: "FSSAI label image should be at least 800x800 pixels for clarity. Recommended: 1200x1200px or higher.",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                  
+                                  const updatedVariants = [...variants];
+                                  const currentVariant = updatedVariants[index] as any;
+                                  updatedVariants[index] = {
+                                    ...currentVariant,
+                                    fssaiImage: file,
+                                    fssaiImagePreview: URL.createObjectURL(file)
+                                  };
+                                  setVariants(updatedVariants);
                                 };
-                                setVariants(updatedVariants);
+                                img.onerror = () => {
+                                  toast({
+                                    title: "Invalid image",
+                                    description: "Unable to load image file",
+                                    variant: "destructive"
+                                  });
+                                };
+                                img.src = URL.createObjectURL(file);
                               }
                             }}
                           />
@@ -2408,7 +2632,7 @@ export default function AddProductDialog({
                             </div>
                           )}
                           {!variant.fssai_label_image_url && (
-                            <p className="text-xs text-muted-foreground">Upload a clear photo of the FSSAI label</p>
+                            <p className="text-xs text-muted-foreground">Upload high-quality photo (min 800x800px, max 10MB)</p>
                           )}
                         </div>
 

@@ -1056,6 +1056,27 @@ export default function Inventory() {
     filters.status,
   ].filter(Boolean).length;
 
+  // Compute status counts for summary
+  const statusCounts = useMemo(() => {
+    const counts = {
+      active: 0,
+      pending: 0,
+      failed: 0,
+      expired: 0,
+      draft: 0,
+      inactive: 0,
+    };
+    listings.forEach((listing) => {
+      if (listing.status === "active") counts.active++;
+      else if (listing.status === "pending_approval") counts.pending++;
+      else if (listing.status === "failed_approval") counts.failed++;
+      else if (listing.status === "expired") counts.expired++;
+      else if (listing.status === "draft") counts.draft++;
+      else if (listing.status === "inactive") counts.inactive++;
+    });
+    return counts;
+  }, [listings]);
+
   return (
     <>
       <SellerRaiseDispute
@@ -1166,6 +1187,46 @@ export default function Inventory() {
         </div>
       </div>
 
+      {/* Product Status Summary */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <Card className="bg-green-50 border-green-200">
+          <CardContent className="p-3 text-center">
+            <p className="text-2xl font-bold text-green-700">{statusCounts.active}</p>
+            <p className="text-xs text-green-600">Active</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-yellow-50 border-yellow-200">
+          <CardContent className="p-3 text-center">
+            <p className="text-2xl font-bold text-yellow-700">{statusCounts.pending}</p>
+            <p className="text-xs text-yellow-600">Pending Approval</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-red-50 border-red-200">
+          <CardContent className="p-3 text-center">
+            <p className="text-2xl font-bold text-red-700">{statusCounts.failed}</p>
+            <p className="text-xs text-red-600">Failed Approval</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-orange-50 border-orange-200">
+          <CardContent className="p-3 text-center cursor-pointer hover:bg-orange-100 transition-colors" onClick={() => setFilters({ ...filters, status: "expired" })}>
+            <p className="text-2xl font-bold text-orange-700">{statusCounts.expired}</p>
+            <p className="text-xs text-orange-600">⚠️ FSSAI Expired</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-gray-50 border-gray-200">
+          <CardContent className="p-3 text-center">
+            <p className="text-2xl font-bold text-gray-700">{statusCounts.draft}</p>
+            <p className="text-xs text-gray-600">Draft</p>
+          </CardContent>
+        </Card>
+        <Card className="bg-slate-50 border-slate-200">
+          <CardContent className="p-3 text-center">
+            <p className="text-2xl font-bold text-slate-700">{statusCounts.inactive}</p>
+            <p className="text-xs text-slate-600">Inactive</p>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Search and Filter Bar */}
       <Card>
         <CardHeader>
@@ -1226,7 +1287,7 @@ export default function Inventory() {
                       onValueChange={(value: string) =>
                         setFilters({
                           ...filters,
-                          status: value === "all" ? undefined : (value as "draft" | "active" | "inactive" | "pending_approval" | "failed_approval"),
+                          status: value === "all" ? undefined : (value as "draft" | "active" | "inactive" | "pending_approval" | "failed_approval" | "expired"),
                         })
                       }
                     >
@@ -1238,6 +1299,7 @@ export default function Inventory() {
                         <SelectItem value="active">Active</SelectItem>
                         <SelectItem value="pending_approval">Pending Approval</SelectItem>
                         <SelectItem value="failed_approval">Failed Approval</SelectItem>
+                        <SelectItem value="expired">Expired FSSAI</SelectItem>
                         <SelectItem value="draft">Draft</SelectItem>
                         <SelectItem value="inactive">Inactive</SelectItem>
                       </SelectContent>
@@ -1529,12 +1591,21 @@ export default function Inventory() {
                           ? "outline"
                           : listing.status === "failed_approval"
                           ? "destructive"
+                          : listing.status === "expired"
+                          ? "destructive"
                           : "outline"
                       }
-                      className={listing.status === "pending_approval" ? "bg-yellow-100 text-yellow-800 border-yellow-300" : ""}
+                      className={
+                        listing.status === "pending_approval" 
+                          ? "bg-yellow-100 text-yellow-800 border-yellow-300" 
+                          : listing.status === "expired"
+                          ? "bg-red-100 text-red-800 border-red-300"
+                          : ""
+                      }
                     >
                       {listing.status === "pending_approval" ? "⏳ Pending" : 
                        listing.status === "failed_approval" ? "❌ Failed" :
+                       listing.status === "expired" ? "⚠️ Expired" :
                        listing.status}
                     </Badge>
                     {discount > 0 && (
