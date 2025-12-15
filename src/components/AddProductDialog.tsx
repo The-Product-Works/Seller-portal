@@ -2082,7 +2082,7 @@ export default function AddProductDialog({
                       {/* Show existing images if editing */}
                       {(variant as any).existingProductImages && (variant as any).existingProductImages.length > 0 && (
                         <div className="mb-2">
-                          <p className="text-xs text-green-600 mb-2">✓ {(variant as any).existingProductImages.length} existing image(s)</p>
+                          <p className="text-xs text-blue-600 mb-2">✓ {(variant as any).existingProductImages.length} existing image(s)</p>
                           <div className="flex flex-wrap gap-2">
                             {(variant as any).existingProductImages.map((img: any, imgIdx: number) => {
                               const isPrimary = img.is_primary || false;
@@ -2734,9 +2734,9 @@ export default function AddProductDialog({
                            (variant.nutrient_breakdown as any)?.energyKcal &&
                            (variant.nutrient_breakdown as any)?.energyKcal > 0 &&
                            Boolean(variant.accuracy_attested) ? (
-                            <div className="flex items-center gap-2 p-2 bg-green-50 border border-green-300 rounded">
-                              <Badge variant="default" className="bg-green-600">✓ P0 Compliant</Badge>
-                              <span className="text-xs text-green-700 font-medium">
+                            <div className="flex items-center gap-2 p-2 bg-yellow-50 border border-yellow-400 rounded">
+                              <Badge variant="default" className="bg-blue-600">✓ P0 Compliant</Badge>
+                              <span className="text-xs text-blue-700 font-medium">
                                 All mandatory compliance fields completed
                               </span>
                             </div>

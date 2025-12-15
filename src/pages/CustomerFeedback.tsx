@@ -56,6 +56,25 @@ interface FeedbackStats {
   recentTrend: 'up' | 'down' | 'stable';
 }
 
+interface BuyerQuestion {
+  question_id: string;
+  listing_id: string;
+  buyer_id: string;
+  question_text: string;
+  is_active: boolean;
+  created_at: string;
+  product_name: string;
+  buyer_name: string;
+  answers?: Array<{
+    answer_id: string;
+    answer_text: string;
+    is_verified_seller: boolean;
+    created_at: string;
+    helpful_count: number;
+    not_helpful_count: number;
+  }>;
+}
+
 interface AdminQuestion {
   id: string;
   question: string;
@@ -83,6 +102,7 @@ export default function CustomerFeedback() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [sortBy, setSortBy] = useState<string>("newest");
+  const [buyerQuestions, setBuyerQuestions] = useState<BuyerQuestion[]>([]);
   const [adminQuestions, setAdminQuestions] = useState<AdminQuestion[]>([]);
   const [showContactDialog, setShowContactDialog] = useState(false);
   const [contactMessage, setContactMessage] = useState("");
@@ -118,7 +138,7 @@ export default function CustomerFeedback() {
 
         // Load reviews and questions separately
         await loadCustomerFeedback();
-        await loadAdminQuestions();
+        await loadBuyerQuestions();
 
         setLoading(false);
       } catch (error) {
@@ -200,53 +220,92 @@ export default function CustomerFeedback() {
     }
   }, []);
 
-  const loadAdminQuestions = useCallback(async () => {
+  const loadBuyerQuestions = useCallback(async () => {
     try {
       const sellerId = await getAuthenticatedSellerId();
-      console.log('Loading admin questions for seller:', sellerId);
+      console.log('Loading buyer questions for seller:', sellerId);
       
       if (!sellerId) {
         console.log('No seller ID found, cannot load questions');
-        setAdminQuestions([]);
+        setBuyerQuestions([]);
         return;
       }
 
-      // Query seller_admin_questions table with proper join
+      // First get seller's listings
+      const { data: listings } = await supabase
+        .from("seller_product_listings")
+        .select("listing_id, seller_title")
+        .eq("seller_id", sellerId);
+
+      if (!listings || listings.length === 0) {
+        setBuyerQuestions([]);
+        return;
+      }
+
+      const listingIds = listings.map(l => l.listing_id);
+
+      // Query product_questions for buyer questions on seller's products
       const { data: questionsData, error } = await supabase
-        .from("seller_admin_questions")
+        .from("product_questions")
         .select(`
           question_id,
-          question_text,
-          admin_response,
-          status,
-          created_at,
           listing_id,
-          seller_product_listings(seller_title)
+          buyer_id,
+          question_text,
+          is_active,
+          created_at,
+          users!product_questions_buyer_id_fkey(email)
         `)
-        .eq("seller_id", sellerId)
+        .in("listing_id", listingIds)
+        .eq("is_active", true)
         .order("created_at", { ascending: false });
 
-      console.log('Admin questions query result:', { data: questionsData, error });
+      console.log('Buyer questions query result:', { data: questionsData, error });
 
       if (!error && questionsData) {
-        const formattedQuestions: AdminQuestion[] = questionsData.map(q => ({
-          id: q.question_id,
-          question: q.question_text,
-          answer: q.admin_response,
-          product_name: q.seller_product_listings?.seller_title || "General Question",
-          created_at: q.created_at,
-          status: q.status as 'pending' | 'answered'
-        }));
-        console.log('Formatted questions:', formattedQuestions);
-        setAdminQuestions(formattedQuestions);
+        // For each question, get its answers
+        const questionsWithAnswers = await Promise.all(
+          questionsData.map(async (q) => {
+            const listing = listings.find(l => l.listing_id === q.listing_id);
+            
+            // Get answers for this question
+            const { data: answers } = await supabase
+              .from("product_answers")
+              .select(`
+                answer_id,
+                answer_text,
+                is_verified_seller,
+                helpful_count,
+                not_helpful_count,
+                created_at
+              `)
+              .eq("question_id", q.question_id)
+              .eq("is_active", true)
+              .order("created_at", { ascending: false });
+
+            return {
+              question_id: q.question_id,
+              listing_id: q.listing_id,
+              buyer_id: q.buyer_id,
+              question_text: q.question_text,
+              is_active: q.is_active,
+              created_at: q.created_at,
+              product_name: listing?.seller_title || "Unknown Product",
+              buyer_name: q.users?.email?.split('@')[0] || "Anonymous",
+              answers: answers || []
+            };
+          })
+        );
+
+        console.log('Formatted buyer questions:', questionsWithAnswers);
+        setBuyerQuestions(questionsWithAnswers);
       } else {
-        console.log("Error loading admin questions:", error);
-        // Fallback to empty array if table doesn't exist yet
-        setAdminQuestions([]);
+        console.log("Error loading buyer questions:", error);
+        setBuyerQuestions([]);
       }
     } catch (error) {
-      console.error("Error loading admin questions:", error);
-      setAdminQuestions([]);
+      console.error("Error loading buyer questions:", error);
+      setBuyerQuestions([]);
     }
   }, []);
 
@@ -369,6 +428,67 @@ export default function CustomerFeedback() {
       toast({
         title: "Error",
         description: "Failed to send question",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleAnswerBuyerQuestion = async (questionId: string, answerText: string) => {
+    if (!answerText.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter an answer",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      const sellerId = await getAuthenticatedSellerId();
+      if (!sellerId) {
+        toast({
+          title: "Error",
+          description: "Please log in to answer questions",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Insert answer into product_answers table
+      const { error } = await supabase
+        .from("product_answers")
+        .insert({
+          question_id: questionId,
+          seller_id: sellerId,
+          answer_text: answerText.trim(),
+          is_verified_seller: true,
+          is_active: true,
+          helpful_count: 0,
+          not_helpful_count: 0
+        });
+
+      if (error) {
+        console.error("Error inserting answer:", error);
+        toast({
+          title: "Error",
+          description: "Failed to submit answer. Please try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // Reload buyer questions to show the new answer
+      await loadBuyerQuestions();
+
+      toast({
+        title: "Answer Submitted",
+        description: "Your answer has been posted successfully",
+      });
+    } catch (error) {
+      console.error("Error answering question:", error);
+      toast({
+        title: "Error",
+        description: "Failed to submit answer",
         variant: "destructive",
       });
     }
@@ -673,10 +793,14 @@ export default function CustomerFeedback() {
           type: "platform",
         }}
       />
-      <div className="container mx-auto p-6 space-y-6">
-        <div className="flex justify-between items-center mb-8">
+      {/* Background gradient overlay */}
+      <div className="fixed inset-0 bg-gradient-to-br from-yellow-50/20 via-transparent to-blue-50/20 pointer-events-none"></div>
+      <div className="fixed inset-0 pattern-dots opacity-[0.02] pointer-events-none"></div>
+      
+      <div className="container mx-auto p-6 space-y-6 relative z-10">
+        <div className="flex justify-between items-center mb-8 bg-gradient-to-r from-yellow-50 to-blue-50 -mx-6 px-6 py-6 border-b-2 border-yellow-200/50">
           <div>
-            <h1 className="text-3xl font-bold">Customer Feedback Center</h1>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-700 to-blue-900 bg-clip-text text-transparent">Customer Feedback Center</h1>
             <p className="text-gray-600 mt-1">Manage reviews, questions, and communicate with customers</p>
           </div>
           <div className="flex gap-2">
@@ -776,6 +900,18 @@ export default function CustomerFeedback() {
             }`}
           >
             Customer Reviews
+          </button>
+          <button
+            onClick={() => {
+              setActiveTab('buyer-questions');
+            }}
+            className={`px-4 py-2 text-sm font-medium rounded-t-md transition-colors ${
+              activeTab === 'buyer-questions'
+                ? 'bg-blue-500 text-white border-b-2 border-blue-500'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            Buyer Questions ({buyerQuestions.length})
           </button>
           <button
             onClick={() => {
@@ -1020,6 +1156,90 @@ export default function CustomerFeedback() {
                   </div>
                 )
               }
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {activeTab === 'buyer-questions' && (
+        <div className="space-y-6">
+          <div className="text-xs text-purple-600 mb-2">💬 Buyer Questions - Answer customer inquiries</div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Customer Questions About Your Products</CardTitle>
+              <p className="text-sm text-muted-foreground">Respond to buyer questions to improve sales and customer trust</p>
+            </CardHeader>
+            <CardContent>
+              {buyerQuestions.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <MessageCircle className="mx-auto h-8 w-8 mb-2 opacity-50" />
+                  <p>No buyer questions yet. When buyers ask about your products, they'll appear here.</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {buyerQuestions.map((q) => (
+                    <div key={q.question_id} className="border rounded-lg p-4 space-y-3">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">{q.product_name}</p>
+                          <p className="text-xs text-gray-500 mt-1">Asked by: {q.buyer_name}</p>
+                        </div>
+                        <p className="text-xs text-gray-500">{formatDate(q.created_at)}</p>
+                      </div>
+                      <div className="bg-gray-50 p-3 rounded">
+                        <p className="text-sm text-gray-900"><strong>Q:</strong> {q.question_text}</p>
+                      </div>
+                      
+                      {/* Existing Answers */}
+                      {q.answers && q.answers.length > 0 && (
+                        <div className="space-y-2">
+                          {q.answers.map((answer) => (
+                            <div key={answer.answer_id} className={`p-3 rounded ${answer.is_verified_seller ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'}`}>
+                              <div className="flex justify-between items-start mb-2">
+                                <p className="text-sm font-medium">
+                                  {answer.is_verified_seller ? '✓ Your Answer' : 'Community Answer'}
+                                </p>
+                                <div className="flex items-center gap-2 text-xs text-gray-500">
+                                  <span>👍 {answer.helpful_count}</span>
+                                  <span>👎 {answer.not_helpful_count}</span>
+                                </div>
+                              </div>
+                              <p className="text-sm text-gray-900">{answer.answer_text}</p>
+                              <p className="text-xs text-gray-500 mt-1">{formatDate(answer.created_at)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Answer Form */}
+                      {(!q.answers || !q.answers.some(a => a.is_verified_seller)) && (
+                        <div className="mt-3">
+                          <Label htmlFor={`answer-${q.question_id}`}>Your Answer</Label>
+                          <Textarea
+                            id={`answer-${q.question_id}`}
+                            placeholder="Provide a helpful answer to the buyer..."
+                            className="mt-1"
+                          />
+                          <Button
+                            onClick={(e) => {
+                              const textarea = document.getElementById(`answer-${q.question_id}`) as HTMLTextAreaElement;
+                              if (textarea) {
+                                handleAnswerBuyerQuestion(q.question_id, textarea.value);
+                                textarea.value = '';
+                              }
+                            }}
+                            className="mt-2"
+                            size="sm"
+                          >
+                            <Send className="h-4 w-4 mr-2" />
+                            Submit Answer
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

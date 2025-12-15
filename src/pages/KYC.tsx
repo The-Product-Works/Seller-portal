@@ -520,7 +520,7 @@ export default function KYC() {
         }
 
         toast({
-          title: `Hi ${user.email?.split('@')[0] || 'Seller'}, welcome to Protimart! 🎉`,
+          title: `Hi ${user.email?.split('@')[0] || 'Seller'}, welcome to Trupromart! 🎉`,
           description: "Your KYC has been submitted successfully. Documents are under review.",
         });
 

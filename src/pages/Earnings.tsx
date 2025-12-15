@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { Navbar } from "@/components/Navbar";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -146,7 +145,6 @@ export default function Earnings() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
-        <Navbar />
         <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
           <RefreshCw className="h-8 w-8 animate-spin text-primary" />
         </div>
@@ -157,7 +155,6 @@ export default function Earnings() {
   if (error) {
     return (
       <div className="min-h-screen bg-background">
-        <Navbar />
         <div className="container mx-auto px-4 py-8 mt-16">
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -329,9 +326,11 @@ export default function Earnings() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Navbar />
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-16">
+    <div className="min-h-screen bg-gradient-to-br from-yellow-50/30 via-white to-blue-50/30 relative">
+      {/* Subtle pattern overlay */}
+      <div className="absolute inset-0 pattern-dots opacity-[0.03] pointer-events-none"></div>
+      
+      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 mt-16 relative z-10">
         {/* Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>

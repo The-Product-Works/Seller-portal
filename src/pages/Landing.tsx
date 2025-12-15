@@ -1,7 +1,6 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Navbar } from "@/components/Navbar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -198,15 +197,20 @@ export default function Landing() {
           type: "platform",
         }}
       />
-      <div className="min-h-screen bg-background">
-        <Navbar />
+      <div className="min-h-screen bg-gradient-to-br from-yellow-50 via-white to-blue-50 relative overflow-hidden">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 opacity-10 pointer-events-none">
+          <div className="absolute top-0 left-0 w-96 h-96 bg-yellow-400 rounded-full mix-blend-multiply filter blur-3xl animate-pulse"></div>
+          <div className="absolute bottom-0 right-0 w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl animate-pulse delay-1000"></div>
+          <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-yellow-300 rounded-full mix-blend-multiply filter blur-3xl animate-pulse delay-500"></div>
+        </div>
 
         {/* Raise Dispute Button */}
         <div className="fixed bottom-6 right-6 z-50">
           <Button
             onClick={() => setRaiseDisputeOpen(true)}
             size="lg"
-            className="shadow-lg flex items-center gap-2"
+            className="shadow-lg flex items-center gap-2 bg-gradient-to-r from-yellow-400 to-yellow-500 hover:from-yellow-500 hover:to-yellow-600 text-blue-900"
           >
             <Flag className="h-4 w-4" />
             Raise Dispute
@@ -214,24 +218,29 @@ export default function Landing() {
         </div>
 
         {/* 🏞 Hero Section */}
-        <div className="relative h-[500px] mt-16">
-        <img src={heroImage} alt="ProtiMart Hero" className="w-full h-full object-cover" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/60 to-transparent flex items-center">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <h1 className="text-5xl font-bold text-white mb-4">
-              Discover <span className="gradient-text">Quality Products</span>
+        <div className="relative h-[500px] mt-16 overflow-hidden">
+        <img src={heroImage} alt="Trupromart Hero" className="w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-gradient-to-r from-blue-900/70 via-blue-800/50 to-transparent flex items-center">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 z-10">
+            <h1 className="text-5xl font-bold text-white mb-4 drop-shadow-lg">
+              Discover <span className="bg-gradient-to-r from-yellow-300 to-yellow-500 bg-clip-text text-transparent">Quality Products</span>
             </h1>
-            <p className="text-xl text-white/90 max-w-2xl">
-              Browse top products from trusted sellers and verified brands
+            <p className="text-xl text-white/95 max-w-2xl drop-shadow-md">
+              Browse top products from trusted sellers and verified brands at Trupromart
             </p>
           </div>
         </div>
       </div>
 
       {/* 🔍 Filters */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4">
-        <Card>
-          <CardContent className="p-4 space-y-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-4 relative">
+        {/* Subtle grid pattern */}
+        <div className="absolute inset-0 pattern-grid opacity-5 pointer-events-none"></div>
+        
+        <Card className="shadow-yellow border-yellow-200/50 backdrop-blur-sm bg-white/95 relative overflow-hidden">
+          {/* Decorative corner gradient */}
+          <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-yellow-100 to-transparent opacity-50 rounded-bl-full"></div>
+          <CardContent className="p-6 space-y-4 relative z-10">
             <div className="flex flex-wrap gap-3 items-center">
               <Search className="h-4 w-4 text-muted-foreground" />
               <Input
@@ -291,9 +300,12 @@ export default function Landing() {
         </Card>
 
         {/* 🛍 Product Grid */}
-        <div className="flex items-center gap-2 mt-4">
-          <TrendingUp className="w-6 h-6 text-primary" />
-          <h2 className="text-2xl font-bold gradient-text">All Products</h2>
+        <div className="flex items-center gap-3 mt-6 bg-gradient-to-r from-yellow-50 to-blue-50 px-6 py-4 rounded-xl border border-yellow-200/50 shadow-sm">
+          <div className="p-2 bg-yellow-100 rounded-lg">
+            <TrendingUp className="w-6 h-6 text-yellow-600" />
+          </div>
+          <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-700 to-blue-900 bg-clip-text text-transparent">All Products</h2>
+          <div className="ml-auto text-sm text-muted-foreground">{filteredListings.length} items</div>
         </div>
 
         <div className="overflow-x-auto pb-4">
@@ -336,15 +348,17 @@ export default function Landing() {
               return (
                 <Card
                   key={listing.listing_id}
-                  className="group hover:shadow-lg transition cursor-pointer flex-shrink-0 w-80"
+                  className="group hover:shadow-yellow transition-all duration-300 cursor-pointer flex-shrink-0 w-80 border-2 border-transparent hover:border-yellow-200 bg-white/95 backdrop-blur-sm hover:scale-[1.02]"
                   onClick={() => navigate(`/listing/${listing.listing_id}`)}
                 >
-                  <div className="h-48 bg-muted flex items-center justify-center overflow-hidden rounded-t-lg relative">
+                  <div className="h-48 bg-gradient-to-br from-yellow-50 to-blue-50 flex items-center justify-center overflow-hidden rounded-t-lg relative">
+                    {/* Decorative corner accent */}
+                    <div className="absolute top-0 left-0 w-20 h-20 bg-yellow-200/30 rounded-br-full"></div>
                     {currentImage?.image_url ? (
                       <img
                         src={currentImage.image_url}
                         alt={productName}
-                        className="object-cover w-full h-full transition-transform group-hover:scale-105 cursor-pointer"
+                        className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-110 cursor-pointer"
                         onClick={(e) => {
                           e.stopPropagation();
                           openImageViewer(images, currentImageIndex);
@@ -362,7 +376,7 @@ export default function Landing() {
                             e.stopPropagation();
                             prevImage(listing.listing_id, images.length);
                           }}
-                          className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 transition-colors opacity-0 group-hover:opacity-100"
+                          className="absolute left-2 top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-full p-1.5 transition-all shadow-lg opacity-0 group-hover:opacity-100"
                           aria-label="Previous image"
                         >
                           <ChevronLeft className="w-4 h-4" />
@@ -372,7 +386,7 @@ export default function Landing() {
                             e.stopPropagation();
                             nextImage(listing.listing_id, images.length);
                           }}
-                          className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 hover:bg-black/70 text-white rounded-full p-1 transition-colors opacity-0 group-hover:opacity-100"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-full p-1.5 transition-all shadow-lg opacity-0 group-hover:opacity-100"
                           aria-label="Next image"
                         >
                           <ChevronRight className="w-4 h-4" />
@@ -404,13 +418,15 @@ export default function Landing() {
                     )}
                     
                     {discount > 0 && (
-                      <Badge className="absolute top-2 right-2 bg-red-500">
+                      <Badge className="absolute top-3 right-3 bg-gradient-to-r from-red-500 to-red-600 text-white shadow-lg border-2 border-white font-bold px-3 py-1">
                         {discount}% OFF
                       </Badge>
                     )}
                   </div>
-                  <CardContent className="p-4 space-y-2">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wide">
+                  <CardContent className="p-5 space-y-2 relative">
+                    {/* Subtle dot pattern */}
+                    <div className="absolute inset-0 pattern-dots opacity-[0.02] pointer-events-none"></div>
+                    <p className="text-xs text-muted-foreground uppercase tracking-wider font-medium relative z-10">
                       {brandName}
                     </p>
                     <h3 className="font-semibold text-lg line-clamp-2">{productName}</h3>

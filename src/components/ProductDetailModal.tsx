@@ -442,7 +442,7 @@ export function ProductDetailModal({
                         {variant.variant_name as string}
                       </p>
                       {isSelected && variant.is_p0_compliant && (
-                        <Badge variant="default" className="text-[10px] bg-green-600 px-1 py-0">P0</Badge>
+                        <Badge variant="default" className="text-[10px] bg-blue-600 px-1 py-0">P0</Badge>
                       )}
                     </button>
                   );
@@ -620,7 +620,7 @@ export function ProductDetailModal({
                             <div className="flex items-center gap-2">
                               <p className="font-bold text-lg">{variant.variant_name as string}</p>
                               {variant.is_p0_compliant && (
-                                <Badge variant="default" className="bg-green-600">P0 Compliant</Badge>
+                                <Badge variant="default" className="bg-blue-600">P0 Compliant</Badge>
                               )}
                             </div>
                             <p className="text-xs text-muted-foreground">SKU: {variant.sku as string}</p>
@@ -748,7 +748,7 @@ export function ProductDetailModal({
                               )}
                             </div>
                             {variant.accuracy_attested && (
-                              <div className="mt-2 flex items-center gap-1 text-xs text-green-700">
+                              <div className="mt-2 flex items-center gap-1 text-xs text-blue-700">
                                 <span>✓</span>
                                 <span>Accuracy attested by {variant.attested_by as string || 'seller'}</span>
                                 {variant.attested_at && (
@@ -842,8 +842,8 @@ export function ProductDetailModal({
                                 );
                               } else {
                                 return (
-                                  <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                                    <p className="text-sm text-green-800 font-medium">✓ No Known Allergens</p>
+                                  <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <p className="text-sm text-blue-800 font-medium">✓ No Known Allergens</p>
                                   </div>
                                 );
                               }
@@ -981,7 +981,7 @@ export function ProductDetailModal({
                                       return (
                                         <>
                                           {macros.protein && (
-                                            <div className="p-2 bg-green-50 border border-green-200 rounded">
+                                            <div className="p-2 bg-blue-50 border border-blue-200 rounded">
                                               <p className="text-xs text-muted-foreground">Protein</p>
                                               <p className="font-semibold">{(macros.protein as Record<string, unknown>).value}{(macros.protein as Record<string, unknown>).unit}</p>
                                             </div>
@@ -1148,9 +1148,9 @@ export function ProductDetailModal({
                           </div>
                         </div>
                       ) : (
-                        <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-                          <p className="text-green-800 font-medium text-sm">✓ No Known Allergens</p>
-                          <p className="text-xs text-green-700 mt-1">This variant has no listed allergens.</p>
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                          <p className="text-blue-800 font-medium text-sm">✓ No Known Allergens</p>
+                          <p className="text-xs text-blue-700 mt-1">This variant has no listed allergens.</p>
                         </div>
                       )}
                     </Card>
@@ -1158,9 +1158,9 @@ export function ProductDetailModal({
                 })}
               </div>
             ) : (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-lg text-center">
-                <p className="text-green-800 font-semibold">✓ No Known Allergens</p>
-                <p className="text-sm text-green-700 mt-1">This product has no listed allergens.</p>
+              <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg text-center">
+                <p className="text-blue-800 font-semibold">✓ No Known Allergens</p>
+                <p className="text-sm text-blue-700 mt-1">This product has no listed allergens.</p>
               </div>
             )}
           </div>
@@ -1202,13 +1202,13 @@ export function ProductDetailModal({
                       <h3 className="font-semibold mb-2">Testing Information</h3>
                       <p className="text-sm whitespace-pre-wrap">{transparencyData.testing_info}</p>
                       {transparencyData.third_party_tested && (
-                        <div className="mt-3 p-3 bg-green-50 rounded">
-                          <p className="text-xs font-semibold text-green-800">✓ Third-Party Tested</p>
+                        <div className="mt-3 p-3 bg-blue-50 rounded">
+                          <p className="text-xs font-semibold text-blue-800">✓ Third-Party Tested</p>
                           {transparencyData.testing_lab && (
-                            <p className="text-xs text-green-700 mt-1">Lab: {transparencyData.testing_lab}</p>
+                            <p className="text-xs text-blue-700 mt-1">Lab: {transparencyData.testing_lab}</p>
                           )}
                           {transparencyData.test_date && (
-                            <p className="text-xs text-green-700">Date: {new Date(transparencyData.test_date).toLocaleDateString()}</p>
+                            <p className="text-xs text-blue-700">Date: {new Date(transparencyData.test_date).toLocaleDateString()}</p>
                           )}
                           {transparencyData.test_report_url && (
                             <a href={transparencyData.test_report_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline mt-1 block">

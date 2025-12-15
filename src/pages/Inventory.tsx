@@ -1136,10 +1136,14 @@ export default function Inventory() {
       </Card>
 
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Product Inventory</h1>
-          <p className="text-muted-foreground">
+      <div className="flex justify-between items-center bg-gradient-to-r from-yellow-50 to-blue-50 -mx-4 sm:-mx-6 lg:-mx-8 px-4 sm:px-6 lg:px-8 py-6 mb-6 border-b-2 border-yellow-200/50 relative overflow-hidden">
+        {/* Decorative elements */}
+        <div className="absolute top-0 right-0 w-40 h-40 bg-yellow-200/20 rounded-full -mr-20 -mt-20"></div>
+        <div className="absolute bottom-0 left-0 w-32 h-32 bg-blue-200/20 rounded-full -ml-16 -mb-16"></div>
+        
+        <div className="relative z-10">
+          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-700 to-blue-900 bg-clip-text text-transparent">Product Inventory</h1>
+          <p className="text-muted-foreground mt-1">
             Manage your product listings and variants
           </p>
           {/* Debug Info */}
@@ -1189,10 +1193,10 @@ export default function Inventory() {
 
       {/* Product Status Summary */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        <Card className="bg-green-50 border-green-200">
+        <Card className="bg-blue-50 border-blue-300">
           <CardContent className="p-3 text-center">
-            <p className="text-2xl font-bold text-green-700">{statusCounts.active}</p>
-            <p className="text-xs text-green-600">Active</p>
+            <p className="text-2xl font-bold text-blue-700">{statusCounts.active}</p>
+            <p className="text-xs text-blue-600">Active</p>
           </CardContent>
         </Card>
         <Card className="bg-yellow-50 border-yellow-200">

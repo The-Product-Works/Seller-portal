@@ -278,7 +278,7 @@ export default function SignUp() {
           <div className="flex justify-center mb-4">
             <Heart className="w-12 h-12 text-primary fill-primary animate-float" />
           </div>
-          <CardTitle className="text-3xl font-bold gradient-text">Join ProtiMart</CardTitle>
+          <CardTitle className="text-3xl font-bold gradient-text">Join Trupromart</CardTitle>
           <CardDescription>Create your seller account</CardDescription>
         </CardHeader>
         <CardContent>

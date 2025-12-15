@@ -798,6 +798,8 @@ export default function Orders() {
           orderId: selectedOrder?.order_id,
         }}
       />
+      {/* Subtle background pattern */}
+      <div className="fixed inset-0 pattern-grid opacity-[0.02] pointer-events-none"></div>
       <div className="container mx-auto p-6 max-w-7xl">
         {/* Header */}
         <div className="mb-8 flex items-center justify-between">

@@ -203,13 +203,16 @@ export function Navbar() {
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 glass-navbar transition-smooth">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <nav className="fixed top-0 left-0 right-0 z-50 glass-navbar transition-smooth shadow-yellow relative overflow-hidden">
+      {/* Decorative Pattern Background */}
+      <div className="absolute inset-0 pattern-dots opacity-20 pointer-events-none"></div>
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <div className="flex items-center gap-2">
-            <Heart className="w-6 h-6 text-primary fill-primary" />
-            <span className="text-xl font-bold gradient-text">ProtiMart</span>
+          <div className="flex items-center gap-3 bg-gradient-to-r from-yellow-50 to-blue-50 px-4 py-2 rounded-full shadow-sm border border-yellow-200/50">
+            <Heart className="w-6 h-6 text-primary fill-primary animate-pulse" />
+            <span className="text-xl font-bold bg-gradient-to-r from-blue-700 to-blue-900 bg-clip-text text-transparent">Trupromart</span>
           </div>
 
           {/* Center Navigation */}

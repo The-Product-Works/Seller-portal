@@ -8,87 +8,87 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
-    /* ProtiMart Pink Gradient Theme - All colors in HSL */
-    --background: 0 0% 98%;
-    --foreground: 0 0% 13%;
+    /* Trupromart Yellow & Blue Theme - All colors in HSL */
+    --background: 48 100% 96%;  /* Light yellow background #FFFDEA */
+    --foreground: 208 100% 18%;  /* Dark blue text #00509D */
 
     --card: 0 0% 100%;
-    --card-foreground: 0 0% 13%;
+    --card-foreground: 208 100% 18%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 13%;
+    --popover-foreground: 208 100% 18%;
 
-    /* Primary Pink Gradient Colors */
-    --primary: 340 80% 62%;  /* #f06292 */
-    --primary-foreground: 0 0% 100%;
-    --primary-glow: 340 85% 75%;  /* #f48fb1 */
+    /* Primary Yellow Colors */
+    --primary: 48 100% 50%;  /* Bright yellow #FFCB05 */
+    --primary-foreground: 208 100% 18%;  /* Dark blue */
+    --primary-glow: 48 100% 70%;  /* Light yellow glow */
     
-    /* Accent Pink */
-    --secondary: 340 95% 85%;  /* #f8bbd0 */
-    --secondary-foreground: 0 0% 13%;
+    /* Accent Blue */
+    --secondary: 208 100% 31%;  /* Blue #00509D */
+    --secondary-foreground: 0 0% 100%;
 
-    --muted: 0 0% 96%;
+    --muted: 0 0% 93%;  /* Light gray #EDEDED */
     --muted-foreground: 0 0% 40%;
 
-    --accent: 340 95% 85%;  /* #f8bbd0 */
-    --accent-foreground: 0 0% 13%;
+    --accent: 158 100% 18%;  /* Dark green #11296B */
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
 
-    --border: 0 0% 91%;
-    --input: 0 0% 91%;
-    --ring: 340 80% 62%;
+    --border: 0 0% 93%;  /* #EDEDED */
+    --input: 0 0% 93%;
+    --ring: 48 100% 50%;
 
     --radius: 0.75rem;
 
     /* Glassmorphism navbar */
-    --glass-background: 0 0% 100% / 0.8;
-    --glass-border: 0 0% 0% / 0.1;
+    --glass-background: 48 100% 98% / 0.9;
+    --glass-border: 48 100% 50% / 0.2;
 
     /* Gradients */
-    --gradient-primary: linear-gradient(90deg, hsl(340 80% 62%), hsl(340 85% 75%));
-    --gradient-radial: radial-gradient(circle at top, hsl(340 95% 95%), transparent);
+    --gradient-primary: linear-gradient(135deg, hsl(48 100% 50%), hsl(48 100% 70%));
+    --gradient-radial: radial-gradient(circle at top, hsl(48 100% 96%), transparent);
     
     /* Shadows */
     --shadow-soft: 0 4px 20px hsl(0 0% 0% / 0.08);
-    --shadow-pink: 0 8px 30px hsl(340 80% 62% / 0.15);
-    --shadow-glow: 0 0 40px hsl(340 85% 75% / 0.3);
+    --shadow-yellow: 0 8px 30px hsl(48 100% 50% / 0.25);
+    --shadow-glow: 0 0 40px hsl(48 100% 70% / 0.4);
 
     /* Animations */
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
-    --sidebar-background: 0 0% 98%;
-    --sidebar-foreground: 0 0% 13%;
-    --sidebar-primary: 340 80% 62%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 340 95% 95%;
-    --sidebar-accent-foreground: 340 80% 62%;
-    --sidebar-border: 0 0% 91%;
-    --sidebar-ring: 340 80% 62%;
+    --sidebar-background: 48 100% 96%;
+    --sidebar-foreground: 208 100% 18%;
+    --sidebar-primary: 48 100% 50%;
+    --sidebar-primary-foreground: 208 100% 18%;
+    --sidebar-accent: 48 100% 90%;
+    --sidebar-accent-foreground: 208 100% 31%;
+    --sidebar-border: 0 0% 93%;
+    --sidebar-ring: 48 100% 50%;
   }
 
   .dark {
-    --background: 0 0% 8%;
-    --foreground: 0 0% 98%;
+    --background: 158 100% 8%;  /* Very dark blue-green */
+    --foreground: 48 100% 90%;
 
-    --card: 0 0% 10%;
-    --card-foreground: 0 0% 98%;
+    --card: 158 100% 10%;
+    --card-foreground: 48 100% 90%;
 
-    --popover: 0 0% 10%;
-    --popover-foreground: 0 0% 98%;
+    --popover: 158 100% 10%;
+    --popover-foreground: 48 100% 90%;
 
-    --primary: 340 80% 62%;
-    --primary-foreground: 0 0% 100%;
-    --primary-glow: 340 85% 75%;
+    --primary: 48 100% 50%;
+    --primary-foreground: 158 100% 10%;
+    --primary-glow: 48 100% 70%;
 
-    --secondary: 340 40% 25%;
+    --secondary: 208 100% 31%;
     --secondary-foreground: 0 0% 98%;
 
     --muted: 0 0% 15%;
     --muted-foreground: 0 0% 65%;
 
-    --accent: 340 40% 25%;
+    --accent: 208 100% 31%;
     --accent-foreground: 0 0% 98%;
 
     --destructive: 0 62.8% 30.6%;
@@ -96,7 +96,7 @@ All colors MUST be HSL.
 
     --border: 0 0% 20%;
     --input: 0 0% 20%;
-    --ring: 340 80% 62%;
+    --ring: 48 100% 50%;
 
     --glass-background: 0 0% 10% / 0.8;
     --glass-border: 0 0% 100% / 0.1;
@@ -145,22 +145,34 @@ All colors MUST be HSL.
   }
 
   .gradient-primary {
-    background: linear-gradient(90deg, hsl(340 80% 62%), hsl(340 85% 75%));
+    background: linear-gradient(135deg, hsl(48 100% 50%), hsl(48 100% 70%));
   }
 
   .gradient-text {
-    background: linear-gradient(90deg, hsl(340 80% 62%), hsl(340 85% 75%));
+    background: linear-gradient(135deg, hsl(48 100% 50%), hsl(48 100% 70%));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
   }
 
-  .shadow-pink {
-    box-shadow: 0 8px 30px hsl(340 80% 62% / 0.15);
+  .shadow-yellow {
+    box-shadow: 0 8px 30px hsl(48 100% 50% / 0.25);
   }
 
   .shadow-glow {
-    box-shadow: 0 0 40px hsl(340 85% 75% / 0.3);
+    box-shadow: 0 0 40px hsl(48 100% 70% / 0.4);
+  }
+  
+  .pattern-dots {
+    background-image: radial-gradient(hsl(48 100% 50% / 0.15) 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+  
+  .pattern-grid {
+    background-image: 
+      linear-gradient(hsl(48 100% 50% / 0.1) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(48 100% 50% / 0.1) 1px, transparent 1px);
+    background-size: 40px 40px;
   }
 
   .animate-float {

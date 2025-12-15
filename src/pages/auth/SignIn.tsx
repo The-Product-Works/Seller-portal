@@ -84,7 +84,7 @@ export default function SignIn() {
     } else {
       toast({
         title: "Success",
-        description: "Welcome back to ProtiMart!",
+        description: "Welcome back to Trupromart!",
       });
       navigate("/landing");
     }
@@ -98,7 +98,7 @@ export default function SignIn() {
             <Heart className="w-12 h-12 text-primary fill-primary animate-float" />
           </div>
           <CardTitle className="text-3xl font-bold gradient-text">Welcome Back</CardTitle>
-          <CardDescription>Sign in to your ProtiMart seller account</CardDescription>
+          <CardDescription>Sign in to your Trupromart seller account</CardDescription>
         </CardHeader>
         <CardContent>
           <Button

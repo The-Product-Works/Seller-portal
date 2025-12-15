@@ -738,9 +738,15 @@ export default function Dashboard() {
           type: "platform",
         }}
       />
-      <div className="space-y-6 p-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-4xl font-bold">Seller Dashboard</h1>
+      <div className="space-y-6 p-6 bg-gradient-to-br from-yellow-50/30 via-white to-blue-50/30 min-h-screen relative">
+        {/* Subtle background pattern */}
+        <div className="absolute inset-0 pattern-dots opacity-[0.03] pointer-events-none"></div>
+        
+        <div className="flex justify-between items-center relative z-10">
+          <div>
+            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-700 to-blue-900 bg-clip-text text-transparent">Seller Dashboard</h1>
+            <div className="h-1 w-24 bg-gradient-to-r from-yellow-400 to-yellow-600 rounded-full mt-2"></div>
+          </div>
           <div className="flex gap-2">
             <Button
               onClick={() => setRaiseDisputeOpen(true)}

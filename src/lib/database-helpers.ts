@@ -1,5 +1,5 @@
 /**
- * Database Helper Functions for the new ProtiMart schema
+ * Database Helper Functions for the new Trupromart schema
  * These functions provide common database operations using the new sellers, products, and inventory tables
  */
 
