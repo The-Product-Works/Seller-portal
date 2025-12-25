@@ -96,7 +96,7 @@ export function DashboardProductStock({ sellerId, limit = 8 }: DashboardProductS
         console.error("Error fetching listings:", listingsError);
       }
 
-      // Fetch bundles
+      // Fetch bundles with bundle items to calculate actual stock
       const { data: bundles, error: bundlesError } = await supabase
         .from("bundles")
         .select(
@@ -106,7 +106,13 @@ export function DashboardProductStock({ sellerId, limit = 8 }: DashboardProductS
           base_price,
           discount_percentage,
           total_stock_quantity,
-          status
+          status,
+          bundle_items(
+            quantity,
+            seller_product_listings(
+              total_stock_quantity
+            )
+          )
         `
         )
         .eq("seller_id", sellerId)
@@ -147,8 +153,21 @@ export function DashboardProductStock({ sellerId, limit = 8 }: DashboardProductS
       }
 
       if (bundles && bundles.length > 0) {
-        bundles.forEach((bundle: BundleData) => {
-          const stock = bundle.total_stock_quantity || 0;
+        bundles.forEach((bundle: any) => {
+          // Calculate actual bundle stock from bundle items
+          const bundleItems = bundle.bundle_items || [];
+          let calculatedStock = 0;
+          
+          if (bundleItems.length > 0) {
+            const possibleBundles = bundleItems.map((item: any) => {
+              const productStock = item.seller_product_listings?.total_stock_quantity || 0;
+              const requiredPerBundle = item.quantity || 1;
+              return Math.floor(productStock / requiredPerBundle);
+            });
+            calculatedStock = possibleBundles.length > 0 ? Math.min(...possibleBundles) : 0;
+          }
+          
+          const stock = calculatedStock;
           const isLowStock = stock < lowStockThreshold;
           if (isLowStock) lowCount++;
 

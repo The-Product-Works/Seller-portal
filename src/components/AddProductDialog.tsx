@@ -968,10 +968,39 @@ export default function AddProductDialog({
             throw new Error(`Failed to save variant: ${variantError.message}`);
           }
 
-          // Upload product display images to listing_images table
+          // Re-insert existing product display images first (they were deleted when variants were deleted)
+          if ((variant as any).existingProductImages && (variant as any).existingProductImages.length > 0) {
+            const existingImages = (variant as any).existingProductImages;
+            console.log(`Re-inserting ${existingImages.length} existing images for variant ${variant.variant_name}`);
+            
+            for (let i = 0; i < existingImages.length; i++) {
+              const img = existingImages[i];
+              console.log(`  - Re-inserting image ${i}: ${img.image_url}, is_primary = ${img.is_primary}`);
+              
+              // Re-insert the existing image with new variant_id
+              const { error: insertError } = await supabase
+                .from("listing_images")
+                .insert({
+                  listing_id: listing.listing_id,
+                  variant_id: insertedVariant.variant_id,
+                  image_url: img.image_url,
+                  is_primary: img.is_primary || false,
+                  sort_order: img.sort_order || i,
+                });
+              
+              if (insertError) {
+                console.error("Error re-inserting existing image:", insertError);
+              } else {
+                console.log(`  ✓ Re-inserted image ${i}`);
+              }
+            }
+          }
+
+          // Upload NEW product display images to listing_images table
           if ((variant as any).productImages && (variant as any).productImages.length > 0) {
             const productImageFiles = (variant as any).productImages as File[];
             const primaryIndex = (variant as any).newImagePrimaryIndex || 0;
+            const existingImageCount = (variant as any).existingProductImages?.length || 0;
 
             for (let i = 0; i < productImageFiles.length; i++) {
               const imageFile = productImageFiles[i];
@@ -994,31 +1023,8 @@ export default function AddProductDialog({
                     variant_id: insertedVariant.variant_id,
                     image_url: publicUrl,
                     is_primary: i === primaryIndex, // Use seller's choice
-                    sort_order: i, // Preserve image order
+                    sort_order: existingImageCount + i, // Continue sort order after existing images
                   });
-              }
-            }
-          }
-
-          // Update existing images' is_primary flag if user changed it
-          if ((variant as any).existingProductImages && (variant as any).existingProductImages.length > 0) {
-            const existingImages = (variant as any).existingProductImages;
-            console.log(`Updating is_primary for ${existingImages.length} existing images in variant ${variant.variant_name}`);
-            
-            for (const img of existingImages) {
-              if (img.image_id) {
-                console.log(`  - Image ${img.image_id}: is_primary = ${img.is_primary}`);
-                // Update is_primary flag for each existing image
-                const { error: updateError } = await supabase
-                  .from("listing_images")
-                  .update({ is_primary: img.is_primary || false })
-                  .eq('image_id', img.image_id);
-                
-                if (updateError) {
-                  console.error("Error updating is_primary:", updateError);
-                } else {
-                  console.log(`  ✓ Updated image ${img.image_id}`);
-                }
               }
             }
           }
@@ -2299,14 +2305,44 @@ export default function AddProductDialog({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const updatedVariants = [...variants];
-                                const currentVariant = updatedVariants[index] as any;
-                                updatedVariants[index] = {
-                                  ...currentVariant,
-                                  productImage: file,
-                                  productImagePreview: URL.createObjectURL(file)
+                                // Validate file size (max 10MB)
+                                if (file.size > 10 * 1024 * 1024) {
+                                  toast({
+                                    title: "File too large",
+                                    description: "Product photo must be less than 10MB",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                // Check image resolution
+                                const img = new Image();
+                                img.onload = () => {
+                                  if (img.width < 800 || img.height < 800) {
+                                    toast({
+                                      title: "Low resolution image",
+                                      description: "Product photo should be at least 800x800 pixels for best quality. Recommended: 1200x1200px or higher.",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                  
+                                  const updatedVariants = [...variants];
+                                  const currentVariant = updatedVariants[index] as any;
+                                  updatedVariants[index] = {
+                                    ...currentVariant,
+                                    productImage: file,
+                                    productImagePreview: URL.createObjectURL(file)
+                                  };
+                                  setVariants(updatedVariants);
                                 };
-                                setVariants(updatedVariants);
+                                img.onerror = () => {
+                                  toast({
+                                    title: "Invalid image",
+                                    description: "Unable to load image file",
+                                    variant: "destructive"
+                                  });
+                                };
+                                img.src = URL.createObjectURL(file);
                               }
                             }}
                           />
@@ -2362,14 +2398,44 @@ export default function AddProductDialog({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const updatedVariants = [...variants];
-                                const currentVariant = updatedVariants[index] as any;
-                                updatedVariants[index] = {
-                                  ...currentVariant,
-                                  ingredientImage: file,
-                                  ingredientImagePreview: URL.createObjectURL(file)
+                                // Validate file size (max 10MB)
+                                if (file.size > 10 * 1024 * 1024) {
+                                  toast({
+                                    title: "File too large",
+                                    description: "Ingredient list image must be less than 10MB",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                // Check image resolution
+                                const img = new Image();
+                                img.onload = () => {
+                                  if (img.width < 800 || img.height < 800) {
+                                    toast({
+                                      title: "Low resolution image",
+                                      description: "Ingredient list image should be at least 800x800 pixels for clarity. Recommended: 1200x1200px or higher.",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                  
+                                  const updatedVariants = [...variants];
+                                  const currentVariant = updatedVariants[index] as any;
+                                  updatedVariants[index] = {
+                                    ...currentVariant,
+                                    ingredientImage: file,
+                                    ingredientImagePreview: URL.createObjectURL(file)
+                                  };
+                                  setVariants(updatedVariants);
                                 };
-                                setVariants(updatedVariants);
+                                img.onerror = () => {
+                                  toast({
+                                    title: "Invalid image",
+                                    description: "Unable to load image file",
+                                    variant: "destructive"
+                                  });
+                                };
+                                img.src = URL.createObjectURL(file);
                               }
                             }}
                           />
@@ -2380,7 +2446,7 @@ export default function AddProductDialog({
                             </div>
                           )}
                           {!variant.ingredient_image_url && (
-                            <p className="text-xs text-muted-foreground">Upload a clear photo of the ingredient list</p>
+                            <p className="text-xs text-muted-foreground">Upload high-quality photo (min 800x800px, max 10MB)</p>
                           )}
                         </div>
 
@@ -2425,14 +2491,44 @@ export default function AddProductDialog({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const updatedVariants = [...variants];
-                                const currentVariant = updatedVariants[index] as any;
-                                updatedVariants[index] = {
-                                  ...currentVariant,
-                                  nutritionImage: file,
-                                  nutritionImagePreview: URL.createObjectURL(file)
+                                // Validate file size (max 10MB)
+                                if (file.size > 10 * 1024 * 1024) {
+                                  toast({
+                                    title: "File too large",
+                                    description: "Nutrition table image must be less than 10MB",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                // Check image resolution
+                                const img = new Image();
+                                img.onload = () => {
+                                  if (img.width < 800 || img.height < 800) {
+                                    toast({
+                                      title: "Low resolution image",
+                                      description: "Nutrition table image should be at least 800x800 pixels for clarity. Recommended: 1200x1200px or higher.",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                  
+                                  const updatedVariants = [...variants];
+                                  const currentVariant = updatedVariants[index] as any;
+                                  updatedVariants[index] = {
+                                    ...currentVariant,
+                                    nutritionImage: file,
+                                    nutritionImagePreview: URL.createObjectURL(file)
+                                  };
+                                  setVariants(updatedVariants);
                                 };
-                                setVariants(updatedVariants);
+                                img.onerror = () => {
+                                  toast({
+                                    title: "Invalid image",
+                                    description: "Unable to load image file",
+                                    variant: "destructive"
+                                  });
+                                };
+                                img.src = URL.createObjectURL(file);
                               }
                             }}
                           />
@@ -2443,7 +2539,7 @@ export default function AddProductDialog({
                             </div>
                           )}
                           {!variant.nutrient_table_image_url && (
-                            <p className="text-xs text-muted-foreground">Upload a clear photo of the nutrition facts table</p>
+                            <p className="text-xs text-muted-foreground">Upload high-quality photo (min 800x800px, max 10MB)</p>
                           )}
                         </div>
 
@@ -2488,14 +2584,44 @@ export default function AddProductDialog({
                             onChange={(e) => {
                               const file = e.target.files?.[0];
                               if (file) {
-                                const updatedVariants = [...variants];
-                                const currentVariant = updatedVariants[index] as any;
-                                updatedVariants[index] = {
-                                  ...currentVariant,
-                                  fssaiImage: file,
-                                  fssaiImagePreview: URL.createObjectURL(file)
+                                // Validate file size (max 10MB)
+                                if (file.size > 10 * 1024 * 1024) {
+                                  toast({
+                                    title: "File too large",
+                                    description: "FSSAI label image must be less than 10MB",
+                                    variant: "destructive"
+                                  });
+                                  return;
+                                }
+                                
+                                // Check image resolution
+                                const img = new Image();
+                                img.onload = () => {
+                                  if (img.width < 800 || img.height < 800) {
+                                    toast({
+                                      title: "Low resolution image",
+                                      description: "FSSAI label image should be at least 800x800 pixels for clarity. Recommended: 1200x1200px or higher.",
+                                      variant: "destructive"
+                                    });
+                                  }
+                                  
+                                  const updatedVariants = [...variants];
+                                  const currentVariant = updatedVariants[index] as any;
+                                  updatedVariants[index] = {
+                                    ...currentVariant,
+                                    fssaiImage: file,
+                                    fssaiImagePreview: URL.createObjectURL(file)
+                                  };
+                                  setVariants(updatedVariants);
                                 };
-                                setVariants(updatedVariants);
+                                img.onerror = () => {
+                                  toast({
+                                    title: "Invalid image",
+                                    description: "Unable to load image file",
+                                    variant: "destructive"
+                                  });
+                                };
+                                img.src = URL.createObjectURL(file);
                               }
                             }}
                           />
@@ -2506,7 +2632,7 @@ export default function AddProductDialog({
                             </div>
                           )}
                           {!variant.fssai_label_image_url && (
-                            <p className="text-xs text-muted-foreground">Upload a clear photo of the FSSAI label</p>
+                            <p className="text-xs text-muted-foreground">Upload high-quality photo (min 800x800px, max 10MB)</p>
                           )}
                         </div>
 

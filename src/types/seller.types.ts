@@ -10,6 +10,7 @@ export type DocumentType =
   | "fssai_certificate"
   | "bank_statement" 
   | "address_proof"
+  | "fssai_certificate"
   | "other";
 
 export interface UploadedDocument {

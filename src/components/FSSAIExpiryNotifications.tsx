@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { toast } from 'sonner';
 
 interface FSSAINotification {
-  id: string;
+  notification_id: string;
   notification_type: 'seller_kyc_fssai' | 'product_fssai';
   notification_message: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
@@ -25,9 +25,10 @@ export function FSSAIExpiryNotifications() {
   const [notifications, setNotifications] = useState<FSSAINotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [hasFetchedOnce, setHasFetchedOnce] = useState(false);
 
   useEffect(() => {
-    fetchNotifications();
+    fetchNotifications(true);
     
     // Set up real-time subscription
     const subscription = supabase
@@ -40,7 +41,7 @@ export function FSSAIExpiryNotifications() {
           table: 'fssai_expiry_notifications',
         },
         () => {
-          fetchNotifications();
+          fetchNotifications(false);
         }
       )
       .subscribe();
@@ -50,17 +51,39 @@ export function FSSAIExpiryNotifications() {
     };
   }, []);
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = async (isInitialLoad: boolean = false) => {
     try {
       const sellerId = await getAuthenticatedSellerId();
-      if (!sellerId) return;
+      if (!sellerId) {
+        console.log('❌ No seller ID found');
+        return;
+      }
 
+      console.log('🔍 Fetching FSSAI notifications for seller:', sellerId);
+
+      // Only run FSSAI check on initial load to avoid duplicates
+      if (isInitialLoad && !hasFetchedOnce) {
+        const { data: checkResult, error: checkError } = await supabase.rpc('check_all_fssai_expiry') as { data: any; error: Error | null };
+        if (checkError) {
+          console.error('Error running FSSAI check:', checkError);
+        } else {
+          console.log('✅ FSSAI check result:', checkResult);
+        }
+        setHasFetchedOnce(true);
+      }
+
+      // Fetch notifications
       const { data, error } = await supabase.rpc('get_seller_fssai_notifications', {
         p_seller_id: sellerId,
         p_status: 'pending'
       }) as { data: FSSAINotification[] | null; error: Error | null };
 
-      if (error) throw error;
+      if (error) {
+        console.error('❌ Error fetching notifications:', error);
+        throw error;
+      }
+      
+      console.log('📋 Fetched notifications:', data);
       setNotifications(data || []);
     } catch (error) {
       console.error('Error fetching FSSAI notifications:', error);
@@ -71,16 +94,23 @@ export function FSSAIExpiryNotifications() {
 
   const handleAcknowledge = async (notificationId: string) => {
     try {
+      console.log('Acknowledging notification:', notificationId);
       const { data, error } = await supabase.rpc('update_fssai_notification_status', {
-        p_notification_id: notificationId,
-        p_new_status: 'acknowledged'
+        p_new_status: 'acknowledged',
+        p_notification_id: notificationId
       }) as { data: boolean | null; error: Error | null };
 
-      if (error) throw error;
+      if (error) {
+        console.error('RPC error:', error);
+        throw error;
+      }
 
+      console.log('Acknowledge result:', data);
       if (data) {
         toast.success('Notification acknowledged');
         fetchNotifications();
+      } else {
+        toast.error('Failed to acknowledge notification - permission denied');
       }
     } catch (error) {
       console.error('Error acknowledging notification:', error);
@@ -90,16 +120,23 @@ export function FSSAIExpiryNotifications() {
 
   const handleDismiss = async (notificationId: string) => {
     try {
+      console.log('Dismissing notification:', notificationId);
       const { data, error } = await supabase.rpc('update_fssai_notification_status', {
-        p_notification_id: notificationId,
-        p_new_status: 'dismissed'
+        p_new_status: 'dismissed',
+        p_notification_id: notificationId
       }) as { data: boolean | null; error: Error | null };
 
-      if (error) throw error;
+      if (error) {
+        console.error('RPC error:', error);
+        throw error;
+      }
 
+      console.log('Dismiss result:', data);
       if (data) {
         toast.success('Notification dismissed');
         fetchNotifications();
+      } else {
+        toast.error('Failed to dismiss notification - permission denied');
       }
     } catch (error) {
       console.error('Error dismissing notification:', error);
@@ -208,7 +245,7 @@ export function FSSAIExpiryNotifications() {
         <CardContent className="space-y-3">
           {notifications.map((notification) => (
             <Alert
-              key={notification.id}
+              key={notification.notification_id}
               variant={notification.priority === 'critical' || notification.priority === 'high' ? 'destructive' : 'default'}
               className="relative"
             >
@@ -253,7 +290,7 @@ export function FSSAIExpiryNotifications() {
                     <Button
                       size="sm"
                       variant="outline"
-                      onClick={() => handleAcknowledge(notification.id)}
+                      onClick={() => handleAcknowledge(notification.notification_id)}
                     >
                       <CheckCircle className="h-3 w-3 mr-1" />
                       Acknowledge
@@ -261,7 +298,7 @@ export function FSSAIExpiryNotifications() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      onClick={() => handleDismiss(notification.id)}
+                      onClick={() => handleDismiss(notification.notification_id)}
                     >
                       <X className="h-3 w-3 mr-1" />
                       Dismiss

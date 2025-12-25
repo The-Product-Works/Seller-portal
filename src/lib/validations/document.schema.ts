@@ -21,6 +21,7 @@ const documentTypeSchema = z.enum([
   "fssai_certificate",
   "bank_statement",
   "address_proof",
+  "fssai_certificate",
   "other",
 ]);
 
